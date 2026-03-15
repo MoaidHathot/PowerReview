@@ -1,0 +1,349 @@
+*power-review.txt*  PR Review plugin for Neovim
+
+Author:  PowerReview.nvim contributors
+License: MIT
+
+==============================================================================
+CONTENTS                                             *power-review-contents*
+
+  1. Introduction ................... |power-review-introduction|
+  2. Requirements ................... |power-review-requirements|
+  3. Setup .......................... |power-review-setup|
+  4. Configuration .................. |power-review-configuration|
+  5. Commands ....................... |power-review-commands|
+  6. Keymaps ........................ |power-review-keymaps|
+  7. Lua API ........................ |power-review-api|
+  8. MCP Server ..................... |power-review-mcp|
+  9. Telescope ...................... |power-review-telescope|
+  10. Draft Workflow ................ |power-review-drafts|
+
+==============================================================================
+1. INTRODUCTION                                  *power-review-introduction*
+
+PowerReview.nvim is a Neovim plugin for reviewing Pull Requests from Azure
+DevOps (with GitHub support planned) directly inside your editor. It supports
+manual and LLM-assisted review with draft comment staging, rich UI panels,
+diff views, and an MCP server for external AI agent integration.
+
+==============================================================================
+2. REQUIREMENTS                                  *power-review-requirements*
+
+- Neovim >= 0.10.0
+- nui.nvim (required)
+- codediff.nvim (recommended, for diff views)
+- neo-tree.nvim (optional, for file tree panel)
+- telescope.nvim (optional, for fuzzy pickers)
+- `curl` on PATH
+- For Azure DevOps: `az` CLI or a Personal Access Token
+
+==============================================================================
+3. SETUP                                                *power-review-setup*
+
+Minimal setup with lazy.nvim: >lua
+  {
+    "your-username/PowerReview.nvim",
+    dependencies = {
+      "MunifTanjim/nui.nvim",
+      "esmuellert/codediff.nvim",
+    },
+    config = function()
+      require("power-review").setup({})
+    end,
+  }
+<
+
+==============================================================================
+4. CONFIGURATION                                *power-review-configuration*
+
+Call `require("power-review").setup(opts)` with any of these options:
+
+                                              *power-review-config-repos*
+repos ~
+  Table keyed by absolute repo path. Maps repositories to provider configs.
+  Example: >lua
+    repos = {
+      ["/path/to/repo"] = {
+        provider = "azdo",
+        azdo = {
+          organization = "myorg",
+          project = "myproject",
+          repository = "myrepo",
+        },
+      },
+    }
+<
+
+                                               *power-review-config-auth*
+auth ~
+  Authentication settings per provider.
+
+  `auth.azdo.method`    "auto" | "az_cli" | "pat" (default: "auto")
+  `auth.azdo.pat`       PAT string, or use env: POWER_REVIEW_AZDO_PAT
+  `auth.github.pat`     PAT string, or use env: GITHUB_TOKEN
+
+                                                *power-review-config-git*
+git ~
+  Git strategy settings.
+
+  `git.strategy`          "worktree" | "checkout" (default: "worktree")
+  `git.worktree_dir`      Relative directory name (default: ".power-review-worktrees")
+  `git.cleanup_on_close`  Remove worktree on close (default: true)
+
+                                                 *power-review-config-ui*
+ui ~
+  UI component settings.
+
+  `ui.files.provider`       "neo-tree" | "builtin" (default: "neo-tree")
+  `ui.comments.float`       Float window: width, height, border
+  `ui.comments.panel`       Panel: position, width, height
+  `ui.comments.signs`       Sign characters: remote, draft, ai_draft
+  `ui.diff.provider`        "codediff" (default)
+
+                                            *power-review-config-keymaps*
+keymaps ~
+  Global keymaps. Set any key to `false` to disable.
+
+  `keymaps.open_review`      "<leader>pr"
+  `keymaps.list_sessions`    "<leader>pl"
+  `keymaps.toggle_files`     "<leader>pf"
+  `keymaps.toggle_comments`  "<leader>pc"
+  `keymaps.next_comment`     "]r"
+  `keymaps.prev_comment`     "[r"
+  `keymaps.add_comment`      "<leader>pa"
+  `keymaps.reply_comment`    "<leader>prr"
+  `keymaps.edit_comment`     "<leader>pe"
+  `keymaps.approve_comment`  "<leader>pA"
+  `keymaps.submit_all`       "<leader>pS"
+  `keymaps.set_vote`         "<leader>pv"
+
+                                                *power-review-config-mcp*
+mcp ~
+  MCP server integration.
+
+  `mcp.enabled`  Write server_info.json for MCP server (default: false)
+
+                                                *power-review-config-log*
+log ~
+  `log.level`  "debug" | "info" | "warn" | "error" (default: "info")
+
+==============================================================================
+5. COMMANDS                                          *power-review-commands*
+
+All commands use the `:PowerReview` prefix.
+
+                                                       *:PowerReview-open*
+:PowerReview open [url]
+  Start a review from a PR URL, or pick from saved sessions if no URL.
+
+:PowerReview {url}
+  Shorthand: start a review directly from a URL.
+
+                                                   *:PowerReview-sessions*
+:PowerReview sessions
+  Toggle the session management panel. Shows all saved sessions with
+  resume, delete, and new review options.
+
+                                                       *:PowerReview-list*
+:PowerReview list
+  Print all saved session summaries to messages.
+
+                                                     *:PowerReview-delete*
+:PowerReview delete [session_id]
+  Delete a saved session. Opens a picker if no ID provided.
+
+                                                      *:PowerReview-clean*
+:PowerReview clean
+  Delete all saved sessions (with confirmation).
+
+                                                      *:PowerReview-files*
+:PowerReview files
+  Toggle the changed files panel (Neo-tree or builtin).
+
+                                                   *:PowerReview-comments*
+:PowerReview comments
+  Toggle the all-comments split panel.
+
+                                                     *:PowerReview-drafts*
+:PowerReview drafts
+  Toggle the draft management panel.
+
+                                                    *:PowerReview-comment*
+:PowerReview comment
+  Add a comment at the cursor position. Supports visual mode selection
+  for range comments (use `:'<,'>PowerReview comment`).
+
+                                                     *:PowerReview-thread*
+:PowerReview thread
+  View and reply to the comment thread at the cursor position.
+
+                                                       *:PowerReview-diff*
+:PowerReview diff [file_path]
+  Open the diff view. If a file path is given, opens that file's diff.
+  Otherwise opens the full diff explorer.
+
+                                                       *:PowerReview-next*
+:PowerReview next
+  Jump to the next comment sign in the current buffer.
+
+                                                       *:PowerReview-prev*
+:PowerReview prev
+  Jump to the previous comment sign in the current buffer.
+
+                                                    *:PowerReview-approve*
+:PowerReview approve [draft_id]
+  Approve a draft comment. Operates on cursor position if no ID given.
+
+                                                *:PowerReview-approve_all*
+:PowerReview approve_all
+  Approve all draft comments (with confirmation).
+
+                                                     *:PowerReview-submit*
+:PowerReview submit
+  Submit all pending comments to the remote provider. Shows progress and
+  offers retry on failure.
+
+                                                       *:PowerReview-vote*
+:PowerReview vote
+  Open vote selection UI. Options: Approve, Approve with suggestions,
+  No vote, Wait for author, Reject.
+
+                                                    *:PowerReview-refresh*
+:PowerReview refresh
+  Re-fetch PR data (changed files) from the remote provider.
+
+                                                      *:PowerReview-close*
+:PowerReview close
+  Close the current review session. Saves state and optionally cleans
+  up the git worktree.
+
+==============================================================================
+6. KEYMAPS                                            *power-review-keymaps*
+
+Global keymaps are registered on setup(). Buffer-local keymaps are added
+to diff buffers when comment signs attach.
+
+See |power-review-config-keymaps| for the full list of configurable keys.
+
+Panel-specific keymaps are documented in the README.
+
+==============================================================================
+7. LUA API                                                *power-review-api*
+
+The public API is at `require("power-review").api`:
+
+                                         *power-review-api.get_changed_files*
+api.get_changed_files()
+  Returns: `ChangedFile[]|nil, string|nil`
+
+                                            *power-review-api.get_file_diff*
+api.get_file_diff({file_path})
+  Returns: `string|nil, string|nil`
+
+                                          *power-review-api.get_all_threads*
+api.get_all_threads()
+  Returns: `table|nil, string|nil`
+
+                                    *power-review-api.get_threads_for_file*
+api.get_threads_for_file({file_path})
+  Returns: `table|nil, string|nil`
+
+                                     *power-review-api.create_draft_comment*
+api.create_draft_comment({opts})
+  Parameters:
+    {opts.file_path}   string   Relative file path
+    {opts.line_start}  number   1-indexed line
+    {opts.line_end}    number   Optional end line for range
+    {opts.body}        string   Markdown content
+    {opts.author}      string   "user" | "ai" (default: "user")
+  Returns: `DraftComment|nil, string|nil`
+
+                                       *power-review-api.edit_draft_comment*
+api.edit_draft_comment({draft_id}, {new_body})
+  Only works on drafts with status == "draft".
+  Returns: `boolean, string|nil`
+
+                                     *power-review-api.delete_draft_comment*
+api.delete_draft_comment({draft_id})
+  Only works on drafts with status == "draft".
+  Returns: `boolean, string|nil`
+
+                                           *power-review-api.approve_draft*
+api.approve_draft({draft_id})
+  Move draft from "draft" to "pending".
+  Returns: `boolean, string|nil`
+
+                                       *power-review-api.approve_all_drafts*
+api.approve_all_drafts()
+  Returns: `number` (count of approved)
+
+                                         *power-review-api.unapprove_draft*
+api.unapprove_draft({draft_id})
+  Revert from "pending" back to "draft".
+  Returns: `boolean, string|nil`
+
+                                           *power-review-api.submit_pending*
+api.submit_pending({callback}, {progress_cb?})
+  Async. Submits all pending comments to remote.
+
+                                  *power-review-api.retry_failed_submissions*
+api.retry_failed_submissions({failed_drafts}, {callback})
+  Async. Retries previously failed submissions.
+
+                                               *power-review-api.set_vote*
+api.set_vote({vote}, {callback})
+  Async. Vote values: 10 (approve), 5 (approve w/ suggestions),
+  0 (no vote), -5 (wait), -10 (reject).
+
+                                       *power-review-api.get_review_session*
+api.get_review_session()
+  Returns session metadata table or nil.
+
+                                         *power-review-api.reply_to_thread*
+api.reply_to_thread({opts})
+  Create a draft reply to an existing thread.
+  Returns: `DraftComment|nil, string|nil`
+
+==============================================================================
+8. MCP SERVER                                            *power-review-mcp*
+
+PowerReview includes a TypeScript MCP server in the `mcp/` directory. It
+connects to Neovim via msgpack-RPC and exposes review tools to AI agents.
+
+Enable with `mcp.enabled = true` in setup. See README for full setup
+instructions and `.mcp.json` configuration.
+
+MCP tools: get_review_session, list_changed_files, get_file_diff,
+list_comment_threads, create_comment, reply_to_thread,
+edit_draft_comment, delete_draft_comment.
+
+==============================================================================
+9. TELESCOPE                                        *power-review-telescope*
+
+Load the extension: >lua
+  require("telescope").load_extension("power_review")
+<
+
+Pickers:
+  `:Telescope power_review changed_files`  Fuzzy find changed files
+  `:Telescope power_review comments`       Fuzzy find draft comments
+  `:Telescope power_review sessions`       Fuzzy find saved sessions
+
+Or via Lua: >lua
+  require("power-review.telescope").changed_files()
+  require("power-review.telescope").comments()
+  require("power-review.telescope").sessions()
+<
+
+==============================================================================
+10. DRAFT WORKFLOW                                    *power-review-drafts*
+
+Comments follow a strict lifecycle: draft -> pending -> submitted.
+
+  draft       Created locally. Editable/deletable. LLMs can modify.
+  pending     Approved, ready to submit. Immutable to LLMs.
+  submitted   Sent to remote. Immutable.
+
+This ensures LLM-generated comments always go through human approval.
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:
