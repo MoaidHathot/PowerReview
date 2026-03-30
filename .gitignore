@@ -42,3 +42,19 @@ luac.out
 # Windows null device file
 nul
 
+# .NET
+bin/
+obj/
+*.nupkg
+*.snupkg
+*.user
+*.suo
+*.cache
+*.log
+*.vs/
+project.lock.json
+*.nuget.props
+*.nuget.targets
+.dotnet/
+TestResults/
+

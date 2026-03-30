@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PowerReview.Cli/PowerReview.Cli.csproj" />
+    <Project Path="src/PowerReview.Core/PowerReview.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PowerReview.Core.Tests/PowerReview.Core.Tests.csproj" />
+  </Folder>
+</Solution>

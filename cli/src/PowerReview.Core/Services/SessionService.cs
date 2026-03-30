@@ -1,0 +1,328 @@
+using PowerReview.Core.Models;
+using PowerReview.Core.Store;
+
+namespace PowerReview.Core.Services;
+
+/// <summary>
+/// Manages draft comment operations within a review session.
+/// All mutations acquire a file lock, load the session, mutate, save, and release.
+/// </summary>
+public sealed class SessionService
+{
+    private readonly SessionStore _store;
+
+    public SessionService(SessionStore store)
+    {
+        _store = store;
+    }
+
+    /// <summary>
+    /// Create a new draft comment and add it to the session.
+    /// </summary>
+    /// <returns>The created draft's ID and the draft itself.</returns>
+    public (string Id, DraftComment Draft) CreateDraft(string sessionId, CreateDraftRequest request)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+        var now = Timestamp();
+        var id = Guid.NewGuid().ToString("D");
+
+        var draft = new DraftComment
+        {
+            FilePath = request.FilePath ?? "",
+            LineStart = request.LineStart ?? 0,
+            LineEnd = request.LineEnd,
+            ColStart = request.ColStart,
+            ColEnd = request.ColEnd,
+            Body = request.Body ?? "",
+            Status = DraftStatus.Draft,
+            Author = request.Author ?? DraftAuthor.User,
+            ThreadId = request.ThreadId,
+            ParentCommentId = request.ParentCommentId,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+
+        session.Drafts[id] = draft;
+        _store.Save(session);
+
+        return (id, draft);
+    }
+
+    /// <summary>
+    /// Edit the body of an existing draft comment.
+    /// Only drafts in the "Draft" status can be edited.
+    /// </summary>
+    public DraftComment EditDraft(string sessionId, string draftId, string newBody)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+
+        if (!session.Drafts.TryGetValue(draftId, out var draft))
+            throw new SessionServiceException($"Draft not found: {draftId}");
+
+        if (!draft.CanEdit)
+            throw new SessionServiceException(
+                $"Cannot edit draft {draftId}: status is '{draft.Status}' (only 'Draft' drafts can be edited)");
+
+        draft.Body = newBody;
+        draft.UpdatedAt = Timestamp();
+        _store.Save(session);
+
+        return draft;
+    }
+
+    /// <summary>
+    /// Delete a draft comment from the session.
+    /// Only drafts in the "Draft" status can be deleted.
+    /// </summary>
+    public void DeleteDraft(string sessionId, string draftId)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+
+        if (!session.Drafts.TryGetValue(draftId, out var draft))
+            throw new SessionServiceException($"Draft not found: {draftId}");
+
+        if (!draft.CanDelete)
+            throw new SessionServiceException(
+                $"Cannot delete draft {draftId}: status is '{draft.Status}' (only 'Draft' drafts can be deleted)");
+
+        session.Drafts.Remove(draftId);
+        _store.Save(session);
+    }
+
+    /// <summary>
+    /// Approve a draft comment, transitioning it from "Draft" to "Pending".
+    /// Pending drafts are ready for submission to the remote provider.
+    /// </summary>
+    public DraftComment ApproveDraft(string sessionId, string draftId)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+
+        if (!session.Drafts.TryGetValue(draftId, out var draft))
+            throw new SessionServiceException($"Draft not found: {draftId}");
+
+        if (draft.Status != DraftStatus.Draft)
+            throw new SessionServiceException(
+                $"Cannot approve draft {draftId}: status is '{draft.Status}' (expected 'Draft')");
+
+        draft.Status = DraftStatus.Pending;
+        draft.UpdatedAt = Timestamp();
+        _store.Save(session);
+
+        return draft;
+    }
+
+    /// <summary>
+    /// Unapprove a draft comment, transitioning it from "Pending" back to "Draft".
+    /// This re-enables editing and deletion.
+    /// </summary>
+    public DraftComment UnapproveDraft(string sessionId, string draftId)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+
+        if (!session.Drafts.TryGetValue(draftId, out var draft))
+            throw new SessionServiceException($"Draft not found: {draftId}");
+
+        if (draft.Status != DraftStatus.Pending)
+            throw new SessionServiceException(
+                $"Cannot unapprove draft {draftId}: status is '{draft.Status}' (expected 'Pending')");
+
+        draft.Status = DraftStatus.Draft;
+        draft.UpdatedAt = Timestamp();
+        _store.Save(session);
+
+        return draft;
+    }
+
+    /// <summary>
+    /// Approve all drafts in "Draft" status, transitioning them to "Pending".
+    /// Silently skips drafts that are already Pending or Submitted.
+    /// </summary>
+    /// <returns>The number of drafts that were approved.</returns>
+    public int ApproveAllDrafts(string sessionId)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+        var now = Timestamp();
+        var count = 0;
+
+        foreach (var draft in session.Drafts.Values)
+        {
+            if (draft.Status == DraftStatus.Draft)
+            {
+                draft.Status = DraftStatus.Pending;
+                draft.UpdatedAt = now;
+                count++;
+            }
+        }
+
+        if (count > 0)
+            _store.Save(session);
+
+        return count;
+    }
+
+    /// <summary>
+    /// Get a specific draft by ID.
+    /// </summary>
+    public (string Id, DraftComment Draft)? GetDraft(string sessionId, string draftId)
+    {
+        var session = _store.Load(sessionId);
+        if (session == null)
+            return null;
+
+        return session.Drafts.TryGetValue(draftId, out var draft)
+            ? (draftId, draft)
+            : null;
+    }
+
+    /// <summary>
+    /// Get all drafts in the session, optionally filtered by file path.
+    /// </summary>
+    public Dictionary<string, DraftComment> GetDrafts(string sessionId, string? filePath = null)
+    {
+        var session = _store.Load(sessionId);
+        if (session == null)
+            return new Dictionary<string, DraftComment>();
+
+        if (filePath == null)
+            return session.Drafts;
+
+        var normalized = NormalizePath(filePath);
+        return session.Drafts
+            .Where(kvp => NormalizePath(kvp.Value.FilePath) == normalized)
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+    }
+
+    /// <summary>
+    /// Get all drafts with a specific status.
+    /// </summary>
+    public Dictionary<string, DraftComment> GetDraftsByStatus(string sessionId, DraftStatus status)
+    {
+        var session = _store.Load(sessionId);
+        if (session == null)
+            return new Dictionary<string, DraftComment>();
+
+        return session.Drafts
+            .Where(kvp => kvp.Value.Status == status)
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+    }
+
+    /// <summary>
+    /// Get counts of drafts by status.
+    /// </summary>
+    public DraftCounts GetDraftCounts(string sessionId)
+    {
+        var session = _store.Load(sessionId);
+        if (session == null)
+            return new DraftCounts();
+
+        var counts = new DraftCounts();
+        foreach (var draft in session.Drafts.Values)
+        {
+            counts.Total++;
+            switch (draft.Status)
+            {
+                case DraftStatus.Draft:
+                    counts.Draft++;
+                    break;
+                case DraftStatus.Pending:
+                    counts.Pending++;
+                    break;
+                case DraftStatus.Submitted:
+                    counts.Submitted++;
+                    break;
+            }
+        }
+        return counts;
+    }
+
+    /// <summary>
+    /// Mark a draft as submitted. Internal use only — called during the submission flow.
+    /// No status guard: assumes caller has already verified the draft is Pending.
+    /// </summary>
+    internal void MarkSubmitted(string sessionId, string draftId)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+
+        if (!session.Drafts.TryGetValue(draftId, out var draft))
+            throw new SessionServiceException($"Draft not found: {draftId}");
+
+        draft.Status = DraftStatus.Submitted;
+        draft.UpdatedAt = Timestamp();
+        _store.Save(session);
+    }
+
+    /// <summary>
+    /// Load the full session. For read-only access by other services.
+    /// </summary>
+    public ReviewSession? LoadSession(string sessionId) => _store.Load(sessionId);
+
+    /// <summary>
+    /// Get the file path to a session. Useful for file-watching clients.
+    /// </summary>
+    public string GetSessionPath(string sessionId) => _store.GetSessionPath(sessionId);
+
+    private ReviewSession LoadOrThrow(string sessionId)
+    {
+        var session = _store.Load(sessionId)
+            ?? throw new SessionServiceException($"Session not found: {sessionId}");
+        return session;
+    }
+
+    private static string Timestamp() => DateTime.UtcNow.ToString("o");
+
+    private static string NormalizePath(string path) => path.Replace('\\', '/');
+}
+
+/// <summary>
+/// Request to create a new draft comment.
+/// </summary>
+public sealed class CreateDraftRequest
+{
+    public string? FilePath { get; set; }
+    public int? LineStart { get; set; }
+    public int? LineEnd { get; set; }
+    public int? ColStart { get; set; }
+    public int? ColEnd { get; set; }
+    public string? Body { get; set; }
+    public DraftAuthor? Author { get; set; }
+
+    /// <summary>
+    /// If set, this draft is a reply to an existing remote thread.
+    /// </summary>
+    public int? ThreadId { get; set; }
+    public int? ParentCommentId { get; set; }
+}
+
+/// <summary>
+/// Draft count summary by status.
+/// </summary>
+public sealed class DraftCounts
+{
+    public int Draft { get; set; }
+    public int Pending { get; set; }
+    public int Submitted { get; set; }
+    public int Total { get; set; }
+}
+
+/// <summary>
+/// Exception thrown by SessionService for business logic errors.
+/// </summary>
+public sealed class SessionServiceException : Exception
+{
+    public SessionServiceException(string message) : base(message) { }
+    public SessionServiceException(string message, Exception inner) : base(message, inner) { }
+}
