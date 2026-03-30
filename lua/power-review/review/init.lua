@@ -68,7 +68,7 @@ function M.start_review(pr_url, callback)
       end
 
       -- Step 5: Fetch changed files
-      provider:get_changed_files(parsed.pr_id, function(files_err, files)
+      provider:get_changed_files(parsed.pr_id, function(files_err, files, iter_meta)
         if files_err then
           callback("Failed to fetch changed files: " .. files_err)
           return
@@ -102,11 +102,21 @@ function M.start_review(pr_url, callback)
               pr_title = pr.title,
               pr_description = pr.description,
               pr_author = pr.author,
+              pr_status = pr.status,
+              pr_is_draft = pr.is_draft,
+              pr_closed_at = pr.closed_at,
+              merge_status = pr.merge_status,
+              reviewers = pr.reviewers,
+              labels = pr.labels,
+              work_items = pr.work_items,
               source_branch = pr.source_branch,
               target_branch = pr.target_branch,
               worktree_path = git_result and git_result.worktree_path or nil,
               git_strategy = reused_main and "reused_main" or (git_cfg.strategy or "worktree"),
               files = files or {},
+              iteration_id = iter_meta and iter_meta.iteration_id or nil,
+              source_commit = iter_meta and iter_meta.source_commit or nil,
+              target_commit = iter_meta and iter_meta.target_commit or nil,
             })
 
             -- Store remote threads on the session
@@ -291,38 +301,62 @@ function M.refresh_session(callback)
     return
   end
 
-  -- Refresh changed files
-  M._provider:get_changed_files(session.pr_id, function(files_err, files)
-    if files_err then
-      callback("Failed to refresh files: " .. files_err)
-      return
+  -- Refresh PR metadata
+  M._provider:get_pull_request(session.pr_id, function(pr_err, pr)
+    if pr_err then
+      log.warn("Failed to refresh PR metadata: %s", pr_err)
+      -- Continue even if metadata refresh fails
+    else
+      -- Update mutable PR metadata on the session
+      session.pr_title = pr.title
+      session.pr_description = pr.description
+      session.pr_status = pr.status
+      session.pr_is_draft = pr.is_draft
+      session.pr_closed_at = pr.closed_at
+      session.merge_status = pr.merge_status
+      session.reviewers = pr.reviewers
+      session.labels = pr.labels
+      session.work_items = pr.work_items
     end
 
-    session.files = files or session.files
-
-    -- Also refresh remote threads
-    M._provider:get_threads(session.pr_id, function(threads_err, threads)
-      if threads_err then
-        log.warn("Failed to refresh remote threads: %s", threads_err)
-        -- Continue even if threads fail — files were updated successfully
-      else
-        session_mod.set_threads(session, threads or {})
-        -- Refresh signs on diff buffers to show new remote comments
-        require("power-review.ui.signs").refresh()
+    -- Refresh changed files
+    M._provider:get_changed_files(session.pr_id, function(files_err, files, iter_meta)
+      if files_err then
+        callback("Failed to refresh files: " .. files_err)
+        return
       end
 
-      store.save(session)
-      -- Refresh neo-tree to show updated file list
-      require("power-review.ui").refresh_neotree()
-      -- Refresh comments panel if visible
-      local comments_panel = require("power-review.ui.comments_panel")
-      if comments_panel.is_visible() then
-        comments_panel.refresh(session)
+      session.files = files or session.files
+      if iter_meta then
+        session.iteration_id = iter_meta.iteration_id
+        session.source_commit = iter_meta.source_commit
+        session.target_commit = iter_meta.target_commit
       end
 
-      local thread_count = session.threads and #session.threads or 0
-      log.info("Session refreshed: %d files, %d remote threads", #session.files, thread_count)
-      callback(nil)
+      -- Also refresh remote threads
+      M._provider:get_threads(session.pr_id, function(threads_err, threads)
+        if threads_err then
+          log.warn("Failed to refresh remote threads: %s", threads_err)
+          -- Continue even if threads fail -- files were updated successfully
+        else
+          session_mod.set_threads(session, threads or {})
+          -- Refresh signs on diff buffers to show new remote comments
+          require("power-review.ui.signs").refresh()
+        end
+
+        store.save(session)
+        -- Refresh neo-tree to show updated file list
+        require("power-review.ui").refresh_neotree()
+        -- Refresh comments panel if visible
+        local comments_panel = require("power-review.ui.comments_panel")
+        if comments_panel.is_visible() then
+          comments_panel.refresh(session)
+        end
+
+        local thread_count = session.threads and #session.threads or 0
+        log.info("Session refreshed: %d files, %d remote threads", #session.files, thread_count)
+        callback(nil)
+      end)
     end)
   end)
 end

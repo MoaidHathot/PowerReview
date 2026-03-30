@@ -29,7 +29,7 @@ function M.new(opts)
 
   --- Get the list of changed files for a PR.
   ---@param pr_id number
-  ---@param callback fun(err?: string, files?: PowerReview.ChangedFile[])
+  ---@param callback fun(err?: string, files?: PowerReview.ChangedFile[], iter_meta?: PowerReview.IterationMeta)
   function provider:get_changed_files(pr_id, callback)
     log.warn(NOT_IMPL)
     callback(NOT_IMPL)

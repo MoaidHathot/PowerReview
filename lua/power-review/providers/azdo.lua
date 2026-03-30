@@ -88,17 +88,61 @@ function M:get_pull_request(pr_id, callback)
       return
     end
 
+    -- Parse reviewers
+    local reviewers = {}
+    if data.reviewers then
+      for _, r in ipairs(data.reviewers) do
+        table.insert(reviewers, {
+          name = r.displayName or "Unknown",
+          id = r.id,
+          unique_name = r.uniqueName,
+          vote = r.vote ~= 0 and r.vote or nil,
+          is_required = r.isRequired or false,
+        })
+      end
+    end
+
+    -- Parse labels
+    local labels = {}
+    if data.labels then
+      for _, label in ipairs(data.labels) do
+        if label.name then
+          table.insert(labels, label.name)
+        end
+      end
+    end
+
+    -- Parse work item refs
+    local work_items = {}
+    if data.workItemRefs then
+      for _, wi in ipairs(data.workItemRefs) do
+        table.insert(work_items, {
+          id = tonumber(wi.id) or 0,
+          title = wi.title,
+          url = wi.url,
+        })
+      end
+    end
+
     ---@type PowerReview.PR
     local pr = {
       id = data.pullRequestId,
       title = data.title or "",
       description = data.description or "",
       author = (data.createdBy and data.createdBy.displayName) or "Unknown",
+      author_id = data.createdBy and data.createdBy.id or nil,
+      author_unique_name = data.createdBy and data.createdBy.uniqueName or nil,
       source_branch = M._strip_refs_prefix(data.sourceRefName or ""),
       target_branch = M._strip_refs_prefix(data.targetRefName or ""),
-      status = (data.status or ""):lower(),
+      status = M._parse_pr_status(data.status),
       url = data.url or "",
       created_at = data.creationDate or "",
+      closed_at = data.closedDate,
+      is_draft = data.isDraft or false,
+      merge_status = M._parse_merge_status(data.mergeStatus),
+      reviewers = reviewers,
+      labels = labels,
+      work_items = work_items,
       provider_type = "azdo",
       provider_data = data,
     }
@@ -131,6 +175,14 @@ function M:get_changed_files(pr_id, callback)
     -- Get the latest iteration
     local latest_iteration = data.value[#data.value]
     local iteration_id = latest_iteration.id
+
+    -- Extract iteration metadata (commit SHAs)
+    ---@type PowerReview.IterationMeta
+    local iter_meta = {
+      iteration_id = iteration_id,
+      source_commit = latest_iteration.sourceRefCommit and latest_iteration.sourceRefCommit.commitId or nil,
+      target_commit = latest_iteration.targetRefCommit and latest_iteration.targetRefCommit.commitId or nil,
+    }
 
     -- Now get changes for this iteration
     local changes_url = self:_url(
@@ -172,7 +224,7 @@ function M:get_changed_files(pr_id, callback)
         end
       end
 
-      callback(nil, files)
+      callback(nil, files, iter_meta)
     end)
   end)
 end
@@ -495,6 +547,8 @@ function M._parse_thread(raw)
   local line_end = nil
   local col_start = nil
   local col_end = nil
+  local left_line_start = nil
+  local left_line_end = nil
 
   if raw.threadContext then
     file_path = raw.threadContext.filePath
@@ -516,6 +570,13 @@ function M._parse_thread(raw)
         col_end = offset
       end
     end
+    -- Left-side (base/target branch) line context
+    if raw.threadContext.leftFileStart then
+      left_line_start = raw.threadContext.leftFileStart.line
+    end
+    if raw.threadContext.leftFileEnd then
+      left_line_end = raw.threadContext.leftFileEnd.line
+    end
   end
 
   local comments = {}
@@ -533,9 +594,13 @@ function M._parse_thread(raw)
     line_end = line_end,
     col_start = col_start,
     col_end = col_end,
+    left_line_start = left_line_start,
+    left_line_end = left_line_end,
     status = M._thread_status_from_api(raw.status),
     comments = comments,
     is_deleted = raw.isDeleted or false,
+    published_at = raw.publishedDate,
+    updated_at = raw.lastUpdatedDate,
   }
 end
 
@@ -544,11 +609,20 @@ end
 ---@param thread_id number
 ---@return PowerReview.Comment
 function M._parse_comment(raw, thread_id)
+  local parent_id = raw.parentCommentId
+  -- AzDO uses parentCommentId = 0 for top-level comments; normalize to nil
+  if parent_id == 0 then
+    parent_id = nil
+  end
+
   ---@type PowerReview.Comment
   return {
     id = raw.id,
     thread_id = thread_id,
     author = (raw.author and raw.author.displayName) or "Unknown",
+    author_id = raw.author and raw.author.id or nil,
+    author_unique_name = raw.author and raw.author.uniqueName or nil,
+    parent_comment_id = parent_id,
     body = raw.content or "",
     created_at = raw.publishedDate or "",
     updated_at = raw.lastUpdatedDate or raw.publishedDate or "",
@@ -591,6 +665,42 @@ function M._thread_status_from_api(api_status)
     return map[num] or "active"
   end
   return tostring(api_status):lower()
+end
+
+--- Parse AzDO PR status string into our normalized PRStatus
+---@param status string|nil
+---@return PowerReview.PRStatus
+function M._parse_pr_status(status)
+  if not status then
+    return "active"
+  end
+  local s = tostring(status):lower()
+  if s == "active" then
+    return "active"
+  elseif s == "completed" then
+    return "completed"
+  elseif s == "abandoned" then
+    return "abandoned"
+  end
+  return "active"
+end
+
+--- Parse AzDO merge status string into our normalized MergeStatus
+---@param merge_status string|nil
+---@return PowerReview.MergeStatus|nil
+function M._parse_merge_status(merge_status)
+  if not merge_status then
+    return nil
+  end
+  local s = tostring(merge_status):lower()
+  local map = {
+    succeeded = "succeeded",
+    conflicts = "conflicts",
+    queued = "queued",
+    notset = "notSet",
+    failure = "failure",
+  }
+  return map[s]
 end
 
 return M

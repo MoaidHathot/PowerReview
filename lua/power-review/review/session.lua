@@ -22,7 +22,7 @@ function M.new(opts)
 
   ---@type PowerReview.ReviewSession
   return {
-    version = 1,
+    version = 2,
     id = id,
     pr_id = opts.pr_id,
     provider_type = opts.provider_type,
@@ -33,8 +33,18 @@ function M.new(opts)
     pr_title = opts.pr_title or "",
     pr_description = opts.pr_description or "",
     pr_author = opts.pr_author or "",
+    pr_status = opts.pr_status or "active",
+    pr_is_draft = opts.pr_is_draft or false,
+    pr_closed_at = opts.pr_closed_at,
     source_branch = opts.source_branch or "",
     target_branch = opts.target_branch or "",
+    merge_status = opts.merge_status,
+    reviewers = opts.reviewers or {},
+    labels = opts.labels or {},
+    work_items = opts.work_items or {},
+    iteration_id = opts.iteration_id,
+    source_commit = opts.source_commit,
+    target_commit = opts.target_commit,
     worktree_path = opts.worktree_path,
     git_strategy = opts.git_strategy or "worktree",
     created_at = now,

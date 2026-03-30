@@ -3,7 +3,7 @@
 --- No runtime code here.
 
 ---@alias PowerReview.ProviderType "azdo" | "github"
----@alias PowerReview.GitStrategy "worktree" | "checkout"
+---@alias PowerReview.GitStrategy "worktree" | "checkout" | "reused_main"
 ---@alias PowerReview.DraftStatus "draft" | "pending" | "submitted"
 ---@alias PowerReview.DraftAuthor "user" | "ai"
 ---@alias PowerReview.FileChangeType "add" | "edit" | "delete" | "rename"
@@ -15,6 +15,29 @@
 ---| 0   # No vote
 ---| -5  # Wait for author
 ---| -10 # Rejected
+
+--- Thread status values
+---@alias PowerReview.ThreadStatus
+---| "active"   # Open, unresolved
+---| "fixed"    # Resolved as fixed
+---| "wontfix"  # Resolved as won't fix
+---| "closed"   # Closed
+---| "bydesign" # Resolved as by design
+---| "pending"  # Pending resolution
+
+--- PR status values (provider-normalized)
+---@alias PowerReview.PRStatus
+---| "active"    # Open and reviewable
+---| "completed" # Merged / completed
+---| "abandoned" # Closed without merging
+
+--- Merge status values
+---@alias PowerReview.MergeStatus
+---| "succeeded"  # Merge will succeed
+---| "conflicts"  # Merge has conflicts
+---| "queued"     # Merge is queued
+---| "notSet"     # Not evaluated
+---| "failure"    # Merge failed
 
 ---@class PowerReview.RepoConfig
 ---@field provider PowerReview.ProviderType
@@ -30,16 +53,47 @@
 ---@field owner string
 ---@field repo string
 
+---@class PowerReview.Reviewer
+---@field name string Display name of the reviewer
+---@field id? string Provider-assigned reviewer ID
+---@field unique_name? string Email or login (e.g., user@example.com)
+---@field vote number|nil Review vote value, or nil if not voted
+---@field is_required boolean Whether the reviewer is required
+
+---@class PowerReview.WorkItem
+---@field id number Work item / issue ID
+---@field title? string Work item title (may not be available from all providers)
+---@field url? string Web URL to the work item
+
+---@class PowerReview.SubmitResult
+---@field submitted number Count of successfully submitted drafts
+---@field failed number Count of failed submissions
+---@field total number Total drafts attempted
+---@field errors { draft: PowerReview.DraftComment, error: string }[]
+
+---@class PowerReview.IterationMeta
+---@field iteration_id number Latest iteration ID
+---@field source_commit? string Source branch commit SHA
+---@field target_commit? string Target branch commit SHA
+
 ---@class PowerReview.PR
 ---@field id number
 ---@field title string
 ---@field description string
 ---@field author string
+---@field author_id? string Provider-assigned author ID
+---@field author_unique_name? string Author email or login
 ---@field source_branch string
 ---@field target_branch string
----@field status string
+---@field status PowerReview.PRStatus
 ---@field url string
 ---@field created_at string
+---@field closed_at? string ISO timestamp of PR closure/completion, if applicable
+---@field is_draft boolean Whether the PR is a draft
+---@field merge_status? PowerReview.MergeStatus
+---@field reviewers? PowerReview.Reviewer[]
+---@field labels? string[]
+---@field work_items? PowerReview.WorkItem[]
 ---@field provider_type PowerReview.ProviderType
 ---@field provider_data table Raw provider-specific data
 
@@ -53,7 +107,10 @@
 ---@class PowerReview.Comment
 ---@field id number Provider comment ID
 ---@field thread_id number Provider thread ID
----@field author string
+---@field author string Display name
+---@field author_id? string Provider-assigned author ID
+---@field author_unique_name? string Author email or login
+---@field parent_comment_id? number Parent comment ID within the thread (for nested replies)
 ---@field body string Markdown content
 ---@field created_at string ISO timestamp
 ---@field updated_at string ISO timestamp
@@ -66,9 +123,13 @@
 ---@field line_end? number
 ---@field col_start? number 1-indexed start column offset
 ---@field col_end? number 1-indexed end column offset
----@field status string "active" | "fixed" | "wontfix" | "closed" | "bydesign" | "pending"
+---@field left_line_start? number Base/target branch start line (for comments on deleted code)
+---@field left_line_end? number Base/target branch end line
+---@field status PowerReview.ThreadStatus
 ---@field comments PowerReview.Comment[]
 ---@field is_deleted boolean
+---@field published_at? string ISO timestamp of thread creation
+---@field updated_at? string ISO timestamp of last thread update
 
 ---@class PowerReview.DraftComment
 ---@field id string Local UUID
@@ -86,7 +147,7 @@
 ---@field updated_at string ISO timestamp
 
 ---@class PowerReview.ReviewSession
----@field version number Schema version
+---@field version number Schema version (current: 2)
 ---@field id string Session identifier (org_project_repo_prId)
 ---@field pr_id number
 ---@field provider_type PowerReview.ProviderType
@@ -97,8 +158,18 @@
 ---@field pr_title string
 ---@field pr_description string
 ---@field pr_author string
+---@field pr_status? PowerReview.PRStatus PR status (active, completed, abandoned)
+---@field pr_is_draft? boolean Whether the PR is a draft
+---@field pr_closed_at? string ISO timestamp of PR closure/completion
 ---@field source_branch string
 ---@field target_branch string
+---@field merge_status? PowerReview.MergeStatus Merge feasibility status
+---@field reviewers? PowerReview.Reviewer[] List of PR reviewers with their votes
+---@field labels? string[] PR labels/tags
+---@field work_items? PowerReview.WorkItem[] Linked work items/issues
+---@field iteration_id? number Latest iteration ID the session was synced to
+---@field source_commit? string Source branch commit SHA at last sync
+---@field target_commit? string Target branch commit SHA at last sync
 ---@field worktree_path? string Path to worktree if using worktree strategy
 ---@field git_strategy PowerReview.GitStrategy
 ---@field created_at string ISO timestamp
@@ -113,6 +184,7 @@
 ---@field pr_id number
 ---@field pr_title string
 ---@field pr_url string
+---@field pr_status? PowerReview.PRStatus
 ---@field provider_type PowerReview.ProviderType
 ---@field org string
 ---@field project string
@@ -124,7 +196,7 @@
 ---@class PowerReview.Provider
 ---@field type PowerReview.ProviderType
 ---@field get_pull_request fun(self: PowerReview.Provider, pr_id: number, callback: fun(err?: string, pr?: PowerReview.PR))
----@field get_changed_files fun(self: PowerReview.Provider, pr_id: number, callback: fun(err?: string, files?: PowerReview.ChangedFile[]))
+---@field get_changed_files fun(self: PowerReview.Provider, pr_id: number, callback: fun(err?: string, files?: PowerReview.ChangedFile[], iter_meta?: PowerReview.IterationMeta))
 ---@field get_threads fun(self: PowerReview.Provider, pr_id: number, callback: fun(err?: string, threads?: PowerReview.CommentThread[]))
 ---@field create_thread fun(self: PowerReview.Provider, pr_id: number, thread: table, callback: fun(err?: string, thread?: PowerReview.CommentThread))
 ---@field reply_to_thread fun(self: PowerReview.Provider, pr_id: number, thread_id: number, body: string, callback: fun(err?: string, comment?: PowerReview.Comment))
