@@ -1,5 +1,8 @@
 --- PowerReview.nvim configuration module
 --- Manages default config, user overrides, and per-repo settings.
+--- Auth, git strategy, and provider config are owned by the CLI tool
+--- (configured at $XDG_CONFIG_HOME/PowerReview/config.json).
+--- This module only holds UI-related config: keymaps, signs, panels, diff provider, CLI path.
 local M = {}
 
 ---@type table
@@ -9,32 +12,9 @@ M._config = nil
 ---@return table
 local function defaults()
   return {
-    -- Per-repo provider config, keyed by absolute path
-    -- Example:
-    -- repos = {
-    --   ["/path/to/repo"] = {
-    --     provider = "azdo",
-    --     azdo = { organization = "myorg", project = "myproject", repository = "myrepo" },
-    --   },
-    -- },
-    repos = {},
-
-    -- Authentication
-    auth = {
-      azdo = {
-        method = "auto", -- "auto" | "az_cli" | "pat"
-        pat = nil, -- PAT string, or set POWER_REVIEW_AZDO_PAT / AZDO_PAT env var
-      },
-      github = {
-        pat = nil, -- or set GITHUB_TOKEN / POWER_REVIEW_GITHUB_PAT env var
-      },
-    },
-
-    -- Git strategy
-    git = {
-      strategy = "worktree", -- "worktree" | "checkout"
-      worktree_dir = ".power-review-worktrees", -- relative to repo root
-      cleanup_on_close = true, -- remove worktree when review is closed
+    -- CLI tool configuration
+    cli = {
+      executable = "powerreview", -- Path or name of the CLI executable
     },
 
     -- UI configuration
@@ -109,11 +89,6 @@ local function defaults()
       },
     },
 
-    -- MCP server configuration
-    mcp = {
-      enabled = false,
-    },
-
     -- Keymaps
     keymaps = {
       open_review = "<leader>pr",
@@ -169,48 +144,6 @@ function M.get()
     M._config = defaults()
   end
   return M._config
-end
-
---- Get provider configuration for a specific repository path.
---- Resolves the repo path against the `repos` table in config.
----@param repo_path string Absolute path to the repository root
----@return PowerReview.RepoConfig|nil
-function M.get_repo_config(repo_path)
-  local cfg = M.get()
-  if not cfg.repos then
-    return nil
-  end
-
-  -- Normalize path separators for comparison
-  local normalized = repo_path:gsub("\\", "/"):gsub("/$", "")
-
-  for path, repo_cfg in pairs(cfg.repos) do
-    local norm_key = path:gsub("\\", "/"):gsub("/$", "")
-    if normalized == norm_key or normalized:find(norm_key, 1, true) == 1 then
-      return repo_cfg
-    end
-  end
-
-  return nil
-end
-
---- Get auth configuration for a specific provider type
----@param provider_type PowerReview.ProviderType
----@return table
-function M.get_auth_config(provider_type)
-  local cfg = M.get()
-  if provider_type == "azdo" then
-    return cfg.auth.azdo or {}
-  elseif provider_type == "github" then
-    return cfg.auth.github or {}
-  end
-  return {}
-end
-
---- Get the git strategy configuration
----@return table
-function M.get_git_config()
-  return M.get().git
 end
 
 --- Get UI configuration

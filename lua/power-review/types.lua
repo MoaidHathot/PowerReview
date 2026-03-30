@@ -8,7 +8,7 @@
 ---@alias PowerReview.DraftAuthor "user" | "ai"
 ---@alias PowerReview.FileChangeType "add" | "edit" | "delete" | "rename"
 
---- Azure DevOps vote values
+--- Review vote values (numeric, matching Azure DevOps convention)
 ---@alias PowerReview.ReviewVote
 ---| 10  # Approved
 ---| 5   # Approved with suggestions
@@ -39,20 +39,6 @@
 ---| "notSet"     # Not evaluated
 ---| "failure"    # Merge failed
 
----@class PowerReview.RepoConfig
----@field provider PowerReview.ProviderType
----@field azdo? PowerReview.AzDORepoConfig
----@field github? PowerReview.GitHubRepoConfig
-
----@class PowerReview.AzDORepoConfig
----@field organization string
----@field project string
----@field repository string
-
----@class PowerReview.GitHubRepoConfig
----@field owner string
----@field repo string
-
 ---@class PowerReview.Reviewer
 ---@field name string Display name of the reviewer
 ---@field id? string Provider-assigned reviewer ID
@@ -75,27 +61,6 @@
 ---@field iteration_id number Latest iteration ID
 ---@field source_commit? string Source branch commit SHA
 ---@field target_commit? string Target branch commit SHA
-
----@class PowerReview.PR
----@field id number
----@field title string
----@field description string
----@field author string
----@field author_id? string Provider-assigned author ID
----@field author_unique_name? string Author email or login
----@field source_branch string
----@field target_branch string
----@field status PowerReview.PRStatus
----@field url string
----@field created_at string
----@field closed_at? string ISO timestamp of PR closure/completion, if applicable
----@field is_draft boolean Whether the PR is a draft
----@field merge_status? PowerReview.MergeStatus
----@field reviewers? PowerReview.Reviewer[]
----@field labels? string[]
----@field work_items? PowerReview.WorkItem[]
----@field provider_type PowerReview.ProviderType
----@field provider_data table Raw provider-specific data
 
 ---@class PowerReview.ChangedFile
 ---@field path string Relative file path
@@ -147,7 +112,7 @@
 ---@field updated_at string ISO timestamp
 
 ---@class PowerReview.ReviewSession
----@field version number Schema version (current: 2)
+---@field version number Schema version (adapted to flat shape from CLI v3)
 ---@field id string Session identifier (org_project_repo_prId)
 ---@field pr_id number
 ---@field provider_type PowerReview.ProviderType
@@ -192,17 +157,5 @@
 ---@field draft_count number
 ---@field created_at string
 ---@field updated_at string
-
----@class PowerReview.Provider
----@field type PowerReview.ProviderType
----@field get_pull_request fun(self: PowerReview.Provider, pr_id: number, callback: fun(err?: string, pr?: PowerReview.PR))
----@field get_changed_files fun(self: PowerReview.Provider, pr_id: number, callback: fun(err?: string, files?: PowerReview.ChangedFile[], iter_meta?: PowerReview.IterationMeta))
----@field get_threads fun(self: PowerReview.Provider, pr_id: number, callback: fun(err?: string, threads?: PowerReview.CommentThread[]))
----@field create_thread fun(self: PowerReview.Provider, pr_id: number, thread: table, callback: fun(err?: string, thread?: PowerReview.CommentThread))
----@field reply_to_thread fun(self: PowerReview.Provider, pr_id: number, thread_id: number, body: string, callback: fun(err?: string, comment?: PowerReview.Comment))
----@field update_comment fun(self: PowerReview.Provider, pr_id: number, thread_id: number, comment_id: number, body: string, callback: fun(err?: string, comment?: PowerReview.Comment))
----@field delete_comment fun(self: PowerReview.Provider, pr_id: number, thread_id: number, comment_id: number, callback: fun(err?: string, ok?: boolean))
----@field set_vote fun(self: PowerReview.Provider, pr_id: number, reviewer_id: string, vote: PowerReview.ReviewVote, callback: fun(err?: string, ok?: boolean))
----@field get_file_content fun(self: PowerReview.Provider, pr_id: number, file_path: string, version: string, callback: fun(err?: string, content?: string))
 
 return {}

@@ -1,5 +1,6 @@
 --- PowerReview.nvim - PR Review plugin for Neovim
 --- Main entry point and public API
+--- All business logic delegates to the `powerreview` CLI tool.
 local M = {}
 
 local config = require("power-review.config")
@@ -12,20 +13,14 @@ M._current_session = nil
 function M.setup(opts)
   config.setup(opts)
 
+  -- Configure CLI bridge
+  local cli = require("power-review.cli")
+  local cli_cfg = config.get().cli or {}
+  cli.configure({ executable = cli_cfg.executable })
+
   -- Initialize UI subsystems that need early setup
   local signs = require("power-review.ui.signs")
   signs.setup()
-
-  -- Initialize MCP integration if enabled
-  local mcp_cfg = config.get().mcp
-  if mcp_cfg and mcp_cfg.enabled then
-    local mcp = require("power-review.mcp")
-    mcp.setup()
-    -- If there's already an active session, write server info immediately
-    if M._current_session then
-      mcp.write_server_info(true, M._current_session.pr_id)
-    end
-  end
 
   -- Register global keymaps
   M.setup_keymaps()
@@ -190,7 +185,7 @@ function M._set_current_session(session)
 end
 
 --- Public API for external consumers (LLM plugins, MCP server, etc.)
---- All functions guard against nil session and draft-only operations where appropriate.
+--- All functions delegate to the CLI for business logic and reload session state.
 M.api = {}
 
 --- Get the list of changed files in the current review
@@ -238,7 +233,7 @@ function M.api.get_threads_for_file(file_path)
   return review.get_threads_for_file(session, file_path)
 end
 
---- Create a new draft comment
+--- Create a new draft comment (delegates to CLI)
 ---@param opts table { file_path: string, line_start: number, line_end?: number, col_start?: number, col_end?: number, body: string, author?: "user"|"ai", thread_id?: number, parent_comment_id?: number }
 ---@return PowerReview.DraftComment|nil draft, string|nil error
 function M.api.create_draft_comment(opts)
@@ -246,8 +241,9 @@ function M.api.create_draft_comment(opts)
   if not session then
     return nil, "No active review session"
   end
-  local comment_mod = require("power-review.review.comment")
-  local draft = comment_mod.new_draft({
+
+  local cli = require("power-review.cli")
+  local result, err = cli.create_draft(session.pr_url, {
     file_path = opts.file_path,
     line_start = opts.line_start,
     line_end = opts.line_end,
@@ -258,19 +254,29 @@ function M.api.create_draft_comment(opts)
     thread_id = opts.thread_id,
     parent_comment_id = opts.parent_comment_id,
   })
-  local session_mod = require("power-review.review.session")
-  session_mod.add_draft(session, draft)
-  local store = require("power-review.store")
-  store.save(session)
-  -- Refresh neo-tree to show updated draft counts
+
+  if not result then
+    return nil, err
+  end
+
+  -- Reload session to get fresh state
+  local review = require("power-review.review")
+  review._reload_current_session(session.pr_url)
+
+  -- Refresh UI
   local ui = require("power-review.ui")
   ui.refresh_neotree()
-  -- Refresh signs in diff buffers
-  require("power-review.ui.signs").refresh_file(opts.file_path)
+  if opts.file_path then
+    require("power-review.ui.signs").refresh_file(opts.file_path)
+  end
+
+  -- Construct a draft-like return value from CLI result
+  local draft = result.draft or {}
+  draft.id = result.id or draft.id
   return draft, nil
 end
 
---- Edit a draft comment's body. Only works on comments with status "draft".
+--- Edit a draft comment's body (delegates to CLI).
 ---@param draft_id string The local draft UUID
 ---@param new_body string New markdown content
 ---@return boolean success, string|nil error
@@ -279,24 +285,35 @@ function M.api.edit_draft_comment(draft_id, new_body)
   if not session then
     return false, "No active review session"
   end
-  local session_mod = require("power-review.review.session")
-  local ok, err = session_mod.edit_draft(session, draft_id, new_body)
-  if ok then
-    local store = require("power-review.store")
-    store.save(session)
-    -- Refresh UI (neo-tree, comments panel, signs)
-    local ui = require("power-review.ui")
-    ui.refresh_neotree()
-    -- Refresh signs for the affected file
-    local draft = session_mod.get_draft(session, draft_id)
-    if draft then
-      require("power-review.ui.signs").refresh_file(draft.file_path)
+
+  local cli = require("power-review.cli")
+  local result, err = cli.edit_draft(session.pr_url, draft_id, new_body)
+  if not result then
+    return false, err
+  end
+
+  -- Reload session
+  local review = require("power-review.review")
+  review._reload_current_session(session.pr_url)
+
+  -- Refresh UI
+  local ui = require("power-review.ui")
+  ui.refresh_neotree()
+  -- Refresh signs for the affected file
+  local updated_session = M._current_session
+  if updated_session then
+    for _, d in ipairs(updated_session.drafts) do
+      if d.id == draft_id then
+        require("power-review.ui.signs").refresh_file(d.file_path)
+        break
+      end
     end
   end
-  return ok, err
+
+  return true, nil
 end
 
---- Delete a draft comment. Only works on comments with status "draft".
+--- Delete a draft comment (delegates to CLI).
 ---@param draft_id string The local draft UUID
 ---@return boolean success, string|nil error
 function M.api.delete_draft_comment(draft_id)
@@ -304,23 +321,36 @@ function M.api.delete_draft_comment(draft_id)
   if not session then
     return false, "No active review session"
   end
-  local session_mod = require("power-review.review.session")
+
   -- Grab file_path before deletion for sign refresh
-  local draft = session_mod.get_draft(session, draft_id)
-  local file_path = draft and draft.file_path
-  local ok, err = session_mod.delete_draft(session, draft_id)
-  if ok then
-    local store = require("power-review.store")
-    store.save(session)
-    require("power-review.ui").refresh_neotree()
-    if file_path then
-      require("power-review.ui.signs").refresh_file(file_path)
+  local file_path = nil
+  for _, d in ipairs(session.drafts) do
+    if d.id == draft_id then
+      file_path = d.file_path
+      break
     end
   end
-  return ok, err
+
+  local cli = require("power-review.cli")
+  local result, err = cli.delete_draft(session.pr_url, draft_id)
+  if not result then
+    return false, err
+  end
+
+  -- Reload session
+  local review = require("power-review.review")
+  review._reload_current_session(session.pr_url)
+
+  -- Refresh UI
+  require("power-review.ui").refresh_neotree()
+  if file_path then
+    require("power-review.ui.signs").refresh_file(file_path)
+  end
+
+  return true, nil
 end
 
---- Approve a draft comment (move from "draft" to "pending")
+--- Approve a draft comment (delegates to CLI).
 ---@param draft_id string The local draft UUID
 ---@return boolean success, string|nil error
 function M.api.approve_draft(draft_id)
@@ -328,38 +358,54 @@ function M.api.approve_draft(draft_id)
   if not session then
     return false, "No active review session"
   end
-  local session_mod = require("power-review.review.session")
-  local ok, err = session_mod.approve_draft(session, draft_id)
-  if ok then
-    local store = require("power-review.store")
-    store.save(session)
-    -- Refresh UI to show updated status
-    local draft = session_mod.get_draft(session, draft_id)
-    if draft then
-      require("power-review.ui.signs").refresh_file(draft.file_path)
-    end
-    require("power-review.ui").refresh_neotree()
+
+  local cli = require("power-review.cli")
+  local result, err = cli.approve_draft(session.pr_url, draft_id)
+  if not result then
+    return false, err
   end
-  return ok, err
+
+  -- Reload session
+  local review = require("power-review.review")
+  review._reload_current_session(session.pr_url)
+
+  -- Refresh UI
+  local updated_session = M._current_session
+  if updated_session then
+    for _, d in ipairs(updated_session.drafts) do
+      if d.id == draft_id then
+        require("power-review.ui.signs").refresh_file(d.file_path)
+        break
+      end
+    end
+  end
+  require("power-review.ui").refresh_neotree()
+
+  return true, nil
 end
 
---- Approve all draft comments (move all "draft" to "pending")
+--- Approve all draft comments (delegates to CLI).
 ---@return number count Number of drafts approved, string|nil error
 function M.api.approve_all_drafts()
   local session = M._current_session
   if not session then
     return 0, "No active review session"
   end
-  local session_mod = require("power-review.review.session")
-  local count = session_mod.approve_all_drafts(session)
-  if count > 0 then
-    local store = require("power-review.store")
-    store.save(session)
+
+  local cli = require("power-review.cli")
+  local result, err = cli.approve_all_drafts(session.pr_url)
+  if not result then
+    return 0, err
   end
-  return count, nil
+
+  -- Reload session
+  local review = require("power-review.review")
+  review._reload_current_session(session.pr_url)
+
+  return result.approved or 0, nil
 end
 
---- Unapprove a draft comment (revert from "pending" back to "draft")
+--- Unapprove a draft comment (delegates to CLI).
 ---@param draft_id string The local draft UUID
 ---@return boolean success, string|nil error
 function M.api.unapprove_draft(draft_id)
@@ -367,14 +413,19 @@ function M.api.unapprove_draft(draft_id)
   if not session then
     return false, "No active review session"
   end
-  local session_mod = require("power-review.review.session")
-  local ok, err = session_mod.unapprove_draft(session, draft_id)
-  if ok then
-    local store = require("power-review.store")
-    store.save(session)
-    require("power-review.ui").refresh_neotree()
+
+  local cli = require("power-review.cli")
+  local result, err = cli.unapprove_draft(session.pr_url, draft_id)
+  if not result then
+    return false, err
   end
-  return ok, err
+
+  -- Reload session
+  local review = require("power-review.review")
+  review._reload_current_session(session.pr_url)
+  require("power-review.ui").refresh_neotree()
+
+  return true, nil
 end
 
 --- Submit all pending comments to the remote provider
@@ -410,8 +461,16 @@ function M.api.get_review_session()
   if not session then
     return nil, "No active review session"
   end
-  local status_mod = require("power-review.review.status")
-  local vote_label = session.vote and status_mod.vote_label(session.vote) or "None"
+
+  -- Vote label mapping
+  local vote_labels = {
+    [10] = "Approved",
+    [5] = "Approved with suggestions",
+    [0] = "No vote",
+    [-5] = "Wait for author",
+    [-10] = "Rejected",
+  }
+  local vote_label = session.vote and vote_labels[session.vote] or "None"
 
   return {
     id = session.id,
@@ -423,8 +482,8 @@ function M.api.get_review_session()
     provider_type = session.provider_type,
     source_branch = session.source_branch,
     target_branch = session.target_branch,
-    draft_count = #session.drafts,
-    file_count = #session.files,
+    draft_count = #(session.drafts or {}),
+    file_count = #(session.files or {}),
     vote = session.vote,
     vote_label = vote_label,
   }, nil
@@ -443,7 +502,7 @@ function M.api.set_vote(vote, callback)
   review.set_vote(session, vote, callback)
 end
 
---- Sync remote comment threads (fetch latest from provider).
+--- Sync remote comment threads.
 ---@param callback fun(err?: string, thread_count?: number)
 function M.api.sync_threads(callback)
   local review = require("power-review.review")
@@ -451,7 +510,6 @@ function M.api.sync_threads(callback)
 end
 
 --- Close the current review session.
---- Tears down all UI, saves session state, cleans up git.
 ---@param callback? fun(err?: string)
 function M.api.close_review(callback)
   callback = callback or function(err)
@@ -465,30 +523,39 @@ function M.api.close_review(callback)
   review.close_review(callback)
 end
 
---- Reply to an existing remote thread (creates a draft reply)
----@param opts table { thread_id: number, body: string, author?: "user"|"ai" }
+--- Reply to an existing remote thread (creates a draft reply via CLI)
+---@param opts table { thread_id: number, body: string, author?: "user"|"ai", file_path?: string, line_start?: number }
 ---@return PowerReview.DraftComment|nil draft, string|nil error
 function M.api.reply_to_thread(opts)
   local session = M._current_session
   if not session then
     return nil, "No active review session"
   end
-  local comment_mod = require("power-review.review.comment")
-  local draft = comment_mod.new_draft({
-    file_path = opts.file_path or "",
-    line_start = opts.line_start or 0,
-    body = opts.body,
-    author = opts.author or "user",
-    thread_id = opts.thread_id,
-  })
-  local session_mod = require("power-review.review.session")
-  session_mod.add_draft(session, draft)
-  local store = require("power-review.store")
-  store.save(session)
+
+  local cli = require("power-review.cli")
+  local result, err = cli.reply_to_thread(
+    session.pr_url,
+    opts.thread_id,
+    opts.body,
+    opts.author or "user"
+  )
+
+  if not result then
+    return nil, err
+  end
+
+  -- Reload session
+  local review = require("power-review.review")
+  review._reload_current_session(session.pr_url)
+
+  -- Refresh UI
   require("power-review.ui").refresh_neotree()
   if opts.file_path and opts.file_path ~= "" then
     require("power-review.ui.signs").refresh_file(opts.file_path)
   end
+
+  local draft = result.draft or {}
+  draft.id = result.id or draft.id
   return draft, nil
 end
 

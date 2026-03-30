@@ -60,8 +60,8 @@ local refresh = wrap(manager.refresh)
 ---@param session PowerReview.ReviewSession
 ---@return table[] items
 local function build_items(session)
-  local session_mod = require("power-review.review.session")
-  local counts = session_mod.get_draft_counts(session)
+  local helpers = require("power-review.session_helpers")
+  local counts = helpers.get_draft_counts(session)
 
   -- Root node: PR info
   local root = {

@@ -14,7 +14,7 @@ A Neovim plugin for reviewing Pull Requests from Azure DevOps (with GitHub suppo
 - **Floating comment windows** -- nui.nvim floating editor for writing/editing comments with markdown
 - **Comment signs/extmarks** -- Inline indicators in diff buffers showing where comments and drafts exist
 - **Telescope pickers** -- Fuzzy find changed files, comments, and sessions
-- **MCP server** -- TypeScript/Node.js MCP server for external AI agents (Claude, Copilot, etc.) to review PRs
+- **CLI + MCP server** -- .NET CLI tool with built-in MCP server for external AI agents (Claude, Copilot, etc.) to review PRs
 - **Session persistence** -- JSON-based session storage; resume reviews across Neovim restarts
 
 ## Requirements
@@ -24,7 +24,7 @@ A Neovim plugin for reviewing Pull Requests from Azure DevOps (with GitHub suppo
 - [codediff.nvim](https://github.com/esmuellert/codediff.nvim) (recommended for diff views)
 - [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim) (optional, for file tree panel)
 - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) (optional, for fuzzy pickers)
-- `curl` on PATH (for HTTP requests to AzDO/GitHub APIs)
+- .NET 10 SDK (for the CLI tool / MCP server): `dotnet tool install -g PowerReview`
 - For Azure DevOps: `az` CLI (recommended) or a Personal Access Token (PAT)
 
 ## Installation
@@ -131,9 +131,9 @@ require("power-review").setup({
     },
   },
 
-  -- MCP server integration
+  -- MCP server integration (Neovim-side server_info.json for socket discovery)
   mcp = {
-    enabled = false,  -- Write server_info.json for MCP server connection
+    enabled = false,  -- Write server_info.json (only needed for legacy integrations)
   },
 
   -- Keymaps (set any to `false` to disable)
@@ -294,49 +294,58 @@ draft -> pending -> submitted
 
 This design ensures LLM-generated comments always go through human approval before submission.
 
+## CLI Tool
+
+PowerReview includes a .NET CLI tool that handles all PR review business logic. The Neovim plugin uses it under the hood, and it also serves as a standalone MCP server for AI agents.
+
+### Installation
+
+```bash
+dotnet tool install -g PowerReview
+```
+
+Or build from source:
+
+```bash
+cd cli
+dotnet build
+```
+
+### CLI Commands
+
+```
+powerreview open --pr-url <url> [--repo-path <path>]   # Open/resume a review
+powerreview session --pr-url <url>                      # Get session info
+powerreview files --pr-url <url>                        # List changed files
+powerreview diff --pr-url <url> --file <path>           # Get file diff info
+powerreview threads --pr-url <url> [--file <path>]      # List comment threads
+powerreview comment create|edit|delete|approve|...      # Manage draft comments
+powerreview reply --pr-url <url> --thread-id <n>        # Reply to a thread
+powerreview submit --pr-url <url>                       # Submit pending comments
+powerreview vote --pr-url <url> --value <value>         # Set review vote
+powerreview sync --pr-url <url>                         # Sync threads from remote
+powerreview close --pr-url <url>                        # Close a review session
+powerreview sessions list|delete|clean                  # Manage saved sessions
+powerreview config --path-only                          # Show configuration
+powerreview mcp                                         # Start MCP server (stdio)
+```
+
+All commands output JSON to stdout, errors to stderr. Exit codes: 0=success, 1=error, 2=usage error.
+
 ## MCP Server
 
-PowerReview includes an MCP (Model Context Protocol) server that allows external AI agents to interact with your review session.
+The CLI doubles as an MCP (Model Context Protocol) server. Running `powerreview mcp` starts a stdio-based MCP server that AI agents can connect to directly -- no Neovim instance required.
 
 ### Setup
 
-1. Enable MCP in your config:
-
-```lua
-require("power-review").setup({
-  mcp = { enabled = true },
-})
-```
-
-2. Install the MCP server dependencies:
-
-```bash
-cd /path/to/PowerReview.nvim/mcp
-npm install
-npm run build
-```
-
-3. Configure your AI tool's `.mcp.json`:
+Configure your AI tool's MCP settings (e.g. `.mcp.json`, Claude Desktop config, etc.):
 
 ```json
 {
   "mcpServers": {
     "power-review": {
-      "command": "node",
-      "args": ["/path/to/PowerReview.nvim/mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-Or if published to npm:
-
-```json
-{
-  "mcpServers": {
-    "power-review": {
-      "command": "npx",
-      "args": ["power-review-mcp"]
+      "command": "powerreview",
+      "args": ["mcp"]
     }
   }
 }
@@ -346,28 +355,30 @@ Or if published to npm:
 
 The MCP server exposes these tools to AI agents:
 
-| Tool | Description |
-|------|-------------|
-| `get_review_session` | Get current session metadata |
-| `list_changed_files` | List all changed files in the PR |
-| `get_file_diff` | Get inline diff for a specific file |
-| `list_comment_threads` | List all comment threads and drafts |
-| `create_comment` | Create a new draft comment (author=ai) |
-| `reply_to_thread` | Reply to an existing thread |
-| `edit_draft_comment` | Edit a draft comment (draft status only) |
-| `delete_draft_comment` | Delete a draft comment (draft status only) |
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `GetReviewSession` | `prUrl` | Get session metadata (PR info, drafts, vote) |
+| `ListChangedFiles` | `prUrl` | List all changed files with change types |
+| `GetFileDiff` | `prUrl`, `filePath` | Get unified diff for a specific file |
+| `ListCommentThreads` | `prUrl`, `filePath?` | List remote threads and local drafts |
+| `CreateComment` | `prUrl`, `filePath`, `lineStart`, `body`, `lineEnd?` | Create a draft comment (author=ai) |
+| `ReplyToThread` | `prUrl`, `threadId`, `body` | Reply to an existing thread (author=ai) |
+| `EditDraftComment` | `prUrl`, `draftId`, `newBody` | Edit a draft comment (draft status only) |
+| `DeleteDraftComment` | `prUrl`, `draftId` | Delete a draft comment (draft status only) |
+
+AI-created comments are tagged with `author=ai` and start as drafts that require user approval before submission.
 
 ### Architecture
 
-The MCP server connects to the running Neovim instance via msgpack-RPC:
+The MCP server operates standalone, calling the same .NET services as the CLI:
 
 ```
-AI Agent <-> MCP Server (stdio) <-> Neovim (RPC socket)
-                                        |
-                                  PowerReview Lua API
+AI Agent <-> powerreview mcp (stdio) <-> PowerReview.Core (.NET)
+                                              |
+                                     SessionStore (JSON files)
 ```
 
-The server auto-discovers the Neovim socket from `server_info.json` written by the plugin. Environment variable overrides: `NVIM_SOCKET_PATH`, `NVIM`, `POWER_REVIEW_SERVER_INFO`.
+No running Neovim instance is needed. The Neovim plugin can pick up changes by watching session files on disk.
 
 ## Lua API
 
@@ -459,10 +470,15 @@ PowerReview.nvim/
     init.lua, commands.lua, components.lua
   lua/telescope/_extensions/
     power_review.lua             -- Telescope extension entry point
-  mcp/                           -- MCP TypeScript server
-    src/index.ts, nvim-client.ts, tools.ts
-    dist/                        -- Compiled JS
-    package.json, tsconfig.json
+  cli/                           -- .NET 10 CLI + MCP server
+    PowerReview.slnx             -- Solution file
+    src/
+      PowerReview.Core/          -- Core library (models, services, providers, auth, git)
+      PowerReview.Cli/           -- Console app (.NET global tool)
+        Commands/                -- System.CommandLine CLI commands
+        Mcp/                     -- MCP server (stdio transport, 8 tools)
+    tests/
+      PowerReview.Core.Tests/    -- xUnit tests (76 tests)
 ```
 
 ## Roadmap
@@ -475,7 +491,7 @@ PowerReview.nvim/
 - [ ] File-level comments (not line-specific)
 - [ ] PR description editing
 - [ ] CI/pipeline status integration
-- [ ] Publish MCP server to npm
+- [ ] Refactor Neovim plugin to call CLI instead of Lua business logic (Phase 2)
 
 ## License
 

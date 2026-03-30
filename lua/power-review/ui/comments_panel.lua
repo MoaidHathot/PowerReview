@@ -242,13 +242,13 @@ end
 ---@return PowerReview.PanelSection[]
 local function build_sections(session, panel_width)
   local review = require("power-review.review")
-  local session_mod = require("power-review.review.session")
+  local helpers = require("power-review.session_helpers")
   local sections = {} ---@type PowerReview.PanelSection[]
 
   -- Effective width for body text (subtract indent + padding)
   local body_width = panel_width and math.max(20, panel_width - 8) or nil
 
-  local counts = session_mod.get_draft_counts(session)
+  local counts = helpers.get_draft_counts(session)
   local all_threads = review.get_all_threads(session)
 
   -- Count remote threads
@@ -823,11 +823,11 @@ local function resolve_draft_from_section(section, action_name, callback)
     end
 
     -- Multiple reply drafts: let user pick
-    local session_mod = require("power-review.review.session")
+    local helpers = require("power-review.session_helpers")
     local cur_session = M._session
     local items = {}
     for _, id in ipairs(ids) do
-      local draft = cur_session and session_mod.get_draft(cur_session, id)
+      local draft = cur_session and helpers.get_draft(cur_session, id)
       if draft then
         local preview = (draft.body or ""):sub(1, 60):gsub("\n", " ")
         table.insert(items, { id = id, label = string.format("[%s] %s", draft.status, preview) })
@@ -1345,9 +1345,9 @@ function M._setup_keymaps(split, session)
     local line = vim.api.nvim_win_get_cursor(0)[1]
     local section = section_at_line(line)
     resolve_draft_from_section(section, "edit", function(draft_id)
-      local session_mod = require("power-review.review.session")
+      local helpers = require("power-review.session_helpers")
       local cur_session = M._session or session
-      local draft = session_mod.get_draft(cur_session, draft_id)
+      local draft = helpers.get_draft(cur_session, draft_id)
       if not draft then
         log.warn("Draft not found")
         return

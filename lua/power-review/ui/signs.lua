@@ -306,8 +306,8 @@ function M.build_indicators(session, file_path)
   local indicators = {}
 
   -- 1. Local drafts from session
-  local session_mod = require("power-review.review.session")
-  local drafts = session_mod.get_drafts_for_file(session, file_path)
+  local helpers = require("power-review.session_helpers")
+  local drafts = helpers.get_drafts_for_file(session, file_path)
 
   for _, draft in ipairs(drafts) do
     if draft.line_start and draft.line_start > 0 then

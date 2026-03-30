@@ -64,8 +64,8 @@ end
 ---@return table[] NuiTree.Node list
 local function build_nodes(session)
   local NuiTree = require("nui.tree")
-  local session_mod = require("power-review.review.session")
-  local counts = session_mod.get_draft_counts(session)
+  local helpers = require("power-review.session_helpers")
+  local counts = helpers.get_draft_counts(session)
 
   -- Summary header
   local summary_text = string.format(
@@ -430,8 +430,8 @@ function M._setup_keymaps(split, tree, session)
 
   -- Approve ALL drafts (A)
   split:map("n", "A", function()
-    local session_mod = require("power-review.review.session")
-    local counts = session_mod.get_draft_counts(session)
+    local helpers = require("power-review.session_helpers")
+    local counts = helpers.get_draft_counts(session)
     if counts.draft == 0 then
       log.info("No drafts to approve")
       return
@@ -526,8 +526,8 @@ function M._setup_keymaps(split, tree, session)
       return
     end
 
-    local session_mod = require("power-review.review.session")
-    local draft = session_mod.get_draft(session, node.draft_id)
+    local helpers = require("power-review.session_helpers")
+    local draft = helpers.get_draft(session, node.draft_id)
     if draft then
       local lines = {
         string.format("Draft: %s", draft.id),

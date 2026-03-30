@@ -73,8 +73,8 @@ end
 ---@return table[] NuiTree.Node list
 local function build_nodes(session)
   local NuiTree = require("nui.tree")
-  local session_mod = require("power-review.review.session")
-  local counts = session_mod.get_draft_counts(session)
+  local helpers = require("power-review.session_helpers")
+  local counts = helpers.get_draft_counts(session)
 
   -- Group files by directory
   local dirs = {} ---@type table<string, PowerReview.ChangedFile[]>

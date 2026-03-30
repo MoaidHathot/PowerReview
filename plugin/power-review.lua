@@ -191,8 +191,8 @@ vim.api.nvim_create_user_command("PowerReview", function(cmd_opts)
       return
     end
 
-    local session_mod = require("power-review.review.session")
-    local counts = session_mod.get_draft_counts(session)
+    local helpers = require("power-review.session_helpers")
+    local counts = helpers.get_draft_counts(session)
 
     if counts.pending == 0 then
       if counts.draft > 0 then
@@ -318,9 +318,9 @@ vim.api.nvim_create_user_command("PowerReview", function(cmd_opts)
       vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
       return
     end
-    local session_mod = require("power-review.review.session")
+    local helpers = require("power-review.session_helpers")
     local session = pr.get_current_session()
-    local counts = session_mod.get_draft_counts(session)
+    local counts = helpers.get_draft_counts(session)
     if counts.draft == 0 then
       vim.notify("[PowerReview] No drafts to approve", vim.log.levels.INFO)
       return
@@ -342,13 +342,13 @@ vim.api.nvim_create_user_command("PowerReview", function(cmd_opts)
       return
     end
 
-    local status_mod = require("power-review.review.status")
+    local helpers = require("power-review.session_helpers")
     local current_vote = session.vote
-    local current_label = current_vote and status_mod.vote_label(current_vote) or "None"
+    local current_label = current_vote and helpers.vote_label(current_vote) or "None"
 
     vim.notify("[PowerReview] Current vote: " .. current_label, vim.log.levels.INFO)
 
-    local choices = status_mod.get_vote_choices(current_vote)
+    local choices = helpers.get_vote_choices(current_vote)
     vim.ui.select(choices, {
       prompt = "Set review vote (current: " .. current_label .. "):",
       format_item = function(c)

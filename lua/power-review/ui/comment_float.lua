@@ -80,8 +80,8 @@ function M.open_thread_viewer(opts)
   local indicators = signs.get_indicators_at_line(bufnr, line)
 
   -- Also get drafts directly (indicators might not include all if signs aren't attached)
-  local session_mod = require("power-review.review.session")
-  local drafts = session_mod.get_drafts_for_file(session, file_path)
+  local helpers = require("power-review.session_helpers")
+  local drafts = helpers.get_drafts_for_file(session, file_path)
   local line_drafts = {}
   for _, d in ipairs(drafts) do
     if d.line_start == line then

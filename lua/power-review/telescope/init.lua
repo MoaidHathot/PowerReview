@@ -157,8 +157,8 @@ function M.changed_files(opts)
           end
 
           -- Show draft comment count if any
-          local session_mod = require("power-review.review.session")
-          local drafts = session_mod.get_drafts_for_file(session, file.path)
+          local helpers = require("power-review.session_helpers")
+          local drafts = helpers.get_drafts_for_file(session, file.path)
           if #drafts > 0 then
             table.insert(header, string.format("Drafts: %d comment(s)", #drafts))
           end
@@ -231,9 +231,9 @@ function M.changed_files(opts)
           -- Collect comments per source line (remote threads + drafts) with content previews
           ---@type table<number, { threads: table[], drafts: table[] }>
           local line_comments = {}
-          local session_mod_vt = require("power-review.review.session")
+          local helpers_vt = require("power-review.session_helpers")
 
-          local file_threads = session_mod_vt.get_threads_for_file(session, file.path)
+          local file_threads = helpers_vt.get_threads_for_file(session, file.path)
           for _, thread in ipairs(file_threads) do
             if thread.line_start then
               if not line_comments[thread.line_start] then
@@ -253,7 +253,7 @@ function M.changed_files(opts)
             end
           end
 
-          local file_drafts_vt = session_mod_vt.get_drafts_for_file(session, file.path)
+          local file_drafts_vt = helpers_vt.get_drafts_for_file(session, file.path)
           for _, draft in ipairs(file_drafts_vt) do
             if draft.line_start then
               if not line_comments[draft.line_start] then

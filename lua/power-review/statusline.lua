@@ -33,9 +33,9 @@ end
 ---@param file_path string
 ---@return number remote_count, number draft_count
 local function count_file_comments(session, file_path)
-  local session_mod = require("power-review.review.session")
-  local remote_threads = session_mod.get_threads_for_file(session, file_path)
-  local drafts = session_mod.get_drafts_for_file(session, file_path)
+  local helpers = require("power-review.session_helpers")
+  local remote_threads = helpers.get_threads_for_file(session, file_path)
+  local drafts = helpers.get_drafts_for_file(session, file_path)
 
   -- Count only non-system, file-level threads with a line
   local remote_count = 0
@@ -60,8 +60,8 @@ function M.get()
     return ""
   end
 
-  local session_mod = require("power-review.review.session")
-  local counts = session_mod.get_draft_counts(session)
+  local helpers = require("power-review.session_helpers")
+  local counts = helpers.get_draft_counts(session)
 
   local parts = {}
   -- Review mode icon + PR identifier

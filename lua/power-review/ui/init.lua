@@ -291,8 +291,8 @@ function M.edit_comment_at_cursor()
     return
   end
 
-  local session_mod = require("power-review.review.session")
-  local drafts = session_mod.get_drafts_for_file(session, file_path)
+  local helpers = require("power-review.session_helpers")
+  local drafts = helpers.get_drafts_for_file(session, file_path)
   local line_drafts = {}
   for _, d in ipairs(drafts) do
     if d.line_start == line and d.status == "draft" then
@@ -365,8 +365,8 @@ function M.delete_comment_at_cursor()
     return
   end
 
-  local session_mod = require("power-review.review.session")
-  local drafts = session_mod.get_drafts_for_file(session, file_path)
+  local helpers = require("power-review.session_helpers")
+  local drafts = helpers.get_drafts_for_file(session, file_path)
   local line_drafts = {}
   for _, d in ipairs(drafts) do
     if d.line_start == line and d.status == "draft" then
@@ -437,8 +437,8 @@ function M.approve_comment_at_cursor()
     return
   end
 
-  local session_mod = require("power-review.review.session")
-  local drafts = session_mod.get_drafts_for_file(session, file_path)
+  local helpers = require("power-review.session_helpers")
+  local drafts = helpers.get_drafts_for_file(session, file_path)
   local line_drafts = {}
   for _, d in ipairs(drafts) do
     if d.line_start == line and d.status == "draft" then
@@ -516,13 +516,13 @@ function M.set_vote()
     return
   end
 
-  local status_mod = require("power-review.review.status")
+  local helpers = require("power-review.session_helpers")
   local current_vote = session.vote
-  local current_label = current_vote and status_mod.vote_label(current_vote) or "None"
+  local current_label = current_vote and helpers.vote_label(current_vote) or "None"
 
   log.info("Current vote: %s", current_label)
 
-  local choices = status_mod.get_vote_choices(current_vote)
+  local choices = helpers.get_vote_choices(current_vote)
   vim.ui.select(choices, {
     prompt = "Set review vote (current: " .. current_label .. "):",
     format_item = function(c)
