@@ -66,7 +66,7 @@
 ---@field line_end? number
 ---@field col_start? number 1-indexed start column offset
 ---@field col_end? number 1-indexed end column offset
----@field status string "active" | "resolved" | "closed" etc.
+---@field status string "active" | "fixed" | "wontfix" | "closed" | "bydesign" | "pending"
 ---@field comments PowerReview.Comment[]
 ---@field is_deleted boolean
 
