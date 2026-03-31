@@ -57,4 +57,5 @@ project.lock.json
 *.nuget.targets
 .dotnet/
 TestResults/
+artifacts/
 

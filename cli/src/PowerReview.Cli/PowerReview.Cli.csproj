@@ -12,11 +12,19 @@
     <PackageId>PowerReview</PackageId>
     <Version>0.1.0</Version>
     <Description>PR review management CLI tool. Manage draft comments, submit reviews, and sync threads across Azure DevOps (and GitHub in the future).</Description>
-    <Authors>PowerReview Contributors</Authors>
+    <Authors>Moaid Hathot</Authors>
+    <Copyright>Copyright (c) Moaid Hathot</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/you/PowerReview</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/you/PowerReview</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/MoaidHathot/PowerReview.nvim</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/MoaidHathot/PowerReview.nvim</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>cli;code-review;pull-request;azure-devops;neovim;dotnet-tool</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PowerReview.Core\PowerReview.Core.csproj" />
