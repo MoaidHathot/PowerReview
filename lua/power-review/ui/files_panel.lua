@@ -102,8 +102,8 @@ local function build_nodes(session)
     if dir == "" then
       -- Root-level files
       for _, file in ipairs(files_in_dir) do
-        local file_drafts = session_mod.get_drafts_for_file(session, file.path)
-        local file_threads = session_mod.get_threads_for_file(session, file.path)
+        local file_drafts = helpers.get_drafts_for_file(session, file.path)
+        local file_threads = helpers.get_threads_for_file(session, file.path)
         table.insert(children, NuiTree.Node({
           text = vim.fn.fnamemodify(file.path, ":t"),
           type = "file",
@@ -120,8 +120,8 @@ local function build_nodes(session)
       -- Directory with children
       local file_nodes = {}
       for _, file in ipairs(files_in_dir) do
-        local file_drafts = session_mod.get_drafts_for_file(session, file.path)
-        local file_threads = session_mod.get_threads_for_file(session, file.path)
+        local file_drafts = helpers.get_drafts_for_file(session, file.path)
+        local file_threads = helpers.get_threads_for_file(session, file.path)
         table.insert(file_nodes, NuiTree.Node({
           text = vim.fn.fnamemodify(file.path, ":t"),
           type = "file",

@@ -24,7 +24,7 @@ A Neovim plugin for reviewing Pull Requests from Azure DevOps (with GitHub suppo
 - [codediff.nvim](https://github.com/esmuellert/codediff.nvim) (recommended for diff views)
 - [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim) (optional, for file tree panel)
 - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) (optional, for fuzzy pickers)
-- .NET 10 SDK (for the CLI tool / MCP server): `dotnet tool install -g PowerReview`
+- [.NET 10 SDK](https://dotnet.microsoft.com/download) (required for the CLI tool / MCP server)
 - For Azure DevOps: `az` CLI (recommended) or a Personal Access Token (PAT)
 
 ## Installation
@@ -70,38 +70,20 @@ require("telescope").load_extension("power_review")
 
 ## Configuration
 
-All options with their defaults:
+PowerReview has a split configuration model:
+
+- **CLI config** (`$XDG_CONFIG_HOME/PowerReview/config.json`) -- owns authentication, git strategy, provider settings, and data directory. See [CLI Configuration](#cli-configuration) below.
+- **Lua config** (`require("power-review").setup({...})`) -- owns UI settings only: keymaps, signs, panels, diff provider, CLI executable path.
+
+### Neovim Plugin Configuration
+
+All Lua options with their defaults:
 
 ```lua
 require("power-review").setup({
-  -- Per-repo provider config, keyed by absolute path
-  repos = {
-    -- ["/path/to/repo"] = {
-    --   provider = "azdo",
-    --   azdo = {
-    --     organization = "myorg",
-    --     project = "myproject",
-    --     repository = "myrepo",
-    --   },
-    -- },
-  },
-
-  -- Authentication
-  auth = {
-    azdo = {
-      method = "auto",  -- "auto" | "az_cli" | "pat"
-      pat = nil,        -- or set POWER_REVIEW_AZDO_PAT / AZDO_PAT env var
-    },
-    github = {
-      pat = nil,        -- or set GITHUB_TOKEN / POWER_REVIEW_GITHUB_PAT env var
-    },
-  },
-
-  -- Git strategy
-  git = {
-    strategy = "worktree",                     -- "worktree" | "checkout"
-    worktree_dir = ".power-review-worktrees",  -- relative to repo root
-    cleanup_on_close = true,                   -- remove worktree on review close
+  -- CLI tool
+  cli = {
+    executable = "powerreview",  -- Path or name of the CLI executable
   },
 
   -- UI configuration
@@ -127,29 +109,27 @@ require("power-review").setup({
       },
     },
     diff = {
-      provider = "codediff",  -- "codediff" (more providers planned)
+      provider = "native",  -- "native" | "codediff"
     },
-  },
-
-  -- MCP server integration (Neovim-side server_info.json for socket discovery)
-  mcp = {
-    enabled = false,  -- Write server_info.json (only needed for legacy integrations)
   },
 
   -- Keymaps (set any to `false` to disable)
   keymaps = {
-    open_review    = "<leader>pr",
-    list_sessions  = "<leader>pl",
-    toggle_files   = "<leader>pf",
+    open_review     = "<leader>pr",
+    list_sessions   = "<leader>pl",
+    toggle_files    = "<leader>pf",
     toggle_comments = "<leader>pc",
-    next_comment   = "]r",
-    prev_comment   = "[r",
-    add_comment    = "<leader>pa",
-    reply_comment  = "<leader>prr",
-    edit_comment   = "<leader>pe",
+    next_comment    = "]r",
+    prev_comment    = "[r",
+    add_comment     = "<leader>pa",
+    reply_comment   = "<leader>pR",
+    edit_comment    = "<leader>pe",
     approve_comment = "<leader>pA",
-    submit_all     = "<leader>pS",
-    set_vote       = "<leader>pv",
+    submit_all      = "<leader>pS",
+    set_vote        = "<leader>pv",
+    sync_threads    = "<leader>ps",
+    close_review    = "<leader>pQ",
+    delete_session  = "<leader>pD",
   },
 
   -- Logging
@@ -159,22 +139,61 @@ require("power-review").setup({
 })
 ```
 
+### CLI Configuration
+
+The CLI reads its config from `$XDG_CONFIG_HOME/PowerReview/config.json` (or `%APPDATA%\PowerReview\config.json` on Windows). Create this file to configure authentication, git strategy, and providers:
+
+```json
+{
+  "auth": {
+    "azdo": {
+      "method": "auto",
+      "pat_env_var": "AZDO_PAT"
+    },
+    "github": {
+      "pat_env_var": "GITHUB_TOKEN"
+    }
+  },
+  "git": {
+    "strategy": "worktree",
+    "worktree_dir": ".power-review-worktrees",
+    "cleanup_on_close": true
+  },
+  "providers": {
+    "azdo": {
+      "api_version": "7.1"
+    }
+  },
+  "data_dir": null
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `auth.azdo.method` | `"auto"` (try az CLI then PAT), `"az_cli"`, or `"pat"` |
+| `auth.azdo.pat_env_var` | Environment variable name for AzDO PAT (default: `"AZDO_PAT"`) |
+| `auth.github.pat_env_var` | Environment variable name for GitHub token (default: `"GITHUB_TOKEN"`) |
+| `git.strategy` | `"worktree"` or `"checkout"` (default: `"worktree"`) |
+| `git.worktree_dir` | Directory name for worktrees, relative to repo root |
+| `git.cleanup_on_close` | Remove worktree when closing a review (default: `true`) |
+| `data_dir` | Override default data directory for session storage |
+
+Session data is stored at `{data_dir}/sessions/`. The default data directory is `$XDG_DATA_HOME/PowerReview` (or `%LOCALAPPDATA%\PowerReview` on Windows).
+
 ## Authentication
+
+Authentication is configured in the CLI's `config.json` (see [CLI Configuration](#cli-configuration)).
 
 ### Azure DevOps
 
-The plugin tries authentication methods in this order when `method = "auto"`:
+When `method` is `"auto"` (default), the CLI tries in order:
 
 1. **Azure CLI** (`az account get-access-token`) -- recommended, no config needed if you're logged in
-2. **PAT** -- set via `auth.azdo.pat` in config or environment variables:
-   - `POWER_REVIEW_AZDO_PAT`
-   - `AZDO_PAT`
+2. **PAT** -- set via the environment variable named in `auth.azdo.pat_env_var` (default: `AZDO_PAT`)
 
 ### GitHub (planned)
 
-Set a token via `auth.github.pat` or environment variables:
-- `GITHUB_TOKEN`
-- `POWER_REVIEW_GITHUB_PAT`
+Set a token via the environment variable named in `auth.github.pat_env_var` (default: `GITHUB_TOKEN`).
 
 ## Commands
 
@@ -218,11 +237,14 @@ These are registered on `setup()` and work everywhere:
 | `]r` | Next comment |
 | `[r` | Previous comment |
 | `<leader>pa` | Add comment (normal: at cursor, visual: on selection) |
-| `<leader>prr` | Reply to thread at cursor |
+| `<leader>pR` | Reply to thread at cursor |
 | `<leader>pe` | Edit draft at cursor |
 | `<leader>pA` | Approve draft at cursor |
 | `<leader>pS` | Submit all pending comments |
 | `<leader>pv` | Set review vote |
+| `<leader>ps` | Sync remote threads |
+| `<leader>pQ` | Close current review |
+| `<leader>pD` | Delete session |
 
 ### Buffer-Local Keymaps (Diff Buffers)
 
@@ -423,34 +445,25 @@ api.reply_to_thread({ thread_id, body, ... })    -- Returns draft or nil, error
 
 ## Architecture
 
+PowerReview is split into two components:
+
+1. **CLI tool** (`.NET 10 global tool`) -- handles all PR review business logic: auth, git operations, Azure DevOps/GitHub API, session storage, draft management, and MCP server.
+2. **Neovim plugin** (Lua) -- thin UI wrapper that calls the CLI for all operations and handles only Neovim-specific concerns: signs, panels, floats, keymaps, neo-tree, telescope.
+
 ```
 PowerReview.nvim/
   plugin/power-review.lua        -- :PowerReview command registration
   lua/power-review/
     init.lua                     -- setup(), keymaps, public API
-    config.lua                   -- Configuration with deep merge
+    config.lua                   -- UI-only configuration (CLI path, keymaps, signs, panels)
+    cli.lua                      -- CLI bridge (spawns powerreview, parses JSON, session adapter)
+    session_helpers.lua          -- Pure data helpers (get_drafts_for_file, get_threads_for_file, etc.)
     types.lua                    -- LuaCATS type annotations
-    providers/
-      init.lua                   -- Provider factory
-      base.lua                   -- Provider interface validator
-      azdo.lua                   -- Azure DevOps provider (full)
-      github.lua                 -- GitHub provider (stub)
-    auth/
-      init.lua                   -- Auth dispatcher
-      pat.lua                    -- PAT authentication
-      az_cli.lua                 -- Azure CLI authentication
-    git/
-      init.lua                   -- Git coordinator
-      worktree.lua               -- Worktree strategy
-      branch.lua                 -- Branch/checkout strategy
     review/
-      init.lua                   -- Review lifecycle coordinator
-      session.lua                -- Session model
-      comment.lua                -- Comment model
-      status.lua                 -- Vote management
+      init.lua                   -- Review lifecycle coordinator (delegates to CLI)
     store/
-      init.lua                   -- Persistence high-level API
-      json.lua                   -- JSON file backend
+      init.lua                   -- Session store (delegates to CLI)
+    statusline.lua               -- Lualine/statusline integration
     ui/
       init.lua                   -- UI coordinator
       files_panel.lua            -- Built-in file list panel
@@ -462,10 +475,8 @@ PowerReview.nvim/
       sessions.lua               -- Session management panel
     telescope/
       init.lua                   -- Telescope pickers
-    mcp/
-      init.lua                   -- MCP Neovim-side helpers
     utils/
-      log.lua, http.lua, async.lua, url.lua
+      log.lua                    -- Logging utility
   lua/neo-tree/sources/power_review/
     init.lua, commands.lua, components.lua
   lua/telescope/_extensions/
@@ -478,7 +489,7 @@ PowerReview.nvim/
         Commands/                -- System.CommandLine CLI commands
         Mcp/                     -- MCP server (stdio transport, 8 tools)
     tests/
-      PowerReview.Core.Tests/    -- xUnit tests (76 tests)
+      PowerReview.Core.Tests/    -- xUnit tests
 ```
 
 ## Roadmap
@@ -486,12 +497,10 @@ PowerReview.nvim/
 - [ ] Full GitHub provider implementation
 - [ ] Additional diff providers (diffview.nvim, native vim diff)
 - [ ] fzf-lua picker support
-- [ ] Remote thread fetching and caching
 - [ ] Thread resolution/status management
 - [ ] File-level comments (not line-specific)
 - [ ] PR description editing
 - [ ] CI/pipeline status integration
-- [ ] Refactor Neovim plugin to call CLI instead of Lua business logic (Phase 2)
 
 ## License
 

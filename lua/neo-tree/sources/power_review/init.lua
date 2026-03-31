@@ -92,8 +92,8 @@ local function build_items(session)
 
   -- Flat file list: each file as a direct child of the root node
   for _, file in ipairs(sorted_files) do
-    local file_drafts = session_mod.get_drafts_for_file(session, file.path)
-    local file_threads = session_mod.get_threads_for_file(session, file.path)
+    local file_drafts = helpers.get_drafts_for_file(session, file.path)
+    local file_threads = helpers.get_threads_for_file(session, file.path)
 
     table.insert(root.children, {
       id = "file:" .. file.path,

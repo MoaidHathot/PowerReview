@@ -1,83 +1,116 @@
-# PowerReview Session File Schema (v2)
+# PowerReview Session File Schema (v3)
 
-This document defines the JSON schema for PowerReview session state files.
+This document defines the JSON schema for PowerReview session state files as stored by the CLI tool.
 External tools that create or consume these files **must** conform to this specification.
+
+> **Neovim adapter**: The CLI outputs v3 (nested) JSON. The Neovim plugin's `cli.adapt_session()` converts
+> this to a flat v2-compatible shape for UI code. See `lua/power-review/cli.lua` for the mapping.
 
 ## File Location
 
-Session files are stored at:
+Session files are managed by the CLI and stored at:
 
 ```
-{nvim_data_dir}/power-review/sessions/{session_id}.json
+{data_dir}/sessions/{session_id}.json
 ```
 
-| Platform    | Typical `nvim_data_dir`                  |
-|-------------|------------------------------------------|
-| Linux/macOS | `~/.local/share/nvim`                    |
-| Windows     | `%LOCALAPPDATA%/nvim-data`               |
+The data directory is resolved in this order:
+
+1. `data_dir` field in CLI's `config.json`
+2. `$XDG_DATA_HOME/PowerReview`
+3. Windows: `%LOCALAPPDATA%\PowerReview`; Linux/Mac: `~/.local/share/PowerReview`
+
+Run `powerreview config --path-only` to see the resolved config path.
 
 ### Session ID
 
 The `session_id` is constructed as:
 
 ```
-{org}_{project}_{repo}_{pr_id}
+{provider}_{org}_{project}_{repo}_{pr_id}
 ```
 
-All characters that are not alphanumeric or hyphens are replaced with underscores.
+All characters are lowercased and non-alphanumeric, non-hyphen characters are replaced with underscores.
 
-Example: `my-org_my-project_my-repo_42` produces the file `my-org_my-project_my-repo_42.json`.
+Example: `azdo_my-org_my-project_my-repo_42` produces the file `azdo_my-org_my-project_my-repo_42.json`.
+
+Writes are atomic: data is written to a `.tmp` file first, then renamed to the final `.json` path.
 
 ---
 
 ## Top-Level Object: `ReviewSession`
 
-| Field            | Type                        | Required | Description                                                |
-|------------------|-----------------------------|----------|------------------------------------------------------------|
-| `version`        | `number`                    | yes      | Schema version. Must be `2`.                               |
-| `id`             | `string`                    | yes      | Session identifier (`{org}_{project}_{repo}_{pr_id}`).     |
-| `pr_id`          | `number`                    | yes      | Pull request number from the provider.                     |
-| `provider_type`  | `string`                    | yes      | `"azdo"` or `"github"`.                                    |
-| `org`            | `string`                    | yes      | Organization (AzDO) or repository owner (GitHub).          |
-| `project`        | `string`                    | yes      | Project (AzDO) or repository name (GitHub).                |
-| `repo`           | `string`                    | yes      | Repository name.                                           |
-| `pr_url`         | `string`                    | yes      | Original PR URL.                                           |
-| `pr_title`       | `string`                    | yes      | Pull request title.                                        |
-| `pr_description` | `string`                    | yes      | Pull request description (markdown).                       |
-| `pr_author`      | `string`                    | yes      | Display name of the PR author.                             |
-| `pr_status`      | `string`                    | yes      | PR lifecycle status. See PR Status Values.                 |
-| `pr_is_draft`    | `boolean`                   | yes      | Whether the PR is a draft / work-in-progress.              |
-| `pr_closed_at`   | `string \| null`            | yes      | ISO 8601 UTC timestamp of PR closure/completion, or `null`.|
-| `source_branch`  | `string`                    | yes      | Source / feature branch name.                              |
-| `target_branch`  | `string`                    | yes      | Target / base branch name.                                 |
-| `merge_status`   | `string \| null`            | yes      | Merge feasibility status, or `null`. See Merge Status Values.|
-| `reviewers`      | `Reviewer[]`                | yes      | List of PR reviewers with their votes.                     |
-| `labels`         | `string[]`                  | yes      | PR labels / tags.                                          |
-| `work_items`     | `WorkItem[]`                | yes      | Linked work items / issues.                                |
-| `iteration_id`   | `number \| null`            | yes      | Latest iteration ID the session was synced to, or `null`.  |
-| `source_commit`  | `string \| null`            | yes      | Source branch commit SHA at last sync, or `null`.          |
-| `target_commit`  | `string \| null`            | yes      | Target branch commit SHA at last sync, or `null`.          |
-| `worktree_path`  | `string \| null`            | yes      | Filesystem path to the git worktree, or `null`.            |
-| `git_strategy`   | `string`                    | yes      | `"worktree"`, `"checkout"`, or `"reused_main"`. See Git Strategy Values.|
-| `created_at`     | `string`                    | yes      | ISO 8601 UTC timestamp of session creation.                |
-| `updated_at`     | `string`                    | yes      | ISO 8601 UTC timestamp of last modification.               |
-| `vote`           | `number \| null`            | yes      | Review vote value, or `null` if not voted. See Vote Values.|
-| `files`          | `ChangedFile[]`             | yes      | List of files changed in the PR.                           |
-| `threads`        | `CommentThread[]`           | yes      | Remote comment threads cached from the provider.           |
-| `drafts`         | `DraftComment[]`            | yes      | Local draft comments not yet submitted.                    |
+The v3 format uses a nested structure with logical groupings.
+
+| Field          | Type                             | Required | Description                                           |
+|----------------|----------------------------------|----------|-------------------------------------------------------|
+| `version`      | `number`                         | yes      | Schema version. Must be `3`.                          |
+| `id`           | `string`                         | yes      | Session identifier.                                   |
+| `provider`     | `ProviderInfo`                   | yes      | Provider metadata.                                    |
+| `pull_request` | `PullRequestInfo`                | yes      | PR metadata.                                          |
+| `iteration`    | `IterationMeta`                  | no       | Iteration tracking for incremental sync.              |
+| `git`          | `GitInfo`                        | yes      | Git workspace state.                                  |
+| `files`        | `ChangedFile[]`                  | yes      | List of files changed in the PR.                      |
+| `threads`      | `ThreadsInfo`                    | yes      | Remote comment threads.                               |
+| `drafts`       | `object`                         | yes      | Local draft comments. Map of `{uuid: DraftComment}`.  |
+| `vote`         | `string \| null`                 | yes      | Review vote enum string, or `null`.                   |
+| `created_at`   | `string`                         | yes      | ISO 8601 UTC timestamp of session creation.           |
+| `updated_at`   | `string`                         | yes      | ISO 8601 UTC timestamp of last modification.          |
 
 ### String Formats
 
-- **Timestamps** (`created_at`, `updated_at`, `pr_closed_at`, etc.): ISO 8601 UTC format `YYYY-MM-DDTHH:MM:SSZ`.
-- **UUIDs** (draft `id`): Version 4 UUID, e.g. `"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"`.
-- **Commit SHAs** (`source_commit`, `target_commit`): Full 40-character hex SHA.
+- **Timestamps**: ISO 8601 UTC format `YYYY-MM-DDTHH:MM:SSZ`.
+- **UUIDs** (draft keys): Version 4 UUID, e.g. `"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"`.
+- **Commit SHAs**: Full 40-character hex SHA.
+- **Enums**: Serialized as lowercase strings (e.g. `"approved"`, `"active"`, `"worktree"`).
+- **Nulls**: Omitted from serialized output.
+
+---
+
+## `ProviderInfo` Object
+
+| Field          | Type     | Required | Description                                          |
+|----------------|----------|----------|------------------------------------------------------|
+| `type`         | `string` | yes      | Provider type: `"azdo"` or `"github"`.               |
+| `organization` | `string` | yes      | Organization (AzDO) or repository owner (GitHub).    |
+| `project`      | `string` | yes      | Project (AzDO) or repository name (GitHub).          |
+| `repository`   | `string` | yes      | Repository name.                                     |
+
+---
+
+## `PullRequestInfo` Object
+
+| Field           | Type                | Required | Description                                                |
+|-----------------|---------------------|----------|------------------------------------------------------------|
+| `id`            | `number`            | yes      | Pull request number from the provider.                     |
+| `url`           | `string`            | yes      | Original PR URL.                                           |
+| `title`         | `string`            | yes      | Pull request title.                                        |
+| `description`   | `string`            | yes      | Pull request description (markdown).                       |
+| `author`        | `PersonIdentity`    | yes      | PR author identity.                                        |
+| `status`        | `string`            | yes      | PR lifecycle status. See PR Status Values.                 |
+| `is_draft`      | `boolean`           | yes      | Whether the PR is a draft / work-in-progress.              |
+| `closed_at`     | `string \| null`    | no       | ISO 8601 UTC timestamp of PR closure/completion.           |
+| `source_branch` | `string`            | yes      | Source / feature branch name.                              |
+| `target_branch` | `string`            | yes      | Target / base branch name.                                 |
+| `merge_status`  | `string \| null`    | no       | Merge feasibility status. See Merge Status Values.         |
+| `reviewers`     | `Reviewer[]`        | yes      | List of PR reviewers with their votes.                     |
+| `labels`        | `string[]`          | yes      | PR labels / tags.                                          |
+| `work_items`    | `WorkItem[]`        | yes      | Linked work items / issues.                                |
+
+### `PersonIdentity` Object
+
+| Field           | Type             | Required | Description                                    |
+|-----------------|------------------|----------|------------------------------------------------|
+| `display_name`  | `string`         | yes      | Display name.                                  |
+| `id`            | `string \| null` | no       | Provider-assigned ID.                          |
+| `unique_name`   | `string \| null` | no       | Email or login.                                |
 
 ### PR Status Values
 
 | Value         | Description                            |
 |---------------|----------------------------------------|
 | `"active"`    | Open and reviewable.                   |
-| `"completed"` | Merged / completed.                    |
+| `"completed"` | Merged / completed.                   |
 | `"abandoned"` | Closed without merging.                |
 
 ### Merge Status Values
@@ -91,16 +124,26 @@ Example: `my-org_my-project_my-repo_42` produces the file `my-org_my-project_my-
 | `"failure"`   | Merge failed.                          |
 | `null`        | Not available from the provider.       |
 
-### Vote Values
+---
 
-| Value | Meaning                  |
-|-------|--------------------------|
-| `10`  | Approved                 |
-| `5`   | Approved with suggestions|
-| `0`   | No vote / reset          |
-| `-5`  | Wait for author          |
-| `-10` | Rejected                 |
-| `null`| Not yet voted            |
+## `IterationMeta` Object
+
+Tracks the iteration state for incremental sync.
+
+| Field           | Type             | Required | Description                                    |
+|-----------------|------------------|----------|------------------------------------------------|
+| `iteration_id`  | `number \| null` | no       | Latest iteration ID the session was synced to. |
+| `source_commit` | `string \| null` | no       | Source branch commit SHA at last sync.         |
+| `target_commit` | `string \| null` | no       | Target branch commit SHA at last sync.         |
+
+---
+
+## `GitInfo` Object
+
+| Field           | Type             | Required | Description                                                    |
+|-----------------|------------------|----------|----------------------------------------------------------------|
+| `strategy`      | `string`         | yes      | Git strategy used. See Git Strategy Values.                    |
+| `worktree_path` | `string \| null` | no       | Filesystem path to the git worktree, or `null`.                |
 
 ### Git Strategy Values
 
@@ -108,20 +151,46 @@ Example: `my-org_my-project_my-repo_42` produces the file `my-org_my-project_my-
 |------------------|----------------------------------------------------------------|
 | `"worktree"`     | A dedicated git worktree was created for the review.           |
 | `"checkout"`     | The source branch was checked out in the main working tree.    |
-| `"reused_main"`  | The main worktree was already on the correct branch; no worktree created.|
+| `"reused_main"`  | The main worktree was already on the correct branch.           |
+
+---
+
+## `ThreadsInfo` Object
+
+| Field           | Type               | Required | Description                              |
+|-----------------|--------------------|----------|------------------------------------------|
+| `items`         | `CommentThread[]`  | yes      | Array of remote comment threads.         |
+| `synced_at`     | `string \| null`   | no       | ISO 8601 UTC timestamp of last sync.     |
+
+---
+
+## Vote Values
+
+The `vote` field is a string enum (or `null`):
+
+| Value                       | Meaning                  |
+|-----------------------------|--------------------------|
+| `"approved"`                | Approved                 |
+| `"approved_with_suggestions"` | Approved with suggestions |
+| `"no_vote"`                 | No vote / reset          |
+| `"wait_for_author"`         | Wait for author          |
+| `"rejected"`                | Rejected                 |
+| `null`                      | Not yet voted            |
+
+> **Neovim adapter mapping**: The `cli.adapt_session()` function converts these strings to numeric values
+> for UI code compatibility: `approved`=10, `approved_with_suggestions`=5, `no_vote`=0,
+> `wait_for_author`=-5, `rejected`=-10.
 
 ---
 
 ## `Reviewer` Object
-
-Describes a PR reviewer and their current vote.
 
 | Field         | Type             | Required | Description                                          |
 |---------------|------------------|----------|------------------------------------------------------|
 | `name`        | `string`         | yes      | Display name of the reviewer.                        |
 | `id`          | `string \| null` | no       | Provider-assigned reviewer ID.                       |
 | `unique_name` | `string \| null` | no       | Reviewer email or login.                             |
-| `vote`        | `number \| null` | yes      | Review vote value (same scale as session `vote`), or `null`.|
+| `vote`        | `string \| null` | yes      | Review vote string enum (same as session `vote`).    |
 | `is_required` | `boolean`        | yes      | Whether the reviewer is a required reviewer.         |
 
 ### Example
@@ -131,7 +200,7 @@ Describes a PR reviewer and their current vote.
   "name": "Alice Smith",
   "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "unique_name": "alice@example.com",
-  "vote": 10,
+  "vote": "approved",
   "is_required": true
 }
 ```
@@ -140,12 +209,10 @@ Describes a PR reviewer and their current vote.
 
 ## `WorkItem` Object
 
-A linked work item or issue from the provider.
-
 | Field   | Type             | Required | Description                                          |
 |---------|------------------|----------|------------------------------------------------------|
 | `id`    | `number`         | yes      | Work item / issue ID.                                |
-| `title` | `string \| null` | no       | Work item title (may not be available from all providers).|
+| `title` | `string \| null` | no       | Work item title.                                     |
 | `url`   | `string \| null` | no       | Web URL to the work item.                            |
 
 ### Example
@@ -162,22 +229,19 @@ A linked work item or issue from the provider.
 
 ## `ChangedFile` Object
 
-Describes a single file changed in the PR.
-
 | Field           | Type             | Required | Description                                          |
 |-----------------|------------------|----------|------------------------------------------------------|
 | `path`          | `string`         | yes      | Relative file path.                                  |
-| `original_path` | `string \| null`| no       | Original path before rename. Present only for renames.|
+| `original_path` | `string \| null`| no       | Original path before rename.                         |
 | `change_type`   | `string`         | yes      | `"add"`, `"edit"`, `"delete"`, or `"rename"`.        |
-| `additions`     | `number \| null` | no       | Lines added. May be absent (provider-dependent).     |
-| `deletions`     | `number \| null` | no       | Lines deleted. May be absent (provider-dependent).   |
+| `additions`     | `number \| null` | no       | Lines added. Provider-dependent.                     |
+| `deletions`     | `number \| null` | no       | Lines deleted. Provider-dependent.                   |
 
 ### Example
 
 ```json
 {
   "path": "src/utils/helper.lua",
-  "original_path": null,
   "change_type": "edit",
   "additions": 15,
   "deletions": 3
@@ -193,13 +257,13 @@ A comment thread fetched from the provider and cached locally.
 | Field             | Type             | Required | Description                                                             |
 |-------------------|------------------|----------|-------------------------------------------------------------------------|
 | `id`              | `number`         | yes      | Provider-assigned thread ID.                                            |
-| `file_path`       | `string \| null` | yes      | Relative file path. `null` for PR-level (non-file-specific) threads.    |
-| `line_start`      | `number \| null` | yes      | Start line number (1-indexed, right/source side). `null` if not applicable.|
-| `line_end`        | `number \| null` | yes      | End line number (1-indexed, right/source side). `null` if not applicable.|
-| `col_start`       | `number \| null` | yes      | Start column (1-indexed byte offset). `null` if offset is <= 1.        |
-| `col_end`         | `number \| null` | yes      | End column (1-indexed byte offset). `null` if offset is <= 1.          |
-| `left_line_start` | `number \| null` | no       | Start line on the base/target branch side (for comments on deleted code). `null` if not applicable.|
-| `left_line_end`   | `number \| null` | no       | End line on the base/target branch side. `null` if not applicable.      |
+| `file_path`       | `string \| null` | yes      | Relative file path. `null` for PR-level threads.                        |
+| `line_start`      | `number \| null` | yes      | Start line (1-indexed, right/source side).                              |
+| `line_end`        | `number \| null` | yes      | End line (1-indexed, right/source side).                                |
+| `col_start`       | `number \| null` | yes      | Start column (1-indexed byte offset).                                   |
+| `col_end`         | `number \| null` | yes      | End column (1-indexed byte offset).                                     |
+| `left_line_start` | `number \| null` | no       | Start line on the base/target side (for deleted code comments).         |
+| `left_line_end`   | `number \| null` | no       | End line on the base/target side.                                       |
 | `status`          | `string`         | yes      | Thread status. See Thread Status Values.                                |
 | `is_deleted`      | `boolean`        | yes      | Whether the thread has been soft-deleted.                               |
 | `published_at`    | `string \| null` | no       | ISO 8601 UTC timestamp of thread creation.                              |
@@ -225,10 +289,6 @@ A comment thread fetched from the provider and cached locally.
   "file_path": "src/main.lua",
   "line_start": 42,
   "line_end": 45,
-  "col_start": null,
-  "col_end": null,
-  "left_line_start": null,
-  "left_line_end": null,
   "status": "active",
   "is_deleted": false,
   "published_at": "2026-03-26T08:00:00Z",
@@ -240,7 +300,6 @@ A comment thread fetched from the provider and cached locally.
       "author": "Jane Smith",
       "author_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
       "author_unique_name": "jane@example.com",
-      "parent_comment_id": null,
       "body": "Consider using `pcall` here for error safety.",
       "created_at": "2026-03-26T08:00:00Z",
       "updated_at": "2026-03-26T09:15:00Z",
@@ -263,34 +322,37 @@ A single comment within a `CommentThread`.
 | `author`            | `string`         | yes      | Comment author display name.                   |
 | `author_id`         | `string \| null` | no       | Provider-assigned author ID.                   |
 | `author_unique_name`| `string \| null` | no       | Author email or login.                         |
-| `parent_comment_id` | `number \| null` | no       | Parent comment ID within the thread (for nested replies). `null` for top-level comments.|
+| `parent_comment_id` | `number \| null` | no       | Parent comment ID for nested replies.          |
 | `body`              | `string`         | yes      | Comment content (markdown).                    |
 | `created_at`        | `string`         | yes      | ISO 8601 UTC timestamp of creation.            |
 | `updated_at`        | `string`         | yes      | ISO 8601 UTC timestamp of last edit.           |
-| `is_deleted`        | `boolean`        | yes      | Whether the comment has been soft-deleted.      |
+| `is_deleted`        | `boolean`        | yes      | Whether the comment has been soft-deleted.     |
 
 ---
 
 ## `DraftComment` Object
 
-A locally-created comment that has not yet been submitted to the provider.
+A locally-created comment not yet submitted to the provider. Stored as values in the `drafts` map, keyed by UUID.
+
 Drafts follow a strict lifecycle: `draft` -> `pending` -> `submitted`.
 
 | Field               | Type             | Required | Description                                                                  |
 |---------------------|------------------|----------|------------------------------------------------------------------------------|
-| `id`                | `string`         | yes      | Locally-generated UUID v4.                                                   |
 | `file_path`         | `string`         | yes      | Relative file path the comment targets.                                      |
 | `line_start`        | `number`         | yes      | Start line number (1-indexed).                                               |
-| `line_end`          | `number \| null` | yes      | End line for multi-line range comments. `null` for single-line.              |
-| `col_start`         | `number \| null` | yes      | Start column (1-indexed byte offset within `line_start`). `null` if not set. |
-| `col_end`           | `number \| null` | yes      | End column (1-indexed byte offset within `line_end` or `line_start`). `null` if not set. |
+| `line_end`          | `number \| null` | yes      | End line for multi-line range comments.                                      |
+| `col_start`         | `number \| null` | yes      | Start column (1-indexed byte offset).                                        |
+| `col_end`           | `number \| null` | yes      | End column (1-indexed byte offset).                                          |
 | `body`              | `string`         | yes      | Comment content (markdown).                                                  |
 | `status`            | `string`         | yes      | Draft lifecycle status. See Draft Status Values.                             |
 | `author`            | `string`         | yes      | Who created the draft. See Draft Author Values.                              |
-| `thread_id`         | `number \| null` | yes      | `null` for new standalone threads. Set to a remote thread ID when replying to an existing thread. |
-| `parent_comment_id` | `number \| null` | yes      | For replies, the specific comment being replied to. `null` otherwise.        |
+| `thread_id`         | `number \| null` | yes      | Remote thread ID when replying, or `null` for new threads.                   |
+| `parent_comment_id` | `number \| null` | yes      | Specific comment being replied to, or `null`.                                |
 | `created_at`        | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
 | `updated_at`        | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
+
+> **Note**: The draft's UUID is the *key* in the `drafts` map, not a field in the object itself.
+> The Neovim adapter adds it as `draft.id` when converting to the flat array format.
 
 ### Draft Status Values
 
@@ -309,21 +371,19 @@ Drafts follow a strict lifecycle: `draft` -> `pending` -> `submitted`.
 
 ### Example
 
+In the `drafts` map:
+
 ```json
 {
-  "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
-  "file_path": "src/main.lua",
-  "line_start": 42,
-  "line_end": null,
-  "col_start": null,
-  "col_end": null,
-  "body": "This function should be refactored to reduce complexity.",
-  "status": "draft",
-  "author": "ai",
-  "thread_id": null,
-  "parent_comment_id": null,
-  "created_at": "2026-03-27T11:00:00Z",
-  "updated_at": "2026-03-27T11:30:00Z"
+  "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d": {
+    "file_path": "src/main.lua",
+    "line_start": 42,
+    "body": "This function should be refactored to reduce complexity.",
+    "status": "draft",
+    "author": "ai",
+    "created_at": "2026-03-27T11:00:00Z",
+    "updated_at": "2026-03-27T11:30:00Z"
+  }
 }
 ```
 
@@ -331,175 +391,160 @@ Drafts follow a strict lifecycle: `draft` -> `pending` -> `submitted`.
 
 ## Full Example
 
-A complete session file with changed files, remote threads, reviewers, and draft comments:
+A complete v3 session file:
 
 ```json
 {
-  "version": 2,
-  "id": "my-org_my-project_my-repo_42",
-  "pr_id": 42,
-  "provider_type": "azdo",
-  "org": "my-org",
-  "project": "my-project",
-  "repo": "my-repo",
-  "pr_url": "https://dev.azure.com/my-org/my-project/_git/my-repo/pullrequest/42",
-  "pr_title": "Add input validation to user registration",
-  "pr_description": "This PR adds server-side validation for the user registration endpoint.",
-  "pr_author": "John Doe",
-  "pr_status": "active",
-  "pr_is_draft": false,
-  "pr_closed_at": null,
-  "source_branch": "feature/user-validation",
-  "target_branch": "main",
-  "merge_status": "succeeded",
-  "reviewers": [
-    {
-      "name": "Alice Smith",
-      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      "unique_name": "alice@example.com",
-      "vote": null,
-      "is_required": true
+  "version": 3,
+  "id": "azdo_my-org_my-project_my-repo_42",
+  "provider": {
+    "type": "azdo",
+    "organization": "my-org",
+    "project": "my-project",
+    "repository": "my-repo"
+  },
+  "pull_request": {
+    "id": 42,
+    "url": "https://dev.azure.com/my-org/my-project/_git/my-repo/pullrequest/42",
+    "title": "Add input validation to user registration",
+    "description": "This PR adds server-side validation for the user registration endpoint.",
+    "author": {
+      "display_name": "John Doe",
+      "id": "c3d4e5f6-a7b8-9012-cdef-3456789abcde",
+      "unique_name": "john@example.com"
     },
-    {
-      "name": "Bob Jones",
-      "id": "f6a7b8c9-d0e1-2345-6789-0abcdef12345",
-      "unique_name": "bob@example.com",
-      "vote": 5,
-      "is_required": false
-    }
-  ],
-  "labels": ["backend", "validation"],
-  "work_items": [
-    {
-      "id": 1234,
-      "title": "Implement input validation",
-      "url": "https://dev.azure.com/my-org/my-project/_workitems/edit/1234"
-    }
-  ],
-  "iteration_id": 3,
-  "source_commit": "abc123def456789012345678901234567890abcd",
-  "target_commit": "def456abc789012345678901234567890abcd1234",
-  "worktree_path": "/home/user/projects/my-repo/.power-review-worktrees/42",
-  "git_strategy": "worktree",
-  "created_at": "2026-03-27T10:00:00Z",
-  "updated_at": "2026-03-27T12:45:00Z",
-  "vote": null,
+    "status": "active",
+    "is_draft": false,
+    "source_branch": "feature/user-validation",
+    "target_branch": "main",
+    "merge_status": "succeeded",
+    "reviewers": [
+      {
+        "name": "Alice Smith",
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "unique_name": "alice@example.com",
+        "is_required": true
+      },
+      {
+        "name": "Bob Jones",
+        "id": "f6a7b8c9-d0e1-2345-6789-0abcdef12345",
+        "unique_name": "bob@example.com",
+        "vote": "approved_with_suggestions",
+        "is_required": false
+      }
+    ],
+    "labels": ["backend", "validation"],
+    "work_items": [
+      {
+        "id": 1234,
+        "title": "Implement input validation",
+        "url": "https://dev.azure.com/my-org/my-project/_workitems/edit/1234"
+      }
+    ]
+  },
+  "iteration": {
+    "iteration_id": 3,
+    "source_commit": "abc123def456789012345678901234567890abcd",
+    "target_commit": "def456abc789012345678901234567890abcd1234"
+  },
+  "git": {
+    "strategy": "worktree",
+    "worktree_path": "/home/user/projects/my-repo/.power-review-worktrees/42"
+  },
   "files": [
     {
       "path": "src/handlers/register.lua",
-      "original_path": null,
       "change_type": "edit",
       "additions": 35,
       "deletions": 4
     },
     {
       "path": "src/validators/user.lua",
-      "original_path": null,
       "change_type": "add",
       "additions": 87,
       "deletions": 0
     },
     {
       "path": "src/old_validator.lua",
-      "original_path": null,
       "change_type": "delete",
       "additions": 0,
       "deletions": 52
     }
   ],
-  "threads": [
-    {
-      "id": 100,
-      "file_path": "src/handlers/register.lua",
-      "line_start": 18,
-      "line_end": 22,
-      "col_start": null,
-      "col_end": null,
-      "left_line_start": null,
-      "left_line_end": null,
-      "status": "active",
-      "is_deleted": false,
-      "published_at": "2026-03-27T10:30:00Z",
-      "updated_at": "2026-03-27T11:00:00Z",
-      "comments": [
-        {
-          "id": 200,
-          "thread_id": 100,
-          "author": "Alice Smith",
-          "author_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "author_unique_name": "alice@example.com",
-          "parent_comment_id": null,
-          "body": "Should we add rate limiting here?",
-          "created_at": "2026-03-27T10:30:00Z",
-          "updated_at": "2026-03-27T10:30:00Z",
-          "is_deleted": false
-        },
-        {
-          "id": 201,
-          "thread_id": 100,
-          "author": "John Doe",
-          "author_id": "c3d4e5f6-a7b8-9012-cdef-3456789abcde",
-          "author_unique_name": "john@example.com",
-          "parent_comment_id": 200,
-          "body": "Good point, I'll add it in a follow-up PR.",
-          "created_at": "2026-03-27T11:00:00Z",
-          "updated_at": "2026-03-27T11:00:00Z",
-          "is_deleted": false
-        }
-      ]
-    },
-    {
-      "id": 101,
-      "file_path": null,
-      "line_start": null,
-      "line_end": null,
-      "col_start": null,
-      "col_end": null,
-      "left_line_start": null,
-      "left_line_end": null,
-      "status": "active",
-      "is_deleted": false,
-      "published_at": "2026-03-27T10:15:00Z",
-      "updated_at": "2026-03-27T10:15:00Z",
-      "comments": [
-        {
-          "id": 202,
-          "thread_id": 101,
-          "author": "Bob Jones",
-          "author_id": "f6a7b8c9-d0e1-2345-6789-0abcdef12345",
-          "author_unique_name": "bob@example.com",
-          "parent_comment_id": null,
-          "body": "Looks good overall. One minor comment on the handler file.",
-          "created_at": "2026-03-27T10:15:00Z",
-          "updated_at": "2026-03-27T10:15:00Z",
-          "is_deleted": false
-        }
-      ]
-    }
-  ],
-  "drafts": [
-    {
-      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "threads": {
+    "items": [
+      {
+        "id": 100,
+        "file_path": "src/handlers/register.lua",
+        "line_start": 18,
+        "line_end": 22,
+        "status": "active",
+        "is_deleted": false,
+        "published_at": "2026-03-27T10:30:00Z",
+        "updated_at": "2026-03-27T11:00:00Z",
+        "comments": [
+          {
+            "id": 200,
+            "thread_id": 100,
+            "author": "Alice Smith",
+            "author_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "author_unique_name": "alice@example.com",
+            "body": "Should we add rate limiting here?",
+            "created_at": "2026-03-27T10:30:00Z",
+            "updated_at": "2026-03-27T10:30:00Z",
+            "is_deleted": false
+          },
+          {
+            "id": 201,
+            "thread_id": 100,
+            "author": "John Doe",
+            "author_id": "c3d4e5f6-a7b8-9012-cdef-3456789abcde",
+            "author_unique_name": "john@example.com",
+            "parent_comment_id": 200,
+            "body": "Good point, I'll add it in a follow-up PR.",
+            "created_at": "2026-03-27T11:00:00Z",
+            "updated_at": "2026-03-27T11:00:00Z",
+            "is_deleted": false
+          }
+        ]
+      },
+      {
+        "id": 101,
+        "status": "active",
+        "is_deleted": false,
+        "published_at": "2026-03-27T10:15:00Z",
+        "updated_at": "2026-03-27T10:15:00Z",
+        "comments": [
+          {
+            "id": 202,
+            "thread_id": 101,
+            "author": "Bob Jones",
+            "author_id": "f6a7b8c9-d0e1-2345-6789-0abcdef12345",
+            "author_unique_name": "bob@example.com",
+            "body": "Looks good overall. One minor comment on the handler file.",
+            "created_at": "2026-03-27T10:15:00Z",
+            "updated_at": "2026-03-27T10:15:00Z",
+            "is_deleted": false
+          }
+        ]
+      }
+    ],
+    "synced_at": "2026-03-27T12:00:00Z"
+  },
+  "drafts": {
+    "f47ac10b-58cc-4372-a567-0e02b2c3d479": {
       "file_path": "src/validators/user.lua",
       "line_start": 15,
       "line_end": 28,
-      "col_start": null,
-      "col_end": null,
       "body": "This validation block could be simplified with a pattern match.",
       "status": "draft",
       "author": "user",
-      "thread_id": null,
-      "parent_comment_id": null,
       "created_at": "2026-03-27T12:00:00Z",
       "updated_at": "2026-03-27T12:00:00Z"
     },
-    {
-      "id": "9c4d8e2f-1a3b-4c5d-8e7f-6a5b4c3d2e1f",
+    "9c4d8e2f-1a3b-4c5d-8e7f-6a5b4c3d2e1f": {
       "file_path": "src/handlers/register.lua",
       "line_start": 18,
-      "line_end": null,
-      "col_start": null,
-      "col_end": null,
       "body": "Agreed, rate limiting would be important for this endpoint.",
       "status": "pending",
       "author": "user",
@@ -508,61 +553,75 @@ A complete session file with changed files, remote threads, reviewers, and draft
       "created_at": "2026-03-27T12:30:00Z",
       "updated_at": "2026-03-27T12:45:00Z"
     }
-  ]
+  },
+  "vote": "no_vote",
+  "created_at": "2026-03-27T10:00:00Z",
+  "updated_at": "2026-03-27T12:45:00Z"
 }
 ```
 
 ### Notes on the full example
 
-- The `vote` is `null` -- the reviewer has not voted yet.
-- The `pr_status` is `"active"` and `pr_is_draft` is `false` -- this is an open, non-draft PR.
-- The `merge_status` is `"succeeded"` -- the PR can merge cleanly.
-- The `reviewers` array shows Alice (required, no vote yet) and Bob (optional, approved with suggestions).
-- The `labels` array contains two tags applied to the PR.
-- The `work_items` array links to one Azure DevOps work item.
-- The `iteration_id` is `3` with commit SHAs recorded -- this enables detecting new changes on next sync.
-- The `files` array shows three types of changes: edit, add, and delete.
-- The `threads` array contains one file-level thread (with a back-and-forth conversation including `parent_comment_id`) and one PR-level thread (`file_path` is `null`).
-- Thread timestamps (`published_at`, `updated_at`) enable sorting by recency.
-- Comment `author_id` and `author_unique_name` enable identifying users across sessions.
-- The `drafts` array contains two drafts:
-  - A new standalone comment (status `"draft"`, `thread_id` is `null`).
-  - A reply to an existing thread (status `"pending"`, `thread_id` and `parent_comment_id` are set). This draft has been approved and is ready for submission.
+- The `vote` is `"no_vote"` -- the reviewer has not cast a meaningful vote yet.
+- The `pull_request.status` is `"active"` and `is_draft` is `false` -- this is an open, non-draft PR.
+- The `pull_request.merge_status` is `"succeeded"` -- the PR can merge cleanly.
+- The `pull_request.reviewers` array shows Alice (required, no vote) and Bob (optional, approved with suggestions).
+- The `pull_request.author` uses `PersonIdentity` with `display_name`, `id`, and `unique_name`.
+- The `iteration` records the sync state (iteration 3 with commit SHAs).
+- The `git` object records the strategy and worktree path.
+- The `files` array shows three types of changes: edit, add, and delete. Null fields are omitted.
+- The `threads.items` array contains one file-level thread (with a reply using `parent_comment_id`) and one PR-level thread (`file_path` is omitted/null).
+- The `drafts` is a **map** keyed by UUID, not an array. Each draft's UUID is the key.
+  - First draft: new standalone comment (status `"draft"`, no `thread_id`).
+  - Second draft: reply to existing thread (status `"pending"`, `thread_id` and `parent_comment_id` set).
 
 ---
 
-## Schema Migration (v1 -> v2)
+## Neovim Adapter Mapping (v3 -> flat)
 
-Sessions saved with schema v1 are automatically migrated on load. The following defaults are applied:
+The Neovim plugin's `cli.adapt_session()` function converts the nested v3 format to a flat shape:
 
-| New Field        | Default Value |
-|------------------|---------------|
-| `pr_status`      | `"active"`    |
-| `pr_is_draft`    | `false`       |
-| `pr_closed_at`   | `null`        |
-| `merge_status`   | `null`        |
-| `reviewers`      | `[]`          |
-| `labels`         | `[]`          |
-| `work_items`     | `[]`          |
-| `iteration_id`   | `null`        |
-| `source_commit`  | `null`        |
-| `target_commit`  | `null`        |
-| `threads`        | `[]` (if missing) |
-
-The `version` field is updated to `2` after migration. A subsequent refresh (`:PowerReview refresh`) will populate the new fields from the provider.
+| v3 Path | Flat Field |
+|---------|-----------|
+| `pull_request.id` | `pr_id` |
+| `pull_request.url` | `pr_url` |
+| `pull_request.title` | `pr_title` |
+| `pull_request.description` | `pr_description` |
+| `pull_request.author.display_name` | `pr_author` |
+| `pull_request.status` | `pr_status` |
+| `pull_request.is_draft` | `pr_is_draft` |
+| `pull_request.closed_at` | `pr_closed_at` |
+| `pull_request.source_branch` | `source_branch` |
+| `pull_request.target_branch` | `target_branch` |
+| `pull_request.merge_status` | `merge_status` |
+| `pull_request.reviewers` | `reviewers` |
+| `pull_request.labels` | `labels` |
+| `pull_request.work_items` | `work_items` |
+| `provider.type` | `provider_type` |
+| `provider.organization` | `org` |
+| `provider.project` | `project` |
+| `provider.repository` | `repo` |
+| `git.strategy` | `git_strategy` |
+| `git.worktree_path` | `worktree_path` |
+| `iteration.iteration_id` | `iteration_id` |
+| `iteration.source_commit` | `source_commit` |
+| `iteration.target_commit` | `target_commit` |
+| `threads.items` | `threads` (array) |
+| `drafts` (map) | `drafts` (array, sorted by `created_at`, `id` field added) |
+| `vote` (string enum) | `vote` (number: approved=10, approved_with_suggestions=5, no_vote=0, wait_for_author=-5, rejected=-10) |
 
 ---
 
 ## Refresh Semantics
 
-When a session is refreshed (`:PowerReview refresh`):
+When a session is refreshed (`powerreview open --pr-url ...` on existing session):
 
-- **PR metadata** is re-fetched: `pr_title`, `pr_description`, `pr_status`, `pr_is_draft`, `pr_closed_at`, `merge_status`, `reviewers`, `labels`, `work_items`.
-- **Files** are fully replaced with the latest iteration's changed files. `iteration_id`, `source_commit`, and `target_commit` are updated.
-- **Threads** are fully replaced with fresh data from the provider. There is no merge -- threads removed from the provider are also removed from the session.
-- **Drafts** are preserved. They are stored separately and are never affected by refresh operations.
+- **PR metadata** is re-fetched: title, description, status, is_draft, closed_at, merge_status, reviewers, labels, work_items.
+- **Files** are fully replaced with the latest iteration's changed files. Iteration metadata is updated.
+- **Threads** are fully replaced with fresh data from the provider.
+- **Drafts** are preserved. They are never affected by refresh operations.
 
-When only threads are synced (`:PowerReview sync`):
+When only threads are synced (`powerreview sync --pr-url ...`):
 
 - Only **threads** are re-fetched and replaced.
 - Files and PR metadata are not updated.

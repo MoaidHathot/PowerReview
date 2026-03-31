@@ -34,7 +34,7 @@ diff views, and an MCP server for external AI agent integration.
 - codediff.nvim (recommended, for diff views)
 - neo-tree.nvim (optional, for file tree panel)
 - telescope.nvim (optional, for fuzzy pickers)
-- `curl` on PATH
+- .NET 10 SDK (required, for the CLI tool)
 - For Azure DevOps: `az` CLI or a Personal Access Token
 
 ==============================================================================
@@ -56,39 +56,19 @@ Minimal setup with lazy.nvim: >lua
 ==============================================================================
 4. CONFIGURATION                                *power-review-configuration*
 
+PowerReview uses a split configuration model:
+- CLI config ($XDG_CONFIG_HOME/PowerReview/config.json) owns auth, git
+  strategy, provider settings, and data directory.
+- Lua config (setup()) owns UI settings: keymaps, signs, panels, diff
+  provider, and CLI executable path.
+
 Call `require("power-review").setup(opts)` with any of these options:
 
-                                              *power-review-config-repos*
-repos ~
-  Table keyed by absolute repo path. Maps repositories to provider configs.
-  Example: >lua
-    repos = {
-      ["/path/to/repo"] = {
-        provider = "azdo",
-        azdo = {
-          organization = "myorg",
-          project = "myproject",
-          repository = "myrepo",
-        },
-      },
-    }
-<
+                                                *power-review-config-cli*
+cli ~
+  CLI tool settings.
 
-                                               *power-review-config-auth*
-auth ~
-  Authentication settings per provider.
-
-  `auth.azdo.method`    "auto" | "az_cli" | "pat" (default: "auto")
-  `auth.azdo.pat`       PAT string, or use env: POWER_REVIEW_AZDO_PAT
-  `auth.github.pat`     PAT string, or use env: GITHUB_TOKEN
-
-                                                *power-review-config-git*
-git ~
-  Git strategy settings.
-
-  `git.strategy`          "worktree" | "checkout" (default: "worktree")
-  `git.worktree_dir`      Relative directory name (default: ".power-review-worktrees")
-  `git.cleanup_on_close`  Remove worktree on close (default: true)
+  `cli.executable`    Path or name of the CLI binary (default: "powerreview")
 
                                                  *power-review-config-ui*
 ui ~
@@ -120,15 +100,22 @@ keymaps ~
   `keymaps.close_review`     "<leader>pQ"
   `keymaps.delete_session`   "<leader>pD"
 
-                                                *power-review-config-mcp*
-mcp ~
-  MCP server integration.
-
-  `mcp.enabled`  Write server_info.json for MCP server (default: false)
-
-                                                *power-review-config-log*
+                                                 *power-review-config-log*
 log ~
   `log.level`  "debug" | "info" | "warn" | "error" (default: "info")
+
+                                        *power-review-config-cli-json*
+CLI Configuration File ~
+  The CLI reads `$XDG_CONFIG_HOME/PowerReview/config.json` (or
+  `%APPDATA%\PowerReview\config.json` on Windows). Fields:
+
+  `auth.azdo.method`        "auto" | "az_cli" | "pat" (default: "auto")
+  `auth.azdo.pat_env_var`   Env var name for AzDO PAT (default: "AZDO_PAT")
+  `auth.github.pat_env_var` Env var name for GitHub token (default: "GITHUB_TOKEN")
+  `git.strategy`            "worktree" | "checkout" (default: "worktree")
+  `git.worktree_dir`        Relative directory name (default: ".power-review-worktrees")
+  `git.cleanup_on_close`    Remove worktree on close (default: true)
+  `data_dir`                Override default data directory for sessions
 
 ==============================================================================
 5. COMMANDS                                          *power-review-commands*
@@ -324,15 +311,27 @@ api.reply_to_thread({opts})
 ==============================================================================
 8. MCP SERVER                                            *power-review-mcp*
 
-PowerReview includes a TypeScript MCP server in the `mcp/` directory. It
-connects to Neovim via msgpack-RPC and exposes review tools to AI agents.
+The CLI tool doubles as an MCP (Model Context Protocol) server. Running
+`powerreview mcp` starts a stdio-based MCP server that AI agents can
+connect to directly -- no Neovim instance required.
 
-Enable with `mcp.enabled = true` in setup. See README for full setup
-instructions and `.mcp.json` configuration.
+Configure your AI tool's MCP settings: >json
+  {
+    "mcpServers": {
+      "power-review": {
+        "command": "powerreview",
+        "args": ["mcp"]
+      }
+    }
+  }
+<
 
-MCP tools: get_review_session, list_changed_files, get_file_diff,
-list_comment_threads, create_comment, reply_to_thread,
-edit_draft_comment, delete_draft_comment.
+MCP tools: GetReviewSession, ListChangedFiles, GetFileDiff,
+ListCommentThreads, CreateComment, ReplyToThread,
+EditDraftComment, DeleteDraftComment.
+
+AI-created comments are tagged with author=ai and start as drafts
+that require user approval before submission.
 
 ==============================================================================
 9. TELESCOPE                                        *power-review-telescope*
@@ -366,356 +365,69 @@ This ensures LLM-generated comments always go through human approval.
 ==============================================================================
 11. SESSION STATE FILE                            *power-review-state-file*
 
-Each review session is persisted as a JSON file on disk. This section
-documents the file location and full schema.
+Each review session is persisted as a JSON file on disk by the CLI tool.
+This section documents the file location and schema.
 
 FILE LOCATION ~
                                                   *power-review-state-path*
-Session files are stored at:
+Session files are managed by the CLI and stored at:
 >
-  {vim.fn.stdpath("data")}/power-review/sessions/{session_id}.json
+  {data_dir}/sessions/{session_id}.json
 <
-Typical paths:
-- Linux/macOS: `~/.local/share/nvim/power-review/sessions/`
-- Windows:     `%LOCALAPPDATA%/nvim-data/power-review/sessions/`
+The data directory is resolved in this order:
+1. `data_dir` field in CLI's `config.json`
+2. `$XDG_DATA_HOME/PowerReview`
+3. Windows: `%LOCALAPPDATA%\PowerReview`; Linux/Mac: `~/.local/share/PowerReview`
+
+Run `powerreview config --path-only` to see the resolved config path.
 
 The `session_id` is constructed as `{org}_{project}_{repo}_{pr_id}`, with
 non-alphanumeric, non-hyphen characters replaced by underscores.
 Example: `my-org_my-project_my-repo_42.json`
 
-Writes are atomic: data is written to a `.tmp` file first, then renamed
-to the final `.json` path.
+The CLI outputs v3 session format (nested JSON). The Neovim plugin's
+`cli.adapt_session()` converts this to a flat v2-compatible shape that
+all UI code expects. See `lua/power-review/cli.lua` for the adapter.
 
-See: `lua/power-review/store/json.lua`
-     `lua/power-review/store/init.lua`
+See: `doc/session-schema.md` for the full schema specification.
 
 SCHEMA OVERVIEW ~
                                                 *power-review-state-schema*
-The JSON file serializes a `PowerReview.ReviewSession` table. The
-authoritative type definition is in `lua/power-review/types.lua:88-109`.
-
-Top-level structure:
->json
-  {
-    "version":        1,
-    "id":             "org_project_repo_42",
-    "pr_id":          42,
-    "provider_type":  "azdo",
-    "org":            "my-org",
-    "project":        "my-project",
-    "repo":           "my-repo",
-    "pr_url":         "https://dev.azure.com/...",
-    "pr_title":       "Add new feature",
-    "pr_description": "This PR adds...",
-    "pr_author":      "John Doe",
-    "source_branch":  "feature/foo",
-    "target_branch":  "main",
-    "worktree_path":  "/path/to/worktree",
-    "git_strategy":   "worktree",
-    "created_at":     "2026-03-27T10:00:00Z",
-    "updated_at":     "2026-03-27T12:30:00Z",
-    "vote":           10,
-    "files":          [ ... ],
-    "threads":        [ ... ],
-    "drafts":         [ ... ]
-  }
-<
-
-SESSION METADATA FIELDS ~
-                                              *power-review-state-metadata*
-
-  `version`           number
-    Schema version for migration safety. Currently always `1`.
-    Defaulted to `1` on load if missing.
-
-  `id`                string
-    Unique session identifier: `{org}_{project}_{repo}_{pr_id}`.
-    Also used as the JSON filename (with `.json` appended).
-
-  `pr_id`             number
-    Pull request number/ID from the provider.
-
-  `provider_type`     string
-    Provider type: `"azdo"` (Azure DevOps) or `"github"`.
-
-  `org`               string
-    Organization name (AzDO) or repository owner (GitHub).
-
-  `project`           string
-    Project name (AzDO) or repository name (GitHub).
-
-  `repo`              string
-    Repository name.
-
-PR METADATA FIELDS ~
-                                           *power-review-state-pr-metadata*
-
-  `pr_url`            string
-    The original URL used to open the review.
-
-  `pr_title`          string
-    Pull request title.
-
-  `pr_description`    string
-    Pull request description body (markdown).
-
-  `pr_author`         string
-    Display name of the PR author.
-
-  `source_branch`     string
-    Source/feature branch of the PR.
-
-  `target_branch`     string
-    Target/base branch of the PR.
-
-GIT & WORKSPACE FIELDS ~
-                                                  *power-review-state-git*
-
-  `worktree_path`     string | null
-    Filesystem path to the git worktree created for the review.
-    `null` if no worktree was created.
-
-  `git_strategy`      string
-    How git was set up for the review:
-    - `"worktree"`:  Separate worktree created for the source branch.
-    - `"checkout"`:  Branch checkout in the main repository.
-
-TIMESTAMP FIELDS ~
-                                           *power-review-state-timestamps*
-
-  `created_at`        string
-    ISO 8601 UTC timestamp (`YYYY-MM-DDTHH:MM:SSZ`) of session creation.
-
-  `updated_at`        string
-    ISO 8601 UTC timestamp, refreshed on every save/mutation.
-
-REVIEW VOTE FIELD ~
-                                                 *power-review-state-vote*
-
-  `vote`              number | null
-    The user's review vote. `null` means not yet voted.
-    AzDO vote values:
-      `10`    Approved
-      `5`     Approved with suggestions
-      `0`     No vote / reset
-      `-5`    Wait for author
-      `-10`   Rejected
-
-CHANGED FILES ARRAY ~
-                                                *power-review-state-files*
-
-  `files`             array of ChangedFile objects.
-    Each element describes a file changed in the PR:
-
-    `path`              string
-      Relative file path.
-
-    `original_path`     string | null
-      Original path before rename. Only present for renames.
-
-    `change_type`       string
-      One of: `"add"`, `"edit"`, `"delete"`, `"rename"`.
-
-    `additions`         number | null
-      Lines added. Provider-dependent; may be absent.
-
-    `deletions`         number | null
-      Lines deleted. Provider-dependent; may be absent.
-
-  Example:
->json
-    {
-      "path": "src/utils/helper.lua",
-      "original_path": null,
-      "change_type": "edit",
-      "additions": 15,
-      "deletions": 3
-    }
-<
-
-REMOTE COMMENT THREADS ARRAY ~
-                                              *power-review-state-threads*
-
-  `threads`           array of CommentThread objects.
-    Threads fetched from the provider and cached locally.
-
-    `id`                number
-      Provider-assigned thread ID.
-
-    `file_path`         string | null
-      Relative file path. `null` for PR-level threads.
-
-    `line_start`        number | null
-      Start line number of the code range.
-
-    `line_end`          number | null
-      End line number of the code range.
-
-    `col_start`         number | null
-      1-indexed start column offset. Set only if provider reports
-      offset > 1.
-
-    `col_end`           number | null
-      1-indexed end column offset. Set only if provider reports
-      offset > 1.
-
-    `status`            string
-      Thread resolution status. One of: `"active"`, `"fixed"`,
-      `"wontfix"`, `"closed"`, `"bydesign"`, `"pending"`.
-
-    `is_deleted`        boolean
-      Whether the thread has been soft-deleted.
-
-    `comments`          array of Comment objects (see below).
-
-  Each Comment within a thread:
-
-    `id`                number
-      Provider-assigned comment ID.
-
-    `thread_id`         number
-      Parent thread ID.
-
-    `author`            string
-      Comment author display name.
-
-    `body`              string
-      Comment content (markdown).
-
-    `created_at`        string
-      ISO 8601 timestamp of creation.
-
-    `updated_at`        string
-      ISO 8601 timestamp of last update.
-
-    `is_deleted`        boolean
-      Whether the comment has been soft-deleted.
-
-  Example:
->json
-    {
-      "id": 12345,
-      "file_path": "src/main.lua",
-      "line_start": 42,
-      "line_end": 45,
-      "col_start": null,
-      "col_end": null,
-      "status": "active",
-      "is_deleted": false,
-      "comments": [
-        {
-          "id": 67890,
-          "thread_id": 12345,
-          "author": "Jane Smith",
-          "body": "Consider using pcall here.",
-          "created_at": "2026-03-26T08:00:00Z",
-          "updated_at": "2026-03-26T09:15:00Z",
-          "is_deleted": false
-        }
-      ]
-    }
-<
-
-LOCAL DRAFT COMMENTS ARRAY ~
-                                               *power-review-state-drafts*
-
-  `drafts`            array of DraftComment objects.
-    Locally-created comments not yet submitted to the provider.
-    See |power-review-drafts| for the draft lifecycle.
-
-    `id`                string
-      Locally-generated UUID v4.
-
-    `file_path`         string
-      Relative file path the comment targets.
-
-    `line_start`        number
-      1-indexed start line number.
-
-    `line_end`          number | null
-      End line for multi-line range comments.
-
-    `col_start`         number | null
-      1-indexed start column (byte offset within `line_start`).
-
-    `col_end`           number | null
-      1-indexed end column (byte offset within `line_end` or
-      `line_start`).
-
-    `body`              string
-      Comment content (markdown).
-
-    `status`            string
-      Draft lifecycle status:
-      - `"draft"`:     Editable. Can be modified or deleted.
-      - `"pending"`:   Approved, ready for submission. Immutable.
-      - `"submitted"`: Sent to the remote provider. Immutable.
-
-    `author`            string
-      Who created the draft: `"user"` or `"ai"` (LLM-generated).
-
-    `thread_id`         number | null
-      `null` for new standalone threads. Set to a remote thread ID
-      when this draft is a reply to an existing thread.
-
-    `parent_comment_id` number | null
-      For replies, the specific comment being replied to.
-
-    `created_at`        string
-      ISO 8601 UTC timestamp.
-
-    `updated_at`        string
-      ISO 8601 UTC timestamp.
-
-  Example:
->json
-    {
-      "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
-      "file_path": "src/main.lua",
-      "line_start": 42,
-      "line_end": null,
-      "col_start": null,
-      "col_end": null,
-      "body": "This should be refactored",
-      "status": "draft",
-      "author": "user",
-      "thread_id": null,
-      "parent_comment_id": null,
-      "created_at": "2026-03-27T11:00:00Z",
-      "updated_at": "2026-03-27T11:30:00Z"
-    }
-<
+The CLI outputs v3 JSON format with a nested structure (pull_request,
+provider, git groupings). The full schema is documented in
+`doc/session-schema.md`.
+
+The Neovim plugin adapter converts v3 to a flat v2-compatible shape:
+  - `pull_request.id` -> `pr_id`
+  - `pull_request.title` -> `pr_title`
+  - `provider.type` -> `provider_type`
+  - `git.worktree_path` -> `worktree_path`
+  - `threads.items` -> `threads` (array)
+  - `drafts` map `{uuid: draft}` -> `drafts` (sorted array)
+  - `vote` string enum -> numeric value
+
+See `lua/power-review/cli.lua:adapt_session()` for the full mapping.
 
 PERSISTENCE BEHAVIOR ~
                                           *power-review-state-persistence*
 
-The session is re-saved to disk after every state-changing operation:
+The CLI re-saves the session to disk after every state-changing operation:
 
   - Adding, editing, or deleting a draft comment
   - Approving or unapproving a draft
   - Submitting pending comments
-  - Retrying failed submissions
   - Setting a vote
   - Syncing remote threads
-  - Refreshing the session
-  - Resuming or closing a session
+  - Opening, refreshing, or closing a session
 
-On load, migration defaults are applied for backward compatibility:
-  - `drafts` defaults to `{}`
-  - `files` defaults to `{}`
-  - `version` defaults to `1`
+After any CLI mutation, the Neovim plugin reloads the session from
+the CLI using `powerreview session --pr-url ...`.
 
 SESSION SUMMARIES ~
                                              *power-review-state-summary*
 
 When listing sessions (`:PowerReview list`, `:PowerReview sessions`),
-a lighter `PowerReview.SessionSummary` projection is returned instead
-of the full session. It contains:
-
-  `id`, `pr_id`, `pr_title`, `pr_url`, `provider_type`, `org`,
-  `project`, `repo`, `draft_count`, `created_at`, `updated_at`
-
-See: `lua/power-review/store/init.lua:50-81`
+the CLI returns lighter summary projections via `powerreview sessions list`.
 
 ==============================================================================
  vim:tw=78:ts=8:ft=help:norl:
