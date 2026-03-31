@@ -56,54 +56,55 @@ end
 function M.resume_session(session_id_or_url, callback)
   -- We need to figure out the PR URL from the session.
   -- First, try to load session list and find the matching one.
-  local summaries, list_err = cli.list_sessions()
-  if list_err then
-    callback("Failed to list sessions: " .. list_err)
-    return
-  end
-
-  local pr_url = nil
-  for _, s in ipairs(summaries or {}) do
-    if s.id == session_id_or_url then
-      pr_url = s.pr_url
-      break
-    end
-  end
-
-  if not pr_url then
-    -- Maybe it's already a URL
-    pr_url = session_id_or_url
-  end
-
-  -- Use open to re-fetch and resume (CLI handles existing session merging)
-  local repo_path = nil
-  local cwd = vim.fn.getcwd()
-  local git_dir = vim.fn.finddir(".git", cwd .. ";")
-  if git_dir ~= "" then
-    repo_path = vim.fn.fnamemodify(git_dir, ":h")
-    if repo_path == "." then
-      repo_path = cwd
-    end
-  end
-
-  cli.open(pr_url, repo_path, function(err, session)
-    if err then
-      callback("Resume failed: " .. err)
+  cli.list_sessions_async(function(list_err, summaries)
+    if list_err then
+      callback("Failed to list sessions: " .. list_err)
       return
     end
 
-    -- Set as current session
-    local pr_mod = require("power-review")
-    pr_mod._set_current_session(session)
+    local pr_url = nil
+    for _, s in ipairs(summaries or {}) do
+      if s.id == session_id_or_url then
+        pr_url = s.pr_url
+        break
+      end
+    end
 
-    -- Navigate to worktree if applicable
-    M._navigate_to_review(session)
+    if not pr_url then
+      -- Maybe it's already a URL
+      pr_url = session_id_or_url
+    end
 
-    -- Refresh UI
-    require("power-review.ui").refresh_neotree()
+    -- Use open to re-fetch and resume (CLI handles existing session merging)
+    local repo_path = nil
+    local cwd = vim.fn.getcwd()
+    local git_dir = vim.fn.finddir(".git", cwd .. ";")
+    if git_dir ~= "" then
+      repo_path = vim.fn.fnamemodify(git_dir, ":h")
+      if repo_path == "." then
+        repo_path = cwd
+      end
+    end
 
-    log.info("Resumed session: %s (PR #%d: %s)", session.id, session.pr_id, session.pr_title)
-    callback(nil, session)
+    cli.open(pr_url, repo_path, function(err, session)
+      if err then
+        callback("Resume failed: " .. err)
+        return
+      end
+
+      -- Set as current session
+      local pr_mod = require("power-review")
+      pr_mod._set_current_session(session)
+
+      -- Navigate to worktree if applicable
+      M._navigate_to_review(session)
+
+      -- Refresh UI
+      require("power-review.ui").refresh_neotree()
+
+      log.info("Resumed session: %s (PR #%d: %s)", session.id, session.pr_id, session.pr_title)
+      callback(nil, session)
+    end)
   end)
 end
 

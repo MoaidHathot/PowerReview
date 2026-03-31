@@ -9,7 +9,7 @@ local log = require("power-review.utils.log")
 --- When a table, the first element is the executable and the rest are prepended args.
 --- Example: { "dotnet", "run", "--project", "/path/to/project", "--" }
 ---@type string|string[]
-M._executable = { "dnx", "PowerReview", "--" }
+M._executable = { "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--" }
 
 --- Configure the CLI bridge.
 ---@param opts? { executable?: string|string[] }
@@ -433,6 +433,25 @@ function M.list_sessions()
   if err then
     return nil, err
   end
+  return M._adapt_session_summaries(result), nil
+end
+
+--- List all saved sessions asynchronously.
+---@param callback fun(err?: string, summaries?: PowerReview.SessionSummary[])
+function M.list_sessions_async(callback)
+  M.run_async({ "sessions", "list" }, function(err, result)
+    if err then
+      callback(err)
+      return
+    end
+    callback(nil, M._adapt_session_summaries(result))
+  end)
+end
+
+--- Adapt raw CLI session list JSON into SessionSummary array.
+---@param result table[] Raw CLI output
+---@return PowerReview.SessionSummary[]
+function M._adapt_session_summaries(result)
   -- The CLI returns an array of session summaries
   -- Adapt field names: the CLI uses nested structure but sessions list is flat
   local summaries = {}
@@ -452,7 +471,7 @@ function M.list_sessions()
       updated_at = s.updated_at or "",
     })
   end
-  return summaries, nil
+  return summaries
 end
 
 --- Delete a specific session.

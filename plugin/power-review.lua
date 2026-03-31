@@ -67,38 +67,39 @@ vim.api.nvim_create_user_command("PowerReview", function(cmd_opts)
         end)
       end
 
-      local sessions = store.list()
-      if #sessions == 0 then
-        prompt_for_url()
-        return
-      end
-
-      -- Add a "New review..." option at the top
-      local choices = { { id = "__new__", label = " Enter a new PR URL..." } }
-      for _, s in ipairs(sessions) do
-        table.insert(choices, s)
-      end
-
-      vim.ui.select(choices, {
-        prompt = "Select review session or start new:",
-        format_item = function(item)
-          if item.id == "__new__" then
-            return item.label
-          end
-          return string.format("[%s] PR #%d: %s (%d drafts)", item.provider_type, item.pr_id, item.pr_title, item.draft_count)
-        end,
-      }, function(selected)
-        if not selected then
-          return
-        end
-        if selected.id == "__new__" then
+      store.list_async(function(sessions)
+        if #sessions == 0 then
           prompt_for_url()
           return
         end
-        review.resume_session(selected.id, function(err)
-          if err then
-            vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+
+        -- Add a "New review..." option at the top
+        local choices = { { id = "__new__", label = " Enter a new PR URL..." } }
+        for _, s in ipairs(sessions) do
+          table.insert(choices, s)
+        end
+
+        vim.ui.select(choices, {
+          prompt = "Select review session or start new:",
+          format_item = function(item)
+            if item.id == "__new__" then
+              return item.label
+            end
+            return string.format("[%s] PR #%d: %s (%d drafts)", item.provider_type, item.pr_id, item.pr_title, item.draft_count)
+          end,
+        }, function(selected)
+          if not selected then
+            return
           end
+          if selected.id == "__new__" then
+            prompt_for_url()
+            return
+          end
+          review.resume_session(selected.id, function(err)
+            if err then
+              vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+            end
+          end)
         end)
       end)
     end

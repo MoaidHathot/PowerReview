@@ -14,8 +14,11 @@ local function defaults()
   return {
     -- CLI tool configuration
     cli = {
-      executable = { "dnx", "PowerReview", "--" }, -- CLI executable command; uses .NET 10 dnx runner by default
-                                                    -- Can be a string (e.g., "powerreview") or a table for multi-arg commands
+      executable = { "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--" },
+      -- CLI executable command; uses .NET 10 dnx runner by default.
+      -- --yes: skip interactive confirmation prompts.
+      -- --add-source: ensure nuget.org is always available (repos with custom nuget.config may hide it).
+      -- Can be a string (e.g., "powerreview") or a table for multi-arg commands.
     },
 
     -- UI configuration

@@ -83,7 +83,7 @@ All Lua options with their defaults:
 require("power-review").setup({
   -- CLI tool
   cli = {
-    executable = { "dnx", "PowerReview", "--" },  -- CLI command; uses .NET 10 dnx runner by default
+    executable = { "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--" },
   },
 
   -- UI configuration

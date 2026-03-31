@@ -40,6 +40,19 @@ function M.list()
   return summaries or {}
 end
 
+--- List all saved review sessions asynchronously.
+---@param callback fun(sessions: PowerReview.SessionSummary[])
+function M.list_async(callback)
+  cli.list_sessions_async(function(err, summaries)
+    if err then
+      log.warn("Failed to list sessions: %s", err)
+      callback({})
+      return
+    end
+    callback(summaries or {})
+  end)
+end
+
 --- Delete all saved sessions.
 function M.clean()
   local count, err = cli.clean_sessions()
