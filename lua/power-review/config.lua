@@ -14,7 +14,8 @@ local function defaults()
   return {
     -- CLI tool configuration
     cli = {
-      executable = "powerreview", -- Path or name of the CLI executable
+      executable = { "dnx", "PowerReview", "--" }, -- CLI executable command; uses .NET 10 dnx runner by default
+                                                    -- Can be a string (e.g., "powerreview") or a table for multi-arg commands
     },
 
     -- UI configuration

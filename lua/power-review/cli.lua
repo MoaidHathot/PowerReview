@@ -5,12 +5,14 @@ local M = {}
 
 local log = require("power-review.utils.log")
 
---- The CLI executable name. Can be overridden in config.
----@type string
-M._executable = "powerreview"
+--- The CLI executable. Can be a string (single command) or a table (command prefix).
+--- When a table, the first element is the executable and the rest are prepended args.
+--- Example: { "dotnet", "run", "--project", "/path/to/project", "--" }
+---@type string|string[]
+M._executable = { "dnx", "PowerReview", "--" }
 
 --- Configure the CLI bridge.
----@param opts? { executable?: string }
+---@param opts? { executable?: string|string[] }
 function M.configure(opts)
   opts = opts or {}
   if opts.executable then
@@ -31,7 +33,7 @@ function M.run(args, opts)
   opts = opts or {}
   local timeout = opts.timeout or 30000 -- 30s default
 
-  local cmd = { M._executable }
+  local cmd = type(M._executable) == "table" and { unpack(M._executable) } or { M._executable }
   for _, arg in ipairs(args) do
     table.insert(cmd, arg)
   end
@@ -74,7 +76,7 @@ function M.run_async(args, callback, opts)
   opts = opts or {}
   local timeout = opts.timeout or 30000
 
-  local cmd = { M._executable }
+  local cmd = type(M._executable) == "table" and { unpack(M._executable) } or { M._executable }
   for _, arg in ipairs(args) do
     table.insert(cmd, arg)
   end

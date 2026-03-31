@@ -20,7 +20,7 @@ The data directory is resolved in this order:
 2. `$XDG_DATA_HOME/PowerReview`
 3. Windows: `%LOCALAPPDATA%\PowerReview`; Linux/Mac: `~/.local/share/PowerReview`
 
-Run `powerreview config --path-only` to see the resolved config path.
+Run `dnx PowerReview -- config --path-only` to see the resolved config path.
 
 ### Session ID
 
@@ -614,14 +614,14 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v3 format
 
 ## Refresh Semantics
 
-When a session is refreshed (`powerreview open --pr-url ...` on existing session):
+When a session is refreshed (`dnx PowerReview -- open --pr-url ...` on existing session):
 
 - **PR metadata** is re-fetched: title, description, status, is_draft, closed_at, merge_status, reviewers, labels, work_items.
 - **Files** are fully replaced with the latest iteration's changed files. Iteration metadata is updated.
 - **Threads** are fully replaced with fresh data from the provider.
 - **Drafts** are preserved. They are never affected by refresh operations.
 
-When only threads are synced (`powerreview sync --pr-url ...`):
+When only threads are synced (`dnx PowerReview -- sync --pr-url ...`):
 
 - Only **threads** are re-fetched and replaced.
 - Files and PR metadata are not updated.

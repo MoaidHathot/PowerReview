@@ -83,7 +83,7 @@ All Lua options with their defaults:
 require("power-review").setup({
   -- CLI tool
   cli = {
-    executable = "powerreview",  -- Path or name of the CLI executable
+    executable = { "dnx", "PowerReview", "--" },  -- CLI command; uses .NET 10 dnx runner by default
   },
 
   -- UI configuration
@@ -336,27 +336,27 @@ dotnet build
 ### CLI Commands
 
 ```
-powerreview open --pr-url <url> [--repo-path <path>]   # Open/resume a review
-powerreview session --pr-url <url>                      # Get session info
-powerreview files --pr-url <url>                        # List changed files
-powerreview diff --pr-url <url> --file <path>           # Get file diff info
-powerreview threads --pr-url <url> [--file <path>]      # List comment threads
-powerreview comment create|edit|delete|approve|...      # Manage draft comments
-powerreview reply --pr-url <url> --thread-id <n>        # Reply to a thread
-powerreview submit --pr-url <url>                       # Submit pending comments
-powerreview vote --pr-url <url> --value <value>         # Set review vote
-powerreview sync --pr-url <url>                         # Sync threads from remote
-powerreview close --pr-url <url>                        # Close a review session
-powerreview sessions list|delete|clean                  # Manage saved sessions
-powerreview config --path-only                          # Show configuration
-powerreview mcp                                         # Start MCP server (stdio)
+dnx PowerReview -- open --pr-url <url> [--repo-path <path>]   # Open/resume a review
+dnx PowerReview -- session --pr-url <url>                      # Get session info
+dnx PowerReview -- files --pr-url <url>                        # List changed files
+dnx PowerReview -- diff --pr-url <url> --file <path>           # Get file diff info
+dnx PowerReview -- threads --pr-url <url> [--file <path>]      # List comment threads
+dnx PowerReview -- comment create|edit|delete|approve|...      # Manage draft comments
+dnx PowerReview -- reply --pr-url <url> --thread-id <n>        # Reply to a thread
+dnx PowerReview -- submit --pr-url <url>                       # Submit pending comments
+dnx PowerReview -- vote --pr-url <url> --value <value>         # Set review vote
+dnx PowerReview -- sync --pr-url <url>                         # Sync threads from remote
+dnx PowerReview -- close --pr-url <url>                        # Close a review session
+dnx PowerReview -- sessions list|delete|clean                  # Manage saved sessions
+dnx PowerReview -- config --path-only                          # Show configuration
+dnx PowerReview -- mcp                                         # Start MCP server (stdio)
 ```
 
 All commands output JSON to stdout, errors to stderr. Exit codes: 0=success, 1=error, 2=usage error.
 
 ## MCP Server
 
-The CLI doubles as an MCP (Model Context Protocol) server. Running `powerreview mcp` starts a stdio-based MCP server that AI agents can connect to directly -- no Neovim instance required.
+The CLI doubles as an MCP (Model Context Protocol) server. Running `dnx PowerReview -- mcp` starts a stdio-based MCP server that AI agents can connect to directly -- no Neovim instance required.
 
 ### Setup
 
@@ -366,8 +366,8 @@ Configure your AI tool's MCP settings (e.g. `.mcp.json`, Claude Desktop config, 
 {
   "mcpServers": {
     "power-review": {
-      "command": "powerreview",
-      "args": ["mcp"]
+      "command": "dnx",
+      "args": ["PowerReview", "--", "mcp"]
     }
   }
 }
@@ -395,7 +395,7 @@ AI-created comments are tagged with `author=ai` and start as drafts that require
 The MCP server operates standalone, calling the same .NET services as the CLI:
 
 ```
-AI Agent <-> powerreview mcp (stdio) <-> PowerReview.Core (.NET)
+AI Agent <-> dnx PowerReview -- mcp (stdio) <-> PowerReview.Core (.NET)
                                               |
                                      SessionStore (JSON files)
 ```
@@ -456,7 +456,7 @@ PowerReview.nvim/
   lua/power-review/
     init.lua                     -- setup(), keymaps, public API
     config.lua                   -- UI-only configuration (CLI path, keymaps, signs, panels)
-    cli.lua                      -- CLI bridge (spawns powerreview, parses JSON, session adapter)
+    cli.lua                      -- CLI bridge (spawns dnx PowerReview, parses JSON, session adapter)
     session_helpers.lua          -- Pure data helpers (get_drafts_for_file, get_threads_for_file, etc.)
     types.lua                    -- LuaCATS type annotations
     review/
