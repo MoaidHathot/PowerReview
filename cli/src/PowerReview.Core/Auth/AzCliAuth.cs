@@ -16,10 +16,15 @@ public sealed class AzCliAuth : IAuthStrategy
 
     public async Task<string> GetAuthHeaderAsync(CancellationToken cancellationToken = default)
     {
+        // On Windows, 'az' is actually 'az.cmd' which cannot be started directly
+        // with UseShellExecute=false. We must invoke it through cmd.exe.
+        var azArgs = $"account get-access-token --resource {AzDoResourceId} --query accessToken -o tsv";
+        var isWindows = OperatingSystem.IsWindows();
+
         var psi = new ProcessStartInfo
         {
-            FileName = "az",
-            Arguments = $"account get-access-token --resource {AzDoResourceId} --query accessToken -o tsv",
+            FileName = isWindows ? "cmd.exe" : "az",
+            Arguments = isWindows ? $"/c az {azArgs}" : azArgs,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

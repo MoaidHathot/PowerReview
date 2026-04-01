@@ -84,7 +84,7 @@ public sealed class ReviewService
         var existing = _store.Load(sessionId);
 
         // Step 8: Git setup
-        string? resolvedRepoPath = repoPath;
+        string? resolvedRepoPath = repoPath ?? _config.Git.RepoBasePath;
         string? worktreePath = null;
         var strategy = _config.Git.Strategy;
 
