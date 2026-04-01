@@ -105,10 +105,11 @@ end
 --- Returns a table that lualine can use directly in a section.
 ---@return table lualine_component
 function M.lualine()
+  local colors = require("power-review.config").get().ui.colors or {}
   return {
     M.get,
     cond = M.is_active,
-    color = { fg = "#61afef", gui = "bold" },
+    color = { fg = colors.statusline_fg or "#61afef", gui = "bold" },
   }
 end
 

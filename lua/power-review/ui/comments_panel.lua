@@ -112,10 +112,14 @@ end
 ---@param line_start? number
 ---@param line_end? number
 ---@param col_start? number
+---@param file_path? string
 ---@param col_end? number
 ---@return string
-local function location_label(line_start, line_end, col_start, col_end)
+local function location_label(line_start, line_end, col_start, col_end, file_path)
   if not line_start then
+    if file_path and file_path ~= "" then
+      return "File-level"
+    end
     return "PR-level"
   end
   local parts = "L" .. tostring(line_start)
@@ -367,7 +371,7 @@ local function build_sections(session, panel_width)
       for _, thread in ipairs(file_data.threads) do
         local lines = {}
         local hls = {}
-        local loc = location_label(thread.line_start, thread.line_end, thread.col_start, thread.col_end)
+        local loc = location_label(thread.line_start, thread.line_end, thread.col_start, thread.col_end, thread.file_path)
         local status_icon_str, status_hl = thread_status_icon(thread.status or "active")
         local comment_count = thread.comments and #thread.comments or 0
         local reply_draft_count = reply_drafts_by_thread[thread.id] and #reply_drafts_by_thread[thread.id] or 0
@@ -456,6 +460,7 @@ local function build_sections(session, panel_width)
             col_start = thread.col_start,
             col_end = thread.col_end,
             thread_id = thread.id,
+            thread_status = thread.status,
             reply_draft_ids = reply_draft_ids,
             collapsible = true,
             collapse_key = "thread:" .. thread.id,
@@ -470,7 +475,7 @@ local function build_sections(session, panel_width)
 
         local s_icon, s_hl = draft_status_icon(draft.status)
         local ai_label = draft.author == "ai" and " 󰚩" or ""
-        local loc = location_label(draft.line_start, draft.line_end, draft.col_start, draft.col_end)
+        local loc = location_label(draft.line_start, draft.line_end, draft.col_start, draft.col_end, draft.file_path)
 
         local header = string.format("  %s%s%s %s", s_icon, ai_label, loc, draft.author)
         table.insert(lines, header)
@@ -1413,6 +1418,68 @@ function M._setup_keymaps(split, session)
       M._render(current)
       log.info("Comments panel refreshed")
     end
+  end, { noremap = true })
+
+  -- r: resolve/change thread status
+  split:map("n", "r", function()
+    local line = vim.api.nvim_win_get_cursor(0)[1]
+    local section = section_at_line(line)
+    if not section or not section.data.thread_id then
+      log.info("No thread under cursor")
+      return
+    end
+
+    local cur_session = M._session or session
+    if not cur_session or not cur_session.pr_url then
+      log.error("No active session")
+      return
+    end
+
+    local thread_id = section.data.thread_id
+    local current_status = section.data.thread_status or "active"
+
+    local status_options = { "active", "fixed", "wontfix", "closed", "bydesign", "pending" }
+    vim.ui.select(status_options, {
+      prompt = string.format("Thread #%d status (current: %s):", thread_id, current_status),
+      format_item = function(item)
+        local icons = {
+          active = " Active",
+          fixed = " Fixed / Resolved",
+          wontfix = " Won't Fix",
+          closed = " Closed",
+          bydesign = "󰗡 By Design",
+          pending = " Pending",
+        }
+        local marker = item == current_status and " (current)" or ""
+        return (icons[item] or item) .. marker
+      end,
+    }, function(choice)
+      if not choice or choice == current_status then
+        return
+      end
+
+      local cli = require("power-review.cli")
+      cli.update_thread_status(cur_session.pr_url, thread_id, choice, function(err, _result)
+        if err then
+          log.error("Failed to update thread status: %s", err)
+          return
+        end
+        log.info("Thread #%d status changed to %s", thread_id, choice)
+        -- Refresh session and re-render
+        vim.schedule(function()
+          local pr = require("power-review")
+          pr.api.sync_threads(function(sync_err)
+            if sync_err then
+              log.warn("Sync after status update failed: %s", sync_err)
+            end
+            local updated = pr.get_current_session()
+            if updated then
+              M._render(updated)
+            end
+          end)
+        end)
+      end)
+    end)
   end, { noremap = true })
 end
 

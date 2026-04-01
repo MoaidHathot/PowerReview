@@ -63,6 +63,11 @@ public interface IProvider
     /// Get the current authenticated user's reviewer ID.
     /// </summary>
     Task<string> GetCurrentReviewerIdAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Update the status of an existing comment thread (e.g., resolve, reactivate).
+    /// </summary>
+    Task<CommentThread> UpdateThreadStatusAsync(int prId, int threadId, ThreadStatus status, CancellationToken ct = default);
 }
 
 /// <summary>

@@ -120,4 +120,74 @@ public class UrlParserTests
         var result = UrlParser.DetectProvider(url);
         Assert.Null(result);
     }
+
+    // --- BuildCloneUrl ---
+
+    [Fact]
+    public void BuildCloneUrl_AzDo_ReturnsCorrectUrl()
+    {
+        var parsed = new ParsedUrl
+        {
+            ProviderType = ProviderType.AzDo,
+            Organization = "myorg",
+            Project = "myproject",
+            Repository = "myrepo",
+            PrId = 1,
+        };
+
+        var url = UrlParser.BuildCloneUrl(parsed);
+        Assert.Equal("https://dev.azure.com/myorg/myproject/_git/myrepo", url);
+    }
+
+    [Fact]
+    public void BuildCloneUrl_GitHub_ReturnsCorrectUrl()
+    {
+        var parsed = new ParsedUrl
+        {
+            ProviderType = ProviderType.GitHub,
+            Organization = "owner",
+            Project = "repo",
+            Repository = "repo",
+            PrId = 1,
+        };
+
+        var url = UrlParser.BuildCloneUrl(parsed);
+        Assert.Equal("https://github.com/owner/repo.git", url);
+    }
+
+    [Fact]
+    public void BuildCloneUrl_AzDo_WithSpacesInProject()
+    {
+        var parsed = new ParsedUrl
+        {
+            ProviderType = ProviderType.AzDo,
+            Organization = "org",
+            Project = "My Project",
+            Repository = "My Repo",
+            PrId = 42,
+        };
+
+        var url = UrlParser.BuildCloneUrl(parsed);
+        Assert.Equal("https://dev.azure.com/org/My Project/_git/My Repo", url);
+    }
+
+    [Fact]
+    public void BuildCloneUrl_RoundTripsWithParse_AzDo()
+    {
+        var original = "https://dev.azure.com/testorg/testproj/_git/testrepo/pullrequest/123";
+        var parsed = UrlParser.Parse(original)!;
+        var cloneUrl = UrlParser.BuildCloneUrl(parsed);
+
+        Assert.Equal("https://dev.azure.com/testorg/testproj/_git/testrepo", cloneUrl);
+    }
+
+    [Fact]
+    public void BuildCloneUrl_RoundTripsWithParse_GitHub()
+    {
+        var original = "https://github.com/owner/myrepo/pull/42";
+        var parsed = UrlParser.Parse(original)!;
+        var cloneUrl = UrlParser.BuildCloneUrl(parsed);
+
+        Assert.Equal("https://github.com/owner/myrepo.git", cloneUrl);
+    }
 }

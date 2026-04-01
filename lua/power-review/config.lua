@@ -19,12 +19,24 @@ local function defaults()
       -- --yes: skip interactive confirmation prompts.
       -- --add-source: ensure nuget.org is always available (repos with custom nuget.config may hide it).
       -- Can be a string (e.g., "powerreview") or a table for multi-arg commands.
+
+      -- Timeout values for CLI operations (milliseconds).
+      timeouts = {
+        default = 30000,  -- Default for most operations
+        open = 60000,     -- Opening a review (fetches PR data, sets up git)
+        submit = 60000,   -- Submitting all pending drafts to remote
+        vote = 30000,     -- Setting review vote
+        sync = 30000,     -- Syncing threads from remote
+      },
     },
 
     -- UI configuration
     ui = {
       files = {
         provider = "neo-tree", -- "neo-tree" | "builtin" (| "telescope" future)
+      },
+      pickers = {
+        provider = "telescope", -- "telescope" | "fzf-lua"
       },
       comments = {
         float = {
@@ -42,9 +54,32 @@ local function defaults()
           draft = "",
           ai_draft = "󰚩",
         },
+        preview_debounce = 150, -- Debounce delay (ms) for live markdown preview in comment editor
       },
       diff = {
         provider = "native", -- "native" | "codediff" (codediff has a cleanup bug, see README)
+      },
+      virtual_text = {
+        max_length = 80, -- Max length of inline virtual text previews (signs)
+      },
+      flash = {
+        duration = 2000, -- Duration (ms) of flash highlights when navigating to comments
+      },
+      colors = {
+        -- Colors for sign-related highlights (undercurl).
+        -- Set to nil/false to use the default highlight group links instead.
+        comment_undercurl = "#61afef",     -- Undercurl color for remote comment signs
+        draft_undercurl = "#98c379",       -- Undercurl color for draft comment signs
+        -- Colors for flash highlights
+        flash_bg = "#3e4452",              -- Background color for flash highlights
+        flash_border = "#e5c07b",          -- Undercurl/border color for flash column highlights
+        -- Colors for subtle diff backgrounds
+        diff_added = "#264a35",            -- Background for added lines in diff
+        diff_changed = "#2a3040",          -- Background for changed lines in diff
+        diff_deleted = "#4a2626",          -- Background for deleted lines in diff
+        diff_text = "#364060",             -- Background for changed text within a line
+        -- Statusline icon color
+        statusline_fg = "#61afef",         -- Foreground color for the statusline component
       },
       -- Neo-tree source configuration (passed to neo-tree setup by the user)
       -- This is the recommended config to add to neo-tree's power_review source:
@@ -93,6 +128,19 @@ local function defaults()
       },
     },
 
+    -- Session file watcher (for real-time refresh when AI creates drafts)
+    watcher = {
+      enabled = true,       -- Watch the session file for changes
+      debounce_ms = 200,    -- Debounce delay before reloading session on file change
+    },
+
+    -- Notifications
+    notifications = {
+      enabled = true,        -- Master toggle for all notifications
+      ai_activity = true,    -- Notify when AI creates/edits/deletes drafts
+      sync_complete = true,  -- Notify when thread sync completes
+    },
+
     -- Keymaps
     keymaps = {
       open_review = "<leader>pr",
@@ -105,11 +153,16 @@ local function defaults()
       reply_comment = "<leader>pR",
       edit_comment = "<leader>pe",
       approve_comment = "<leader>pA",
+      unapprove_comment = "<leader>pU",
+      delete_comment = "<leader>pX",
       submit_all = "<leader>pS",
       set_vote = "<leader>pv",
       sync_threads = "<leader>ps",
       close_review = "<leader>pQ",
       delete_session = "<leader>pD",
+      show_description = "<leader>pd",
+      resolve_thread = "<leader>px",
+      ai_drafts = "<leader>pi",
     },
 
     -- Logging

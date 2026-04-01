@@ -80,7 +80,7 @@ public class SessionServiceTests : IDisposable
         var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest());
 
         Assert.Equal("", draft.FilePath);
-        Assert.Equal(0, draft.LineStart);
+        Assert.Null(draft.LineStart);
         Assert.Equal("", draft.Body);
         Assert.Equal(DraftStatus.Draft, draft.Status);
         Assert.Equal(DraftAuthor.User, draft.Author);
@@ -332,6 +332,248 @@ public class SessionServiceTests : IDisposable
         Assert.Equal(1, counts.Draft);
         Assert.Equal(1, counts.Pending);
         Assert.Equal(0, counts.Submitted);
+    }
+
+    // --- EditDraft author guard ---
+
+    [Fact]
+    public void EditDraft_AiCallerCannotEditUserDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "user draft",
+            Author = DraftAuthor.User,
+        });
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.EditDraft(sessionId, draftId, "ai edit", callerAuthor: DraftAuthor.Ai));
+        Assert.Contains("author mismatch", ex.Message);
+    }
+
+    [Fact]
+    public void EditDraft_UserCallerCannotEditAiDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "ai draft",
+            Author = DraftAuthor.Ai,
+        });
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.EditDraft(sessionId, draftId, "user edit", callerAuthor: DraftAuthor.User));
+        Assert.Contains("author mismatch", ex.Message);
+    }
+
+    [Fact]
+    public void EditDraft_AiCallerCanEditOwnDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "ai original",
+            Author = DraftAuthor.Ai,
+        });
+
+        var edited = _service.EditDraft(sessionId, draftId, "ai updated", callerAuthor: DraftAuthor.Ai);
+        Assert.Equal("ai updated", edited.Body);
+    }
+
+    [Fact]
+    public void EditDraft_AiCallerEditsPendingDraft_ResetsToNewDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "ai draft",
+            Author = DraftAuthor.Ai,
+        });
+        _service.ApproveDraft(sessionId, draftId);
+
+        // AI editing a Pending draft should reset status to Draft
+        var edited = _service.EditDraft(sessionId, draftId, "revised body", callerAuthor: DraftAuthor.Ai);
+        Assert.Equal(DraftStatus.Draft, edited.Status);
+        Assert.Equal("revised body", edited.Body);
+    }
+
+    [Fact]
+    public void EditDraft_NoCallerAuthor_AllowsEditingAnyDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "ai draft",
+            Author = DraftAuthor.Ai,
+        });
+
+        // No callerAuthor = no guard, allows editing any draft
+        var edited = _service.EditDraft(sessionId, draftId, "edited without guard");
+        Assert.Equal("edited without guard", edited.Body);
+    }
+
+    // --- DeleteDraft author guard ---
+
+    [Fact]
+    public void DeleteDraft_AiCallerCannotDeleteUserDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "user draft",
+            Author = DraftAuthor.User,
+        });
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.DeleteDraft(sessionId, draftId, callerAuthor: DraftAuthor.Ai));
+        Assert.Contains("author mismatch", ex.Message);
+    }
+
+    [Fact]
+    public void DeleteDraft_UserCallerCannotDeleteAiDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "ai draft",
+            Author = DraftAuthor.Ai,
+        });
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.DeleteDraft(sessionId, draftId, callerAuthor: DraftAuthor.User));
+        Assert.Contains("author mismatch", ex.Message);
+    }
+
+    [Fact]
+    public void DeleteDraft_AiCallerCanDeleteOwnDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "ai draft",
+            Author = DraftAuthor.Ai,
+        });
+
+        _service.DeleteDraft(sessionId, draftId, callerAuthor: DraftAuthor.Ai);
+
+        var loaded = _store.Load(sessionId)!;
+        Assert.Empty(loaded.Drafts);
+    }
+
+    [Fact]
+    public void DeleteDraft_NoCallerAuthor_AllowsDeletingAnyDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "ai draft",
+            Author = DraftAuthor.Ai,
+        });
+
+        // No callerAuthor = no guard
+        _service.DeleteDraft(sessionId, draftId);
+        var loaded = _store.Load(sessionId)!;
+        Assert.Empty(loaded.Drafts);
+    }
+
+    // --- GetDraftsByStatus ---
+
+    [Fact]
+    public void GetDraftsByStatus_FiltersDraftStatus()
+    {
+        var sessionId = CreateAndSaveSession();
+        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft1" });
+        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft2" });
+        var (pendingId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "pending1" });
+        _service.ApproveDraft(sessionId, pendingId);
+
+        var drafts = _service.GetDraftsByStatus(sessionId, DraftStatus.Draft);
+        Assert.Equal(2, drafts.Count);
+        Assert.All(drafts.Values, d => Assert.Equal(DraftStatus.Draft, d.Status));
+    }
+
+    [Fact]
+    public void GetDraftsByStatus_FiltersPendingStatus()
+    {
+        var sessionId = CreateAndSaveSession();
+        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft1" });
+        var (pendingId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "pending1" });
+        _service.ApproveDraft(sessionId, pendingId);
+
+        var pending = _service.GetDraftsByStatus(sessionId, DraftStatus.Pending);
+        Assert.Single(pending);
+        Assert.All(pending.Values, d => Assert.Equal(DraftStatus.Pending, d.Status));
+    }
+
+    [Fact]
+    public void GetDraftsByStatus_ReturnsEmptyForNonexistentSession()
+    {
+        var result = _service.GetDraftsByStatus("nonexistent", DraftStatus.Draft);
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetDraftsByStatus_ReturnsEmptyWhenNoneMatch()
+    {
+        var sessionId = CreateAndSaveSession();
+        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft" });
+
+        var result = _service.GetDraftsByStatus(sessionId, DraftStatus.Submitted);
+        Assert.Empty(result);
+    }
+
+    // --- MarkSubmitted ---
+
+    [Fact]
+    public void MarkSubmitted_TransitionsToSubmitted()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "test" });
+        _service.ApproveDraft(sessionId, draftId);
+
+        // MarkSubmitted is internal, but accessible within the same assembly for testing
+        _service.MarkSubmitted(sessionId, draftId);
+
+        var loaded = _store.Load(sessionId)!;
+        Assert.Equal(DraftStatus.Submitted, loaded.Drafts[draftId].Status);
+    }
+
+    [Fact]
+    public void MarkSubmitted_NonexistentDraft_Throws()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        Assert.Throws<SessionServiceException>(() =>
+            _service.MarkSubmitted(sessionId, "nonexistent-id"));
+    }
+
+    // --- LoadSession ---
+
+    [Fact]
+    public void LoadSession_ExistingSession_ReturnsSession()
+    {
+        var sessionId = CreateAndSaveSession();
+        var session = _service.LoadSession(sessionId);
+        Assert.NotNull(session);
+        Assert.Equal(sessionId, session.Id);
+    }
+
+    [Fact]
+    public void LoadSession_NonexistentSession_ReturnsNull()
+    {
+        var session = _service.LoadSession("nonexistent");
+        Assert.Null(session);
+    }
+
+    // --- GetSessionPath ---
+
+    [Fact]
+    public void GetSessionPath_ReturnsValidPath()
+    {
+        var sessionId = CreateAndSaveSession();
+        var path = _service.GetSessionPath(sessionId);
+        Assert.NotEmpty(path);
+        Assert.Contains(sessionId, path);
     }
 
     // --- Full lifecycle ---

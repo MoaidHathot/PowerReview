@@ -31,7 +31,7 @@ public sealed class SessionService
         var draft = new DraftComment
         {
             FilePath = request.FilePath ?? "",
-            LineStart = request.LineStart ?? 0,
+            LineStart = request.LineStart,
             LineEnd = request.LineEnd,
             ColStart = request.ColStart,
             ColEnd = request.ColEnd,
@@ -53,8 +53,11 @@ public sealed class SessionService
     /// <summary>
     /// Edit the body of an existing draft comment.
     /// Only drafts in the "Draft" status can be edited.
+    /// When <paramref name="callerAuthor"/> is specified, enforces that only drafts
+    /// with a matching author can be edited (safety guard for MCP/AI callers).
+    /// If an AI caller edits a Pending draft, status is reset to Draft (requires re-approval).
     /// </summary>
-    public DraftComment EditDraft(string sessionId, string draftId, string newBody)
+    public DraftComment EditDraft(string sessionId, string draftId, string newBody, DraftAuthor? callerAuthor = null)
     {
         using var _ = _store.AcquireLock(sessionId);
 
@@ -63,9 +66,24 @@ public sealed class SessionService
         if (!session.Drafts.TryGetValue(draftId, out var draft))
             throw new SessionServiceException($"Draft not found: {draftId}");
 
-        if (!draft.CanEdit)
+        // Author guard: when a caller declares its identity, it can only edit its own drafts
+        if (callerAuthor.HasValue && draft.Author != callerAuthor.Value)
             throw new SessionServiceException(
-                $"Cannot edit draft {draftId}: status is '{draft.Status}' (only 'Draft' drafts can be edited)");
+                $"Cannot edit draft {draftId}: author mismatch (draft author: '{draft.Author}', caller: '{callerAuthor.Value}')");
+
+        if (!draft.CanEdit)
+        {
+            // AI callers editing a Pending draft: reset to Draft (requires re-approval)
+            if (callerAuthor == DraftAuthor.Ai && draft.Status == DraftStatus.Pending)
+            {
+                draft.Status = DraftStatus.Draft;
+            }
+            else
+            {
+                throw new SessionServiceException(
+                    $"Cannot edit draft {draftId}: status is '{draft.Status}' (only 'Draft' drafts can be edited)");
+            }
+        }
 
         draft.Body = newBody;
         draft.UpdatedAt = Timestamp();
@@ -77,8 +95,10 @@ public sealed class SessionService
     /// <summary>
     /// Delete a draft comment from the session.
     /// Only drafts in the "Draft" status can be deleted.
+    /// When <paramref name="callerAuthor"/> is specified, enforces that only drafts
+    /// with a matching author can be deleted (safety guard for MCP/AI callers).
     /// </summary>
-    public void DeleteDraft(string sessionId, string draftId)
+    public void DeleteDraft(string sessionId, string draftId, DraftAuthor? callerAuthor = null)
     {
         using var _ = _store.AcquireLock(sessionId);
 
@@ -86,6 +106,11 @@ public sealed class SessionService
 
         if (!session.Drafts.TryGetValue(draftId, out var draft))
             throw new SessionServiceException($"Draft not found: {draftId}");
+
+        // Author guard: when a caller declares its identity, it can only delete its own drafts
+        if (callerAuthor.HasValue && draft.Author != callerAuthor.Value)
+            throw new SessionServiceException(
+                $"Cannot delete draft {draftId}: author mismatch (draft author: '{draft.Author}', caller: '{callerAuthor.Value}')");
 
         if (!draft.CanDelete)
             throw new SessionServiceException(

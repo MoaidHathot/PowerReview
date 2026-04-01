@@ -158,4 +158,30 @@ public sealed class ReviewTools
             }),
         });
     }
+
+    [McpServerTool, Description(
+        "Get a summary of draft comment counts by status (draft, pending, submitted). " +
+        "Useful for understanding the current state of the review before creating more drafts.")]
+    public static string GetDraftCounts(
+        SessionService sessionService,
+        [Description("The pull request URL")] string prUrl)
+    {
+        try
+        {
+            var sessionId = ToolHelpers.ResolveSessionId(prUrl);
+            var counts = sessionService.GetDraftCounts(sessionId);
+
+            return ToolHelpers.ToJson(new
+            {
+                counts.Draft,
+                counts.Pending,
+                counts.Submitted,
+                counts.Total,
+            });
+        }
+        catch (Exception ex)
+        {
+            return ToolHelpers.ToJson(new { error = ex.Message });
+        }
+    }
 }

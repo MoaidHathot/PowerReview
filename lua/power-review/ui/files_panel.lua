@@ -407,6 +407,21 @@ function M.open(session)
     end)
   end, map_opts)
 
+  -- Add file-level comment (no specific line)
+  M._split:map("n", "c", function()
+    local node = M._tree:get_node()
+    if not node or node.type ~= "file" then
+      return
+    end
+
+    local comment_float = require("power-review.ui.comment_float")
+    comment_float.open_comment_editor({
+      file_path = node.file_path,
+      line = nil,
+      session = session,
+    })
+  end, map_opts)
+
   -- Copy path
   M._split:map("n", "y", function()
     local node = M._tree:get_node()

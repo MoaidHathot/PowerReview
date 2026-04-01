@@ -137,6 +137,37 @@ public static class GitOperations
         var (success, _, _) = await TryRunAsync(["rev-parse", "--is-inside-work-tree"], path, 10_000, ct);
         return success;
     }
+
+    /// <summary>
+    /// Clone a repository to the given target directory.
+    /// Creates the parent directory if it doesn't exist.
+    /// </summary>
+    /// <param name="cloneUrl">The remote URL to clone from.</param>
+    /// <param name="targetPath">The local path to clone into.</param>
+    /// <param name="timeoutMs">Timeout in milliseconds (default 5 minutes for large repos).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The absolute path to the cloned repository root.</returns>
+    public static async Task<string> CloneAsync(
+        string cloneUrl,
+        string targetPath,
+        int timeoutMs = 300_000,
+        CancellationToken ct = default)
+    {
+        // Ensure the parent directory exists
+        var parentDir = Path.GetDirectoryName(targetPath)
+            ?? throw new GitException($"Could not determine parent directory for: {targetPath}");
+
+        Directory.CreateDirectory(parentDir);
+
+        // Run git clone from the parent directory into the target
+        await RunAsync(
+            ["clone", cloneUrl, targetPath],
+            parentDir,
+            timeoutMs,
+            ct);
+
+        return Path.GetFullPath(targetPath);
+    }
 }
 
 /// <summary>

@@ -22,7 +22,8 @@ public class ConfigDeserializationTests
             "strategy": "Worktree",
             "repo_base_path": "C:\\Repos\\MyProject",
             "worktree_dir": ".my-worktrees",
-            "cleanup_on_close": false
+            "cleanup_on_close": false,
+            "auto_clone": true
           },
           "auth": {
             "azdo": {
@@ -48,6 +49,7 @@ public class ConfigDeserializationTests
         Assert.Equal("C:\\Repos\\MyProject", config.Git.RepoBasePath);
         Assert.Equal(".my-worktrees", config.Git.WorktreeDir);
         Assert.False(config.Git.CleanupOnClose);
+        Assert.True(config.Git.AutoClone);
         Assert.Equal("az_cli", config.Auth.AzDo.Method);
         Assert.Equal("MY_PAT", config.Auth.AzDo.PatEnvVar);
         Assert.Equal("GH_TOKEN", config.Auth.GitHub.PatEnvVar);
@@ -97,6 +99,7 @@ public class ConfigDeserializationTests
         Assert.Equal(GitStrategy.Worktree, config.Git.Strategy);
         Assert.Equal(".power-review-worktrees", config.Git.WorktreeDir);
         Assert.True(config.Git.CleanupOnClose);
+        Assert.False(config.Git.AutoClone);
         Assert.Null(config.Git.RepoBasePath);
         Assert.Null(config.DataDir);
         Assert.Equal("auto", config.Auth.AzDo.Method);
@@ -157,5 +160,35 @@ public class ConfigDeserializationTests
         var json = JsonSerializer.Serialize(config, JsonOptions);
 
         Assert.DoesNotContain("repo_base_path", json);
+    }
+
+    [Fact]
+    public void Deserialize_AutoClone_True()
+    {
+        var json = """
+        {
+          "git": {
+            "auto_clone": true
+          }
+        }
+        """;
+
+        var config = JsonSerializer.Deserialize<PowerReviewConfig>(json, JsonOptions)!;
+
+        Assert.True(config.Git.AutoClone);
+    }
+
+    [Fact]
+    public void Deserialize_AutoClone_FalseByDefault()
+    {
+        var json = """
+        {
+          "git": {}
+        }
+        """;
+
+        var config = JsonSerializer.Deserialize<PowerReviewConfig>(json, JsonOptions)!;
+
+        Assert.False(config.Git.AutoClone);
     }
 }

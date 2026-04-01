@@ -40,6 +40,8 @@ M._augroup = nil
 --- Define default highlight groups (linked to sensible defaults).
 --- Users can override these in their colorscheme.
 function M.setup_highlights()
+  local colors = config.get().ui.colors or {}
+
   -- Sign text highlights
   vim.api.nvim_set_hl(0, M._hl_groups.remote, { default = true, link = "DiagnosticSignInfo" })
   vim.api.nvim_set_hl(0, M._hl_groups.draft, { default = true, link = "DiagnosticSignHint" })
@@ -51,8 +53,12 @@ function M.setup_highlights()
   vim.api.nvim_set_hl(0, M._hl_groups.ai_draft_line, { default = true, link = "DiagnosticVirtualTextWarn" })
 
   -- Column-level span highlights (underline to mark the exact code the comment targets)
-  vim.api.nvim_set_hl(0, M._hl_groups.col_highlight, { default = true, undercurl = true, sp = "#61afef" })
-  vim.api.nvim_set_hl(0, M._hl_groups.col_highlight_draft, { default = true, undercurl = true, sp = "#98c379" })
+  vim.api.nvim_set_hl(0, M._hl_groups.col_highlight, {
+    default = true, undercurl = true, sp = colors.comment_undercurl or "#61afef",
+  })
+  vim.api.nvim_set_hl(0, M._hl_groups.col_highlight_draft, {
+    default = true, undercurl = true, sp = colors.draft_undercurl or "#98c379",
+  })
 
   -- Virtual text sub-highlights
   vim.api.nvim_set_hl(0, M._hl_groups.virt_author, { default = true, link = "Title" })
@@ -225,10 +231,19 @@ end
 ---@return table[]|nil virt_text chunks {text, hl_group}
 function M._format_remote_virt_text(ind)
   local chunks = {}
+  local max_len = (config.get().ui.virtual_text or {}).max_length or 80
 
-  -- Thread status icon
+  -- Thread status icon (full set matching panel icons)
   local status = ind.thread_status or "active"
-  local status_icon = status == "active" and " " or " "
+  local status_icons = {
+    active = " ",
+    fixed = " ",
+    wontfix = " ",
+    closed = " ",
+    bydesign = "󰗡 ",
+    pending = " ",
+  }
+  local status_icon = status_icons[status] or status_icons.active
   table.insert(chunks, { "  " .. status_icon, M._hl_groups.virt_thread_status })
 
   -- Author
@@ -240,8 +255,8 @@ function M._format_remote_virt_text(ind)
   local preview = ind.preview or ""
   -- Take first line only
   local first_line = preview:match("^([^\n]*)")
-  if first_line and #first_line > 80 then
-    first_line = first_line:sub(1, 77) .. "..."
+  if first_line and #first_line > max_len then
+    first_line = first_line:sub(1, max_len - 3) .. "..."
   end
   if first_line and first_line ~= "" then
     table.insert(chunks, { first_line, M._hl_groups.virt_body })
@@ -261,6 +276,7 @@ end
 ---@return table[]|nil virt_text chunks {text, hl_group}
 function M._format_draft_virt_text(ind)
   local chunks = {}
+  local max_len = (config.get().ui.virtual_text or {}).max_length or 80
 
   -- Draft badge
   local badge_hl = M._hl_groups[ind.kind]
@@ -270,8 +286,8 @@ function M._format_draft_virt_text(ind)
   -- Body preview (first line, capped)
   local preview = ind.preview or ""
   local first_line = preview:match("^([^\n]*)")
-  if first_line and #first_line > 80 then
-    first_line = first_line:sub(1, 77) .. "..."
+  if first_line and #first_line > max_len then
+    first_line = first_line:sub(1, max_len - 3) .. "..."
   end
   if first_line and first_line ~= "" then
     table.insert(chunks, { first_line, M._hl_groups.virt_body })
@@ -796,7 +812,9 @@ function M.flash_highlight(opts)
   local line_end = opts.line_end or line_start
   local col_start = opts.col_start
   local col_end = opts.col_end
-  local duration = opts.duration_ms or 2000
+  local ui_cfg = config.get().ui
+  local colors = ui_cfg.colors or {}
+  local duration = opts.duration_ms or (ui_cfg.flash or {}).duration or 2000
 
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
@@ -806,8 +824,14 @@ function M.flash_highlight(opts)
   end
 
   -- Ensure flash highlight groups exist
-  vim.api.nvim_set_hl(0, M._hl_groups.flash, { default = true, bg = "#3e4452", bold = true })
-  vim.api.nvim_set_hl(0, M._hl_groups.flash_col, { default = true, undercurl = true, sp = "#e5c07b", bg = "#3e4452", bold = true })
+  vim.api.nvim_set_hl(0, M._hl_groups.flash, {
+    default = true, bg = colors.flash_bg or "#3e4452", bold = true,
+  })
+  vim.api.nvim_set_hl(0, M._hl_groups.flash_col, {
+    default = true, undercurl = true,
+    sp = colors.flash_border or "#e5c07b",
+    bg = colors.flash_bg or "#3e4452", bold = true,
+  })
 
   -- Clear any prior flash
   vim.api.nvim_buf_clear_namespace(bufnr, M._flash_ns, 0, -1)

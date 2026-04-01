@@ -24,14 +24,15 @@ M._diff_hl_groups = {
 --- but at reduced intensity so they don't overwhelm syntax highlighting and
 --- comment virtual text. Works well with dark themes (Catppuccin, etc.)
 function M.setup_diff_highlights()
+  local colors = config.get().ui.colors or {}
   -- Green for added lines
-  vim.api.nvim_set_hl(0, M._diff_hl_groups.add, { default = true, bg = "#264a35" })
+  vim.api.nvim_set_hl(0, M._diff_hl_groups.add, { default = true, bg = colors.diff_added or "#264a35" })
   -- Yellow/amber tint for changed lines
-  vim.api.nvim_set_hl(0, M._diff_hl_groups.change, { default = true, bg = "#2a3040" })
+  vim.api.nvim_set_hl(0, M._diff_hl_groups.change, { default = true, bg = colors.diff_changed or "#2a3040" })
   -- Red for deleted lines
-  vim.api.nvim_set_hl(0, M._diff_hl_groups.delete, { default = true, bg = "#4a2626" })
+  vim.api.nvim_set_hl(0, M._diff_hl_groups.delete, { default = true, bg = colors.diff_deleted or "#4a2626" })
   -- Brighter highlight for the exact changed text within a changed line
-  vim.api.nvim_set_hl(0, M._diff_hl_groups.text, { default = true, bg = "#364060" })
+  vim.api.nvim_set_hl(0, M._diff_hl_groups.text, { default = true, bg = colors.diff_text or "#364060" })
 end
 
 --- Build the winhighlight string that maps standard Diff* groups to our subtle versions.

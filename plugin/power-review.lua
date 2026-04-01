@@ -447,6 +447,41 @@ vim.api.nvim_create_user_command("PowerReview", function(cmd_opts)
     local ui = require("power-review.ui")
     ui.goto_prev_comment()
 
+  elseif subcommand == "resolve_thread" then
+    local session = pr.get_current_session()
+    if not session then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    local thread_id = args[2] and tonumber(args[2])
+    local status = args[3]
+    if thread_id and status then
+      local cli = require("power-review.cli")
+      cli.update_thread_status(session.pr_url, thread_id, status, function(err, _result)
+        if err then
+          vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+        else
+          vim.notify(string.format("[PowerReview] Thread #%d -> %s", thread_id, status), vim.log.levels.INFO)
+          review.sync_threads(function() end)
+        end
+      end)
+    else
+      vim.notify("[PowerReview] Usage: :PowerReview resolve_thread <thread_id> <status>", vim.log.levels.WARN)
+      vim.notify("  Status: active, fixed, wontfix, closed, bydesign, pending", vim.log.levels.INFO)
+    end
+
+  elseif subcommand == "toggle_notifications" then
+    local notifications = require("power-review.notifications")
+    local new_state = notifications.toggle()
+    vim.notify(
+      string.format("[PowerReview] Notifications %s", new_state and "enabled" or "disabled"),
+      vim.log.levels.INFO
+    )
+
+  elseif subcommand == "show_description" then
+    local ui = require("power-review.ui")
+    ui.toggle_description()
+
   else
     vim.notify("[PowerReview] Unknown subcommand: " .. subcommand, vim.log.levels.WARN)
   end
@@ -460,6 +495,7 @@ end, {
       "next", "prev",
       "submit", "vote", "refresh", "sync", "close",
       "approve", "approve_all", "drafts", "sessions",
+      "resolve_thread", "toggle_notifications", "show_description",
     }
     local matches = {}
     for _, cmd in ipairs(subcommands) do

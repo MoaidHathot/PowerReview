@@ -146,6 +146,16 @@ function M.setup_keymaps()
     ui.approve_comment_at_cursor()
   end, "Approve draft at cursor")
 
+  -- Unapprove pending draft at cursor
+  map("n", keymaps.unapprove_comment, function()
+    ui.unapprove_comment_at_cursor()
+  end, "Unapprove draft at cursor")
+
+  -- Delete draft at cursor
+  map("n", keymaps.delete_comment, function()
+    ui.delete_comment_at_cursor()
+  end, "Delete draft at cursor")
+
   -- Submit all pending
   map("n", keymaps.submit_all, function()
     vim.cmd("PowerReview submit")
@@ -170,6 +180,31 @@ function M.setup_keymaps()
   map("n", keymaps.delete_session, function()
     vim.cmd("PowerReview delete")
   end, "Delete saved review session")
+
+  -- Resolve / change thread status at cursor
+  map("n", keymaps.resolve_thread, function()
+    if not M.get_current_session() then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    -- Open thread viewer which has the 'r' keybinding,
+    -- or if no threads exist, notify the user
+    ui.open_thread_at_cursor()
+  end, "Resolve thread at cursor")
+
+  -- AI drafts panel (batch approve/reject)
+  map("n", keymaps.ai_drafts, function()
+    if not M.get_current_session() then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    ui.toggle_drafts()
+  end, "AI drafts panel")
+
+  -- Show PR description (view-only)
+  map("n", keymaps.show_description, function()
+    ui.toggle_description()
+  end, "Show PR description")
 end
 
 --- Get the current active review session
@@ -414,6 +449,15 @@ function M.api.unapprove_draft(draft_id)
     return false, "No active review session"
   end
 
+  -- Grab file_path before unapproval for sign refresh
+  local file_path = nil
+  for _, d in ipairs(session.drafts) do
+    if d.id == draft_id then
+      file_path = d.file_path
+      break
+    end
+  end
+
   local cli = require("power-review.cli")
   local result, err = cli.unapprove_draft(session.pr_url, draft_id)
   if not result then
@@ -423,7 +467,12 @@ function M.api.unapprove_draft(draft_id)
   -- Reload session
   local review = require("power-review.review")
   review._reload_current_session(session.pr_url)
+
+  -- Refresh UI
   require("power-review.ui").refresh_neotree()
+  if file_path then
+    require("power-review.ui.signs").refresh_file(file_path)
+  end
 
   return true, nil
 end

@@ -174,6 +174,12 @@ function M.toggle_drafts()
   drafts_panel.toggle(session)
 end
 
+--- Toggle the PR description viewer (read-only float).
+function M.toggle_description()
+  local description = require("power-review.ui.description")
+  description.toggle()
+end
+
 --- Add a comment on the current cursor line or visual selection.
 --- Opens the floating comment editor (nui.nvim) or falls back to vim.ui.input.
 --- When called from visual mode, captures the selection range for multi-line comments.
@@ -262,6 +268,24 @@ function M.close_comment_floats()
   comment_float.close_all()
 end
 
+--- Check if a cursor line matches a draft (supports range comments).
+---@param draft table Draft comment with line_start and optional line_end
+---@param line number Cursor line (1-indexed)
+---@return boolean
+local function draft_matches_line(draft, line)
+  if not draft.line_start then
+    return false
+  end
+  if draft.line_start == line then
+    return true
+  end
+  -- Range comment: cursor is within line_start..line_end
+  if draft.line_end and line >= draft.line_start and line <= draft.line_end then
+    return true
+  end
+  return false
+end
+
 --- Edit a draft comment at the cursor position.
 --- If there are multiple drafts at the cursor line, prompts user to select.
 function M.edit_comment_at_cursor()
@@ -295,7 +319,7 @@ function M.edit_comment_at_cursor()
   local drafts = helpers.get_drafts_for_file(session, file_path)
   local line_drafts = {}
   for _, d in ipairs(drafts) do
-    if d.line_start == line and d.status == "draft" then
+    if draft_matches_line(d, line) and d.status == "draft" then
       table.insert(line_drafts, d)
     end
   end
@@ -369,7 +393,7 @@ function M.delete_comment_at_cursor()
   local drafts = helpers.get_drafts_for_file(session, file_path)
   local line_drafts = {}
   for _, d in ipairs(drafts) do
-    if d.line_start == line and d.status == "draft" then
+    if draft_matches_line(d, line) and d.status == "draft" then
       table.insert(line_drafts, d)
     end
   end
@@ -441,7 +465,7 @@ function M.approve_comment_at_cursor()
   local drafts = helpers.get_drafts_for_file(session, file_path)
   local line_drafts = {}
   for _, d in ipairs(drafts) do
-    if d.line_start == line and d.status == "draft" then
+    if draft_matches_line(d, line) and d.status == "draft" then
       table.insert(line_drafts, d)
     end
   end
@@ -474,6 +498,76 @@ function M.approve_comment_at_cursor()
     }, function(selected)
       if selected then
         do_approve(selected)
+      end
+    end)
+  end
+end
+
+--- Unapprove a pending draft at the cursor position (revert from pending to draft).
+--- If there are multiple pending drafts at the cursor line, prompts user to select.
+function M.unapprove_comment_at_cursor()
+  local pr = require("power-review")
+  local session = pr.get_current_session()
+  if not session then
+    log.warn("No active review session")
+    return
+  end
+
+  local bufnr = vim.api.nvim_get_current_buf()
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+
+  local signs_mod = require("power-review.ui.signs")
+  local info = signs_mod._attached_bufs[bufnr]
+  local file_path
+  if info then
+    file_path = info.file_path
+  else
+    local comment_float = require("power-review.ui.comment_float")
+    file_path = comment_float._resolve_file_path(bufnr, session)
+  end
+
+  if not file_path then
+    log.warn("Cannot determine file path for this buffer")
+    return
+  end
+
+  local helpers = require("power-review.session_helpers")
+  local drafts = helpers.get_drafts_for_file(session, file_path)
+  local pending_drafts = {}
+  for _, d in ipairs(drafts) do
+    if draft_matches_line(d, line) and d.status == "pending" then
+      table.insert(pending_drafts, d)
+    end
+  end
+
+  if #pending_drafts == 0 then
+    log.info("No pending drafts to unapprove at line %d", line)
+    return
+  end
+
+  local function do_unapprove(draft)
+    local ok_un, err = pr.api.unapprove_draft(draft.id)
+    if ok_un then
+      log.info("Draft unapproved (back to draft)")
+      M.refresh_neotree()
+    else
+      log.error("Failed to unapprove: %s", err or "unknown")
+    end
+  end
+
+  if #pending_drafts == 1 then
+    do_unapprove(pending_drafts[1])
+  else
+    vim.ui.select(pending_drafts, {
+      prompt = "Select draft to unapprove:",
+      format_item = function(d)
+        local preview = d.body:gsub("\n", " "):sub(1, 60)
+        local author_label = d.author == "ai" and " (AI)" or ""
+        return string.format("[%s]%s %s", d.status:upper(), author_label, preview)
+      end,
+    }, function(selected)
+      if selected then
+        do_unapprove(selected)
       end
     end)
   end
@@ -633,6 +727,16 @@ function M.setup_buffer_keymaps(bufnr)
     M.approve_comment_at_cursor()
   end, "Approve draft at cursor")
 
+  -- Unapprove pending draft at cursor
+  buf_map("n", keymaps.unapprove_comment, function()
+    M.unapprove_comment_at_cursor()
+  end, "Unapprove draft at cursor")
+
+  -- Delete draft at cursor
+  buf_map("n", keymaps.delete_comment, function()
+    M.delete_comment_at_cursor()
+  end, "Delete draft at cursor")
+
   log.debug("Buffer keymaps set for buffer %d", bufnr)
 end
 
@@ -683,7 +787,13 @@ function M.teardown_all()
     end
   end)
 
-  -- 6. Clean up all buffer keymaps
+  -- 6. Close description float if open
+  local ok_desc, desc_mod = pcall(require, "power-review.ui.description")
+  if ok_desc and desc_mod.is_visible() then
+    pcall(desc_mod.close)
+  end
+
+  -- 7. Clean up all buffer keymaps
   for bufnr, _ in pairs(M._keymap_bufs) do
     M._keymap_bufs[bufnr] = nil
   end

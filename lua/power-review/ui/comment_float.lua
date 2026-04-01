@@ -146,7 +146,7 @@ function M.open_thread_viewer(opts)
       text = {
         top = string.format(" %s:%d ", file_path, line),
         top_align = "left",
-        bottom = " q:close  a:reply  e:edit  d:del  A:approve  U:unapprove ",
+        bottom = " q:close  a:reply  e:edit  d:del  A:approve  U:unapprove  r:resolve ",
         bottom_align = "center",
       },
     },
@@ -370,6 +370,76 @@ function M.open_thread_viewer(opts)
     end
   end, { noremap = true })
 
+  -- Resolve / change thread status
+  popup:map("n", "r", function()
+    if #ctx.line_threads == 0 then
+      log.info("No remote threads on this line to resolve")
+      return
+    end
+
+    local function do_resolve(thread)
+      local statuses = { "active", "fixed", "wontfix", "closed", "bydesign", "pending" }
+      local icons = {
+        active = "",
+        fixed = "",
+        wontfix = "",
+        closed = "",
+        bydesign = "",
+        pending = "",
+      }
+      vim.ui.select(statuses, {
+        prompt = string.format("Set thread #%s status:", tostring(thread.id)),
+        format_item = function(s)
+          local icon = icons[s] or ""
+          local current = (thread.status or "active"):lower() == s and " (current)" or ""
+          return string.format("%s %s%s", icon, s, current)
+        end,
+      }, function(selected)
+        if not selected then
+          return
+        end
+        if (thread.status or "active"):lower() == selected then
+          log.info("Thread status unchanged")
+          return
+        end
+        local cli = require("power-review.cli")
+        cli.update_thread_status(ctx.session.pr_url, thread.id, selected, function(err, _result)
+          vim.schedule(function()
+            if err then
+              log.error("Failed to update thread status: %s", err)
+            else
+              log.info("Thread #%s -> %s", tostring(thread.id), selected)
+              M.close()
+              -- Sync to refresh thread data
+              local review = require("power-review.review")
+              review.sync_threads(function() end)
+            end
+          end)
+        end)
+      end)
+    end
+
+    if #ctx.line_threads == 1 then
+      do_resolve(ctx.line_threads[1])
+    else
+      M.close()
+      vim.ui.select(ctx.line_threads, {
+        prompt = "Select thread to resolve:",
+        format_item = function(t)
+          local first_body = ""
+          if t.comments and t.comments[1] then
+            first_body = (t.comments[1].body or ""):gsub("\n", " "):sub(1, 50)
+          end
+          return string.format("Thread #%s [%s]: %s", tostring(t.id), t.status or "active", first_body)
+        end,
+      }, function(selected)
+        if selected then
+          do_resolve(selected)
+        end
+      end)
+    end
+  end, { noremap = true })
+
   -- Auto-close on BufLeave
   popup:on(event.BufLeave, function()
     M.close()
@@ -388,8 +458,31 @@ function M._build_thread_content(threads, drafts, file_path, line)
   local lines = {}
   local hls = {}
 
+  -- Thread status icons
+  local status_icons = {
+    active = "",
+    fixed = "",
+    wontfix = "",
+    closed = "",
+    bydesign = "",
+    pending = "",
+  }
+
   -- Remote threads
   for _, thread in ipairs(threads) do
+    -- Thread status header line
+    local thread_status = thread.status or "active"
+    local status_icon = status_icons[thread_status:lower()] or ""
+    local status_line = string.format("── Thread #%s  %s %s ──", tostring(thread.id or "?"), status_icon, thread_status)
+    table.insert(lines, status_line)
+    local status_hl = thread_status:lower() == "active" and "DiagnosticInfo" or "Comment"
+    table.insert(hls, {
+      group = status_hl,
+      line = #lines - 1,
+      col_start = 0,
+      col_end = #status_line,
+    })
+
     if thread.comments then
       for ci, comment in ipairs(thread.comments) do
         local prefix = ci == 1 and ">> " or "   "
@@ -661,7 +754,7 @@ end
 --- Set up debounced live preview updates on the editor buffer.
 ---@param editor_bufnr number
 local function setup_preview_autocmds(editor_bufnr)
-  local debounce_ms = 150
+  local debounce_ms = (config.get().ui.comments or {}).preview_debounce or 150
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     buffer = editor_bufnr,
@@ -855,7 +948,10 @@ function M.open_comment_editor(opts)
     title = " New Comment "
   end
   local subtitle
-  if opts.line_end and opts.line_end ~= opts.line then
+  if not opts.line then
+    -- File-level comment
+    subtitle = string.format(" %s (file-level) ", opts.file_path)
+  elseif opts.line_end and opts.line_end ~= opts.line then
     if opts.col_start and opts.col_end then
       subtitle = string.format(" %s:%d:%d-%d:%d ", opts.file_path, opts.line, opts.col_start, opts.line_end, opts.col_end)
     else
@@ -1105,7 +1201,9 @@ end
 ---@param opts table
 function M._editor_fallback(opts)
   local range_label = ""
-  if opts.line_end and opts.line_end ~= opts.line then
+  if not opts.line then
+    range_label = string.format("%s (file-level)", opts.file_path)
+  elseif opts.line_end and opts.line_end ~= opts.line then
     range_label = string.format("%s:%d-%d", opts.file_path, opts.line, opts.line_end)
   else
     range_label = string.format("%s:%d", opts.file_path, opts.line)

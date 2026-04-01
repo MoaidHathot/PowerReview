@@ -108,4 +108,19 @@ public static partial class UrlParser
 
         return null;
     }
+
+    /// <summary>
+    /// Build a git clone URL from the parsed PR URL components.
+    /// </summary>
+    /// <param name="parsed">The parsed PR URL.</param>
+    /// <returns>The HTTPS clone URL for the repository.</returns>
+    public static string BuildCloneUrl(ParsedUrl parsed)
+    {
+        return parsed.ProviderType switch
+        {
+            ProviderType.AzDo => $"https://dev.azure.com/{parsed.Organization}/{parsed.Project}/_git/{parsed.Repository}",
+            ProviderType.GitHub => $"https://github.com/{parsed.Organization}/{parsed.Repository}.git",
+            _ => throw new ArgumentException($"Unsupported provider type: {parsed.ProviderType}"),
+        };
+    }
 }

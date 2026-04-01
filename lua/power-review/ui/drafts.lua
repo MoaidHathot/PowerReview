@@ -12,6 +12,9 @@ M._tree = nil
 ---@type boolean
 M._visible = false
 
+---@type string "all" | "ai" - current filter mode
+M._filter = "all"
+
 -- ============================================================================
 -- Highlights
 -- ============================================================================
@@ -60,22 +63,40 @@ end
 -- ============================================================================
 
 --- Build NuiTree nodes from all drafts in the session.
+--- Respects the current filter mode (all / ai).
 ---@param session PowerReview.ReviewSession
 ---@return table[] NuiTree.Node list
 local function build_nodes(session)
   local NuiTree = require("nui.tree")
   local helpers = require("power-review.session_helpers")
-  local counts = helpers.get_draft_counts(session)
 
-  -- Summary header
+  -- Apply filter
+  local filtered_drafts = {}
+  for _, d in ipairs(session.drafts) do
+    if M._filter == "all" or (d.author == "ai" or d.author == "Ai") then
+      table.insert(filtered_drafts, d)
+    end
+  end
+
+  -- Counts for summary
+  local all_counts = helpers.get_draft_counts(session)
+  local ai_count = 0
+  for _, d in ipairs(session.drafts) do
+    if d.author == "ai" or d.author == "Ai" then
+      ai_count = ai_count + 1
+    end
+  end
+
+  local filter_label = M._filter == "ai" and " [AI only]" or ""
   local summary_text = string.format(
-    "Drafts: %d total (%d draft, %d pending, %d submitted)",
-    counts.total, counts.draft, counts.pending, counts.submitted
+    "Drafts: %d total (%d draft, %d pending, %d submitted) | AI: %d%s",
+    all_counts.total, all_counts.draft, all_counts.pending, all_counts.submitted,
+    ai_count, filter_label
   )
 
-  -- Group drafts by status
+  -- Group filtered drafts by status
   local by_status = { draft = {}, pending = {}, submitted = {} }
-  for _, d in ipairs(session.drafts) do
+  for _, d in ipairs(filtered_drafts) do
     if by_status[d.status] then
       table.insert(by_status[d.status], d)
     end
@@ -89,8 +110,14 @@ local function build_nodes(session)
     for _, d in ipairs(by_status.draft) do
       local preview = d.body:gsub("\n", " "):sub(1, 50)
       local author_label = d.author == "ai" and " AI" or ""
+      local loc_label = d.file_path or "(PR-level)"
+      if d.line_start then
+        loc_label = loc_label .. ":" .. tostring(d.line_start)
+      elseif d.file_path then
+        loc_label = loc_label .. " (file-level)"
+      end
       table.insert(draft_children, NuiTree.Node({
-        text = string.format("[DRAFT]%s %s:%d %s", author_label, d.file_path, d.line_start, preview),
+        text = string.format("[DRAFT]%s %s %s", author_label, loc_label, preview),
         node_type = "draft_item",
         draft_id = d.id,
         draft_status = d.status,
@@ -115,8 +142,14 @@ local function build_nodes(session)
     for _, d in ipairs(by_status.pending) do
       local preview = d.body:gsub("\n", " "):sub(1, 50)
       local author_label = d.author == "ai" and " AI" or ""
+      local loc_label = d.file_path or "(PR-level)"
+      if d.line_start then
+        loc_label = loc_label .. ":" .. tostring(d.line_start)
+      elseif d.file_path then
+        loc_label = loc_label .. " (file-level)"
+      end
       table.insert(pending_children, NuiTree.Node({
-        text = string.format("[PENDING]%s %s:%d %s", author_label, d.file_path, d.line_start, preview),
+        text = string.format("[PENDING]%s %s %s", author_label, loc_label, preview),
         node_type = "draft_item",
         draft_id = d.id,
         draft_status = d.status,
@@ -140,8 +173,14 @@ local function build_nodes(session)
     local submitted_children = {}
     for _, d in ipairs(by_status.submitted) do
       local preview = d.body:gsub("\n", " "):sub(1, 50)
+      local loc_label = d.file_path or "(PR-level)"
+      if d.line_start then
+        loc_label = loc_label .. ":" .. tostring(d.line_start)
+      elseif d.file_path then
+        loc_label = loc_label .. " (file-level)"
+      end
       table.insert(submitted_children, NuiTree.Node({
-        text = string.format("[SUBMITTED] %s:%d %s", d.file_path, d.line_start, preview),
+        text = string.format("[SUBMITTED] %s %s", loc_label, preview),
         node_type = "draft_item",
         draft_id = d.id,
         draft_status = d.status,
@@ -219,13 +258,15 @@ local function prepare_node(node)
     end
 
     -- File path + line
-    local loc = node.file_path or ""
+    local loc = node.file_path or "(PR-level)"
     if node.line_start then
       if node.line_end and node.line_end ~= node.line_start then
         loc = loc .. string.format(":%d-%d", node.line_start, node.line_end)
       else
         loc = loc .. string.format(":%d", node.line_start)
       end
+    elseif node.file_path then
+      loc = loc .. " (file-level)"
     end
     line:append(loc .. " ", HL.FILE_PATH)
 
@@ -550,10 +591,85 @@ function M._setup_keymaps(split, tree, session)
   split:map("n", "R", function()
     local current = pr.get_current_session()
     if current then
+      session = current
       M.refresh(current)
       log.info("Drafts panel refreshed")
     end
   end, { noremap = true })
+
+  -- Filter toggle (f): cycle all -> ai -> all
+  split:map("n", "f", function()
+    M._filter = M._filter == "all" and "ai" or "all"
+    local current = pr.get_current_session()
+    if current then
+      session = current
+      M.refresh(current)
+    end
+    log.info("Filter: %s", M._filter == "ai" and "AI only" or "all drafts")
+  end, { noremap = true })
+
+  -- Batch delete all AI drafts (X)
+  split:map("n", "X", function()
+    local current = pr.get_current_session()
+    if not current then return end
+    session = current
+
+    -- Count AI drafts that can be deleted (only status = "draft")
+    local ai_drafts = {}
+    for _, d in ipairs(current.drafts) do
+      if (d.author == "ai" or d.author == "Ai") and d.status == "draft" then
+        table.insert(ai_drafts, d)
+      end
+    end
+
+    if #ai_drafts == 0 then
+      log.info("No deletable AI drafts (only 'draft' status can be deleted)")
+      return
+    end
+
+    vim.ui.input({
+      prompt = string.format("Delete ALL %d AI draft(s)? This cannot be undone. (yes/no): ", #ai_drafts),
+    }, function(input)
+      if input ~= "yes" then
+        log.info("Batch delete cancelled")
+        return
+      end
+
+      local deleted = 0
+      local errors = 0
+      for _, d in ipairs(ai_drafts) do
+        local ok_del, err = pr.api.delete_draft_comment(d.id)
+        if ok_del then
+          deleted = deleted + 1
+        else
+          errors = errors + 1
+          log.warn("Failed to delete %s: %s", d.id, err or "unknown")
+        end
+      end
+
+      log.info("Batch delete: %d deleted, %d failed", deleted, errors)
+      -- Reload session and refresh
+      local updated = pr.get_current_session()
+      if updated then
+        session = updated
+        M.refresh(updated)
+      end
+      require("power-review.ui").refresh_neotree()
+    end)
+  end, { noremap = true })
+
+  -- Set winbar for keymap help
+  if vim.fn.has("nvim-0.10.0") == 1 then
+    vim.schedule(function()
+      if split.winid and vim.api.nvim_win_is_valid(split.winid) then
+        vim.api.nvim_set_option_value(
+          "winbar",
+          " a:approve A:all a:unapprove e:edit d:del X:del-AI f:filter R:refresh q:close",
+          { win = split.winid }
+        )
+      end
+    end)
+  end
 end
 
 -- ============================================================================
@@ -591,7 +707,13 @@ function M._select_fallback(session)
     format_item = function(d)
       local preview = d.body:gsub("\n", " "):sub(1, 50)
       local author_label = d.author == "ai" and " (AI)" or ""
-      return string.format("[%s]%s %s:%d %s", d.status:upper(), author_label, d.file_path, d.line_start, preview)
+      local loc = d.file_path or "(PR-level)"
+      if d.line_start then
+        loc = loc .. ":" .. tostring(d.line_start)
+      elseif d.file_path then
+        loc = loc .. " (file-level)"
+      end
+      return string.format("[%s]%s %s %s", d.status:upper(), author_label, loc, preview)
     end,
   }, function(selected)
     if not selected then return end

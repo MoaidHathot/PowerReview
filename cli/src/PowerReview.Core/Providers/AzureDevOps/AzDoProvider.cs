@@ -303,12 +303,20 @@ public sealed class AzDoProvider : IProvider
         if (!string.IsNullOrEmpty(request.FilePath))
         {
             var filePath = request.FilePath.StartsWith('/') ? request.FilePath : $"/{request.FilePath}";
-            body["threadContext"] = new
+            if (request.LineStart.HasValue)
             {
-                filePath,
-                rightFileStart = new { line = request.LineStart ?? 1, offset = request.ColStart ?? 1 },
-                rightFileEnd = new { line = request.LineEnd ?? request.LineStart ?? 1, offset = request.ColEnd ?? 1 },
-            };
+                body["threadContext"] = new
+                {
+                    filePath,
+                    rightFileStart = new { line = request.LineStart.Value, offset = request.ColStart ?? 1 },
+                    rightFileEnd = new { line = request.LineEnd ?? request.LineStart.Value, offset = request.ColEnd ?? 1 },
+                };
+            }
+            else
+            {
+                // File-level comment: attach to the file but no specific line position
+                body["threadContext"] = new { filePath };
+            }
         }
 
         var response = await PostAsync<AzDoApiModels.ThreadResponse>($"/pullrequests/{prId}/threads", body, ct);
@@ -423,6 +431,22 @@ public sealed class AzDoProvider : IProvider
         var data = await response.Content.ReadFromJsonAsync<AzDoApiModels.ConnectionDataResponse>(JsonOptions, ct);
         return data?.AuthenticatedUser?.Id
             ?? throw new InvalidOperationException("Could not determine current reviewer ID from connection data.");
+    }
+
+    // =========================================================================
+    // Update Thread Status
+    // =========================================================================
+
+    public async Task<CommentThread> UpdateThreadStatusAsync(int prId, int threadId, ThreadStatus status, CancellationToken ct = default)
+    {
+        var body = new Dictionary<string, object>
+        {
+            ["status"] = ThreadStatusToApi(status),
+        };
+
+        var response = await PatchAsync<AzDoApiModels.ThreadResponse>(
+            $"/pullrequests/{prId}/threads/{threadId}", body, ct);
+        return MapThread(response);
     }
 
     // =========================================================================

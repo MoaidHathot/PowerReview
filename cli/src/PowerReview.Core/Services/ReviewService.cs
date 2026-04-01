@@ -36,9 +36,10 @@ public sealed class ReviewService
     /// </summary>
     /// <param name="prUrl">The pull request URL.</param>
     /// <param name="repoPath">Optional path to an existing local repo (required for "cwd" strategy).</param>
+    /// <param name="autoClone">If true, clone the repo automatically when the repo path doesn't exist.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The opened (or resumed) review session.</returns>
-    public async Task<ReviewSession> OpenAsync(string prUrl, string? repoPath = null, CancellationToken ct = default)
+    public async Task<ReviewSession> OpenAsync(string prUrl, string? repoPath = null, bool autoClone = false, CancellationToken ct = default)
     {
         // Step 1: Parse the URL
         var parsed = UrlParser.Parse(prUrl)
@@ -87,17 +88,34 @@ public sealed class ReviewService
         string? resolvedRepoPath = repoPath ?? _config.Git.RepoBasePath;
         string? worktreePath = null;
         var strategy = _config.Git.Strategy;
+        bool shouldAutoClone = autoClone || _config.Git.AutoClone;
 
         if (resolvedRepoPath != null)
         {
-            // Verify it's a git repo
-            if (!await GitOperations.IsGitRepoAsync(resolvedRepoPath, ct))
-                throw new ReviewServiceException($"Path is not a git repository: {resolvedRepoPath}");
+            bool isGitRepo = Directory.Exists(resolvedRepoPath)
+                && await GitOperations.IsGitRepoAsync(resolvedRepoPath, ct);
 
-            resolvedRepoPath = await GitOperations.GetRepoRootAsync(resolvedRepoPath, ct);
+            if (!isGitRepo)
+            {
+                if (shouldAutoClone)
+                {
+                    // Auto-clone the repo to the configured path
+                    var cloneUrl = UrlParser.BuildCloneUrl(parsed);
+                    resolvedRepoPath = await GitOperations.CloneAsync(cloneUrl, resolvedRepoPath, ct: ct);
+                }
+                else
+                {
+                    // Path is not a git repo — fall back to API-only review
+                    resolvedRepoPath = null;
+                }
+            }
+            else
+            {
+                resolvedRepoPath = await GitOperations.GetRepoRootAsync(resolvedRepoPath, ct);
+            }
         }
 
-        if (strategy != GitStrategy.Cwd || resolvedRepoPath != null)
+        if (resolvedRepoPath != null && (strategy != GitStrategy.Cwd || resolvedRepoPath != null))
         {
             var gitResult = await SetupGitAsync(pr, parsed, resolvedRepoPath, strategy, ct);
             resolvedRepoPath = gitResult.RepoPath;
@@ -285,6 +303,32 @@ public sealed class ReviewService
 
         session.Vote = vote;
         _store.Save(session);
+    }
+
+    /// <summary>
+    /// Update the status of a comment thread on the remote provider.
+    /// Also updates the local session cache.
+    /// </summary>
+    public async Task<CommentThread> UpdateThreadStatusAsync(string prUrl, int threadId, ThreadStatus status, CancellationToken ct = default)
+    {
+        var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
+
+        var updatedThread = await provider.UpdateThreadStatusAsync(session.PullRequest.Id, threadId, status, ct);
+
+        // Update local session cache
+        using var _ = _store.AcquireLock(session.Id);
+        session = _store.Load(session.Id)
+            ?? throw new ReviewServiceException($"Session disappeared during thread status update: {session.Id}");
+
+        var existing = session.Threads.Items.FirstOrDefault(t => t.Id == threadId);
+        if (existing != null)
+        {
+            existing.Status = status;
+        }
+        session.UpdatedAt = Timestamp();
+        _store.Save(session);
+
+        return updatedThread;
     }
 
     /// <summary>
@@ -519,8 +563,9 @@ public sealed class ReviewService
         {
             if (resolvedRepoPath == null)
                 throw new ReviewServiceException(
-                    "Git strategy is 'cwd' but no --repo-path was provided. " +
-                    "Provide --repo-path or change git.strategy in config.");
+                    "Git strategy is 'Cwd' but no valid repository was found. " +
+                    "Either provide --repo-path pointing to a local clone, " +
+                    "set git.repo_base_path in config, or change git.strategy.");
             // For cwd strategy, just verify the repo exists — no worktree or checkout
             return new GitSetupResult { RepoPath = resolvedRepoPath, WorktreePath = null };
         }
@@ -528,7 +573,10 @@ public sealed class ReviewService
         // We need a repo to work with
         if (resolvedRepoPath == null)
             throw new ReviewServiceException(
-                "No repository path available. Provide --repo-path to specify where the repo is.");
+                "No valid repository path available for git setup. " +
+                "Provide --repo-path pointing to an existing local clone, " +
+                "set git.repo_base_path in config to a cloned repo path, " +
+                "or use --auto-clone / git.auto_clone to clone automatically.");
 
         var branchManager = new BranchManager(resolvedRepoPath);
 

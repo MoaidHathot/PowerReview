@@ -39,6 +39,13 @@ public sealed class GitConfig
     [JsonPropertyName("repo_base_path")]
     public string? RepoBasePath { get; set; }
 
+    /// <summary>
+    /// If true, automatically clone the repository when the repo path doesn't exist.
+    /// Can also be enabled per-invocation with the --auto-clone CLI flag.
+    /// </summary>
+    [JsonPropertyName("auto_clone")]
+    public bool AutoClone { get; set; }
+
     [JsonPropertyName("cleanup_on_close")]
     public bool CleanupOnClose { get; set; } = true;
 }

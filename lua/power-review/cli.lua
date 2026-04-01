@@ -4,6 +4,7 @@
 local M = {}
 
 local log = require("power-review.utils.log")
+local config = require("power-review.config")
 
 --- The CLI executable. Can be a string (single command) or a table (command prefix).
 --- When a table, the first element is the executable and the rest are prepended args.
@@ -31,7 +32,8 @@ end
 ---@return table|nil result, string|nil error
 function M.run(args, opts)
   opts = opts or {}
-  local timeout = opts.timeout or 30000 -- 30s default
+  local cfg_timeouts = config.get().cli.timeouts or {}
+  local timeout = opts.timeout or cfg_timeouts.default or 30000
 
   local cmd = type(M._executable) == "table" and { unpack(M._executable) } or { M._executable }
   for _, arg in ipairs(args) do
@@ -190,6 +192,8 @@ end
 -- ============================================================================
 
 --- Open a review for a PR URL.
+--- The CLI returns `{ session_file_path, session }`. The session_file_path is
+--- attached to the adapted session as `_session_file_path` for the watcher.
 ---@param pr_url string
 ---@param repo_path? string
 ---@param callback fun(err?: string, session?: PowerReview.ReviewSession)
@@ -205,8 +209,13 @@ function M.open(pr_url, repo_path, callback)
       callback(err)
       return
     end
-    callback(nil, M.adapt_session(result))
-  end, { timeout = 60000 }) -- open can be slow (git fetch, API calls)
+    -- CLI wraps the response: { session_file_path: "...", session: { ... } }
+    local session_file_path = result.session_file_path
+    local raw_session = result.session or result
+    local session = M.adapt_session(raw_session)
+    session._session_file_path = session_file_path
+    callback(nil, session)
+  end, { timeout = config.get().cli.timeouts.open }) -- open can be slow (git fetch, API calls)
 end
 
 --- Get session info for a PR URL.
@@ -391,7 +400,7 @@ function M.submit(pr_url, callback)
       return
     end
     callback(nil, result)
-  end, { timeout = 60000 })
+  end, { timeout = config.get().cli.timeouts.submit })
 end
 
 --- Set the review vote.
@@ -401,7 +410,7 @@ end
 function M.vote(pr_url, vote_value, callback)
   M.run_async({ "vote", "--pr-url", pr_url, "--value", vote_value }, function(err, _result)
     callback(err)
-  end, { timeout = 30000 })
+  end, { timeout = config.get().cli.timeouts.vote })
 end
 
 --- Sync remote threads.
@@ -414,7 +423,7 @@ function M.sync(pr_url, callback)
       return
     end
     callback(nil, result and result.thread_count or 0)
-  end, { timeout = 30000 })
+  end, { timeout = config.get().cli.timeouts.sync })
 end
 
 --- Close a review session.
@@ -423,6 +432,26 @@ end
 function M.close(pr_url, callback)
   M.run_async({ "close", "--pr-url", pr_url }, function(err, _result)
     callback(err)
+  end)
+end
+
+--- Update the status of a remote comment thread.
+---@param pr_url string
+---@param thread_id number
+---@param status string Thread status: "active", "fixed", "wontfix", "closed", "bydesign", "pending"
+---@param callback fun(err?: string, result?: table)
+function M.update_thread_status(pr_url, thread_id, status, callback)
+  M.run_async({
+    "thread-status",
+    "--pr-url", pr_url,
+    "--thread-id", tostring(thread_id),
+    "--status", status,
+  }, function(err, result)
+    if err then
+      callback(err)
+      return
+    end
+    callback(nil, result)
   end)
 end
 

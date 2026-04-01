@@ -13,15 +13,15 @@ namespace PowerReview.Cli.Mcp;
 public sealed class DraftTools
 {
     [McpServerTool, Description(
-        "Create a new draft review comment on a specific file and line. " +
+        "Create a new draft review comment on a specific file and line, or a file-level comment (no specific line). " +
         "The comment starts as a draft that the user must approve before submission. " +
         "Only approved (pending) drafts will be submitted to the remote provider.")]
     public static string CreateComment(
         SessionService sessionService,
         [Description("The pull request URL")] string prUrl,
         [Description("Relative file path to comment on")] string filePath,
-        [Description("Line number to attach the comment to (1-indexed)")] int lineStart,
         [Description("Comment body in markdown format")] string body,
+        [Description("Line number to attach the comment to (1-indexed). Omit for file-level comments.")] int? lineStart = null,
         [Description("Optional end line for range comments (1-indexed)")] int? lineEnd = null)
     {
         try
@@ -51,7 +51,8 @@ public sealed class DraftTools
 
     [McpServerTool, Description(
         "Edit the body of an existing draft comment. " +
-        "Only works on comments with status 'Draft' -- approved/submitted comments cannot be edited by AI.")]
+        "Only works on AI-authored comments in 'Draft' status. " +
+        "If the draft was already approved (Pending), editing resets it back to Draft requiring re-approval.")]
     public static string EditDraftComment(
         SessionService sessionService,
         [Description("The pull request URL")] string prUrl,
@@ -61,9 +62,16 @@ public sealed class DraftTools
         try
         {
             var sessionId = ToolHelpers.ResolveSessionId(prUrl);
-            var draft = sessionService.EditDraft(sessionId, draftId, newBody);
+            var draft = sessionService.EditDraft(sessionId, draftId, newBody, callerAuthor: DraftAuthor.Ai);
 
-            return ToolHelpers.ToJson(new { id = draftId, draft });
+            return ToolHelpers.ToJson(new
+            {
+                id = draftId,
+                draft,
+                note = draft.Status == DraftStatus.Draft
+                    ? "Draft edited. If it was previously approved, it has been reset to Draft and needs re-approval."
+                    : null,
+            });
         }
         catch (SessionServiceException ex)
         {
@@ -73,7 +81,8 @@ public sealed class DraftTools
 
     [McpServerTool, Description(
         "Delete a draft comment. " +
-        "Only works on comments with status 'Draft' -- approved/submitted comments cannot be deleted by AI.")]
+        "Only works on AI-authored comments in 'Draft' status. " +
+        "User-authored and approved/submitted comments cannot be deleted by AI.")]
     public static string DeleteDraftComment(
         SessionService sessionService,
         [Description("The pull request URL")] string prUrl,
@@ -82,7 +91,7 @@ public sealed class DraftTools
         try
         {
             var sessionId = ToolHelpers.ResolveSessionId(prUrl);
-            sessionService.DeleteDraft(sessionId, draftId);
+            sessionService.DeleteDraft(sessionId, draftId, callerAuthor: DraftAuthor.Ai);
 
             return ToolHelpers.ToJson(new { deleted = true, id = draftId });
         }

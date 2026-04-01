@@ -20,6 +20,7 @@ internal static class CommandBuilder
         root.Subcommands.Add(BuildFiles(services));
         root.Subcommands.Add(BuildDiff(services));
         root.Subcommands.Add(BuildThreads(services));
+        root.Subcommands.Add(BuildThreadStatus(services));
         root.Subcommands.Add(BuildComment(services));
         root.Subcommands.Add(BuildReply(services));
         root.Subcommands.Add(BuildSubmit(services));
@@ -54,21 +55,27 @@ internal static class CommandBuilder
         {
             Description = "Path to an existing local git repository",
         };
+        var autoClone = new Option<bool>("--auto-clone")
+        {
+            Description = "Automatically clone the repository if the repo path doesn't exist",
+        };
 
         var cmd = new Command("open", "Open a review for a pull request. Fetches PR data, sets up git, creates/resumes session.")
         {
-            prUrl, repoPath
+            prUrl, repoPath, autoClone
         };
 
         cmd.SetAction(async (parseResult, ct) =>
         {
             var url = parseResult.GetValue(prUrl)!;
             var repo = parseResult.GetValue(repoPath);
+            var clone = parseResult.GetValue(autoClone);
 
             try
             {
-                var session = await services.ReviewService.OpenAsync(url, repo, ct);
-                CliOutput.WriteJson(session);
+                var session = await services.ReviewService.OpenAsync(url, repo, clone, ct);
+                var sessionFilePath = services.Store.GetSessionPath(session.Id);
+                CliOutput.WriteJson(new { session_file_path = sessionFilePath, session });
             }
             catch (ReviewServiceException ex)
             {
@@ -232,6 +239,57 @@ internal static class CommandBuilder
                 CliOutput.WriteJson(threads);
             }
             catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- thread-status ---
+
+    private static Command BuildThreadStatus(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var threadIdOpt = new Option<int>("--thread-id")
+        {
+            Description = "The remote thread ID to update",
+            Required = true,
+        };
+        var statusOpt = new Option<string>("--status")
+        {
+            Description = "New thread status: active, fixed, wontfix, closed, bydesign, pending",
+            Required = true,
+        };
+
+        var cmd = new Command("thread-status", "Update the status of a comment thread. Auth required.")
+        {
+            prUrl, threadIdOpt, statusOpt
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var threadId = parseResult.GetValue(threadIdOpt);
+            var statusStr = parseResult.GetValue(statusOpt)!;
+
+            var threadStatus = ParseThreadStatus(statusStr);
+            if (threadStatus == null)
+                return CliOutput.WriteUsageError(
+                    $"Invalid thread status: '{statusStr}'. Use: active, fixed, wontfix, closed, bydesign, pending");
+
+            try
+            {
+                var result = await services.ReviewService.UpdateThreadStatusAsync(url, threadId, threadStatus.Value, ct);
+                CliOutput.WriteJson(new { thread_id = threadId, status = statusStr, thread = result });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
             {
                 return CliOutput.WriteError(ex.Message);
             }
@@ -816,6 +874,20 @@ internal static class CommandBuilder
             "no-vote" or "novote" or "none" or "reset" => VoteValue.NoVote,
             "wait-for-author" or "wait" => VoteValue.WaitForAuthor,
             "reject" or "rejected" => VoteValue.Reject,
+            _ => null,
+        };
+    }
+
+    private static ThreadStatus? ParseThreadStatus(string value)
+    {
+        return value.ToLowerInvariant() switch
+        {
+            "active" => ThreadStatus.Active,
+            "fixed" or "resolved" => ThreadStatus.Fixed,
+            "wontfix" or "wont-fix" or "won't fix" => ThreadStatus.WontFix,
+            "closed" => ThreadStatus.Closed,
+            "bydesign" or "by-design" => ThreadStatus.ByDesign,
+            "pending" => ThreadStatus.Pending,
             _ => null,
         };
     }

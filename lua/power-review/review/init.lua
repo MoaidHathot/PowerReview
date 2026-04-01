@@ -7,6 +7,7 @@ local M = {}
 local log = require("power-review.utils.log")
 local cli = require("power-review.cli")
 local config = require("power-review.config")
+local watcher = require("power-review.watcher")
 
 --- Start a new review from a PR URL.
 --- Delegates to `powerreview open --pr-url <url>` which handles auth, API, git, and session.
@@ -39,6 +40,9 @@ function M.start_review(pr_url, callback)
 
     -- Navigate to worktree if applicable
     M._navigate_to_review(session)
+
+    -- Start file watcher for external changes (e.g., AI agents via MCP)
+    M._start_watcher(session)
 
     -- Refresh UI
     require("power-review.ui").refresh_neotree()
@@ -99,6 +103,9 @@ function M.resume_session(session_id_or_url, callback)
       -- Navigate to worktree if applicable
       M._navigate_to_review(session)
 
+      -- Start file watcher for external changes (e.g., AI agents via MCP)
+      M._start_watcher(session)
+
       -- Refresh UI
       require("power-review.ui").refresh_neotree()
 
@@ -122,6 +129,9 @@ function M.close_review(callback)
   -- Teardown UI
   local ui = require("power-review.ui")
   pcall(ui.teardown_all)
+
+  -- Stop file watcher
+  watcher.stop()
 
   -- Tell CLI to close (handles git cleanup)
   cli.close(session.pr_url, function(err)
@@ -269,6 +279,7 @@ function M.sync_threads(callback)
     end
 
     log.info("Synced %d remote thread(s)", thread_count or 0)
+    require("power-review.notifications").sync_complete(thread_count or 0)
     callback(nil, thread_count)
   end)
 end
@@ -368,6 +379,25 @@ function M._reload_current_session(pr_url)
   else
     log.warn("Failed to reload session after mutation: %s", err or "unknown")
   end
+end
+
+--- Start the session file watcher for a session.
+--- Uses the session_file_path returned by the CLI open command, or falls back
+--- to querying it via the standalone `session --path-only` command.
+---@param session PowerReview.ReviewSession
+function M._start_watcher(session)
+  local session_path = session._session_file_path
+  if not session_path then
+    -- Fallback: query session path from CLI
+    local path, err = cli.get_session_path(session.pr_url)
+    if err or not path then
+      log.warn("Watcher: could not determine session file path: %s", err or "unknown")
+      return
+    end
+    session_path = path
+  end
+
+  watcher.start(session_path, session.pr_url)
 end
 
 return M

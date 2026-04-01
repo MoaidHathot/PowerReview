@@ -11,8 +11,11 @@ public sealed class DraftComment
     [JsonPropertyName("file_path")]
     public string FilePath { get; set; } = "";
 
+    /// <summary>
+    /// Null means a file-level comment (no specific line).
+    /// </summary>
     [JsonPropertyName("line_start")]
-    public int LineStart { get; set; }
+    public int? LineStart { get; set; }
 
     [JsonPropertyName("line_end")]
     public int? LineEnd { get; set; }
