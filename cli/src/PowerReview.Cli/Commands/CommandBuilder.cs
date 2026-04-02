@@ -34,6 +34,8 @@ internal static class CommandBuilder
         root.Subcommands.Add(BuildMarkAllReviewed(services));
         root.Subcommands.Add(BuildCheckIteration(services));
         root.Subcommands.Add(BuildIterationDiff(services));
+        root.Subcommands.Add(BuildWorkingDir(services));
+        root.Subcommands.Add(BuildReadFile(services));
 
         return root;
     }
@@ -1019,6 +1021,115 @@ internal static class CommandBuilder
                 return CliOutput.WriteError(ex.Message);
             }
             catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- working-dir ---
+
+    private static Command BuildWorkingDir(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("working-dir", "Get the filesystem path to the working directory for a PR review. No auth required.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var result = services.ReviewService.GetSession(url);
+                if (result == null)
+                    return CliOutput.WriteError("No session found for this PR.");
+
+                var session = result.Session;
+                var workingDir = session.Git.WorktreePath ?? session.Git.RepoPath;
+
+                if (string.IsNullOrEmpty(workingDir))
+                    return CliOutput.WriteError("No local git repository available for this session.");
+
+                CliOutput.WriteJson(new
+                {
+                    path = workingDir,
+                    strategy = session.Git.Strategy.ToString(),
+                    repo_path = session.Git.RepoPath,
+                });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- read-file ---
+
+    private static Command BuildReadFile(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var file = new Option<string>("--file")
+        {
+            Description = "Relative file path within the repository",
+            Required = true,
+        };
+        var offset = new Option<int?>("--offset")
+        {
+            Description = "Line number to start reading from (1-indexed, default: 1)",
+        };
+        var limit = new Option<int?>("--limit")
+        {
+            Description = "Maximum number of lines to return (default: all)",
+        };
+
+        var cmd = new Command("read-file", "Read the contents of a file from the PR working directory. No auth required.")
+        {
+            prUrl, file, offset, limit
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var filePath = parseResult.GetValue(file)!;
+            var lineOffset = parseResult.GetValue(offset);
+            var lineLimit = parseResult.GetValue(limit);
+
+            try
+            {
+                var result = services.ReviewService.GetSession(url);
+                if (result == null)
+                    return CliOutput.WriteError("No session found for this PR.");
+
+                var session = result.Session;
+                var workingDir = session.Git.WorktreePath ?? session.Git.RepoPath;
+
+                if (string.IsNullOrEmpty(workingDir))
+                    return CliOutput.WriteError("No local git repository available for this session.");
+
+                var readResult = WorktreeFileService.ReadFile(workingDir, filePath, lineOffset ?? 1, lineLimit);
+
+                if (readResult.IsError)
+                    return CliOutput.WriteError(readResult.ErrorMessage!);
+
+                CliOutput.WriteJson(new
+                {
+                    path = readResult.Path,
+                    content = readResult.Content,
+                    total_lines = readResult.TotalLines,
+                    offset = readResult.Offset,
+                    limit = readResult.Limit,
+                });
+            }
+            catch (ReviewServiceException ex)
             {
                 return CliOutput.WriteError(ex.Message);
             }

@@ -7,7 +7,8 @@ using PowerReview.Core.Services;
 namespace PowerReview.Cli.Mcp;
 
 /// <summary>
-/// MCP tools for read-only review operations: session info, files, diff, threads.
+/// MCP tools for read-only review operations: session info, files, diff, threads,
+/// working directory access, file reading, and repository file listing.
 /// </summary>
 [McpServerToolType]
 public sealed class ReviewTools
@@ -183,5 +184,112 @@ public sealed class ReviewTools
         {
             return ToolHelpers.ToJson(new { error = ex.Message });
         }
+    }
+
+    // ========================================================================
+    // Working directory and file access tools
+    // ========================================================================
+
+    [McpServerTool, Description(
+        "Get the filesystem path to the working directory for a PR review. " +
+        "This is the git worktree (or repo checkout) where the full source code can be read. " +
+        "Use this to locate the repository on disk for reading files beyond the PR diff.")]
+    public static string GetWorkingDirectory(
+        ReviewService reviewService,
+        [Description("The pull request URL")] string prUrl)
+    {
+        var result = reviewService.GetSession(prUrl);
+        if (result == null)
+            return ToolHelpers.ToJson(new { error = "No session found for this PR. Run 'powerreview open --pr-url <url>' first." });
+
+        var session = result.Session;
+        var workingDir = session.Git.WorktreePath ?? session.Git.RepoPath;
+
+        if (string.IsNullOrEmpty(workingDir))
+            return ToolHelpers.ToJson(new { error = "No local git repository is available for this session. The review was opened without a repo path." });
+
+        return ToolHelpers.ToJson(new
+        {
+            path = workingDir,
+            strategy = session.Git.Strategy.ToString(),
+            repo_path = session.Git.RepoPath,
+        });
+    }
+
+    [McpServerTool, Description(
+        "Read the contents of a file from the PR working directory. " +
+        "The file does not need to be in the changed files list — you can read any file in the repository. " +
+        "Useful for understanding context, checking callers, reviewing types/interfaces, or reading test files. " +
+        "Supports optional offset and limit for reading sections of large files.")]
+    public static string ReadFile(
+        ReviewService reviewService,
+        [Description("The pull request URL")] string prUrl,
+        [Description("Relative file path within the repository (e.g., 'src/Services/UserService.cs')")] string filePath,
+        [Description("Line number to start reading from (1-indexed, default: 1)")] int? offset = null,
+        [Description("Maximum number of lines to return (default: all lines)")] int? limit = null)
+    {
+        var result = reviewService.GetSession(prUrl);
+        if (result == null)
+            return ToolHelpers.ToJson(new { error = "No session found for this PR." });
+
+        var session = result.Session;
+        var workingDir = session.Git.WorktreePath ?? session.Git.RepoPath;
+
+        if (string.IsNullOrEmpty(workingDir))
+            return ToolHelpers.ToJson(new { error = "No local git repository available for this session." });
+
+        var readResult = WorktreeFileService.ReadFile(workingDir, filePath, offset ?? 1, limit);
+
+        if (readResult.IsError)
+            return ToolHelpers.ToJson(new { error = readResult.ErrorMessage });
+
+        return ToolHelpers.ToJson(new
+        {
+            path = readResult.Path,
+            content = readResult.Content,
+            total_lines = readResult.TotalLines,
+            offset = readResult.Offset,
+            limit = readResult.Limit,
+        });
+    }
+
+    [McpServerTool, Description(
+        "List files in the PR repository working directory. " +
+        "Can list all files or filter by subdirectory and/or glob pattern. " +
+        "Useful for discovering project structure and finding related files beyond the PR diff. " +
+        "Set recursive to true to list all files recursively.")]
+    public static string ListRepositoryFiles(
+        ReviewService reviewService,
+        [Description("The pull request URL")] string prUrl,
+        [Description("Optional: subdirectory path to list (e.g., 'src/Services'). Omit to list from root.")] string? directory = null,
+        [Description("Optional: glob pattern to filter files (e.g., '*.cs', '*.ts'). Omit to list all files.")] string? pattern = null,
+        [Description("Whether to list files recursively (default: false). When true, lists all files in subdirectories.")] bool recursive = false)
+    {
+        var result = reviewService.GetSession(prUrl);
+        if (result == null)
+            return ToolHelpers.ToJson(new { error = "No session found for this PR." });
+
+        var session = result.Session;
+        var workingDir = session.Git.WorktreePath ?? session.Git.RepoPath;
+
+        if (string.IsNullOrEmpty(workingDir))
+            return ToolHelpers.ToJson(new { error = "No local git repository available for this session." });
+
+        var listResult = WorktreeFileService.ListFiles(workingDir, directory, pattern, recursive);
+
+        if (listResult.IsError)
+            return ToolHelpers.ToJson(new { error = listResult.ErrorMessage });
+
+        return ToolHelpers.ToJson(new
+        {
+            base_path = listResult.BasePath,
+            count = listResult.Entries.Count,
+            entries = listResult.Entries.Select(e => new
+            {
+                name = e.Name,
+                type = e.Type,
+                path = e.Path,
+            }),
+        });
     }
 }

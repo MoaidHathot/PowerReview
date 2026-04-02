@@ -178,8 +178,9 @@ Files that were not modified between iterations retain their "reviewed" mark.
 
 | Field           | Type             | Required | Description                                                    |
 |-----------------|------------------|----------|----------------------------------------------------------------|
-| `strategy`      | `string`         | yes      | Git strategy used. See Git Strategy Values.                    |
+| `repo_path`     | `string \| null` | no       | Filesystem path to the main git repository, or `null`.         |
 | `worktree_path` | `string \| null` | no       | Filesystem path to the git worktree, or `null`.                |
+| `strategy`      | `string`         | yes      | Git strategy used. See Git Strategy Values.                    |
 
 ### Git Strategy Values
 
@@ -490,6 +491,7 @@ A complete v4 session file:
     "changed_since_review": ["src/handlers/register.lua"]
   },
   "git": {
+    "repo_path": "/home/user/projects/my-repo",
     "strategy": "worktree",
     "worktree_path": "/home/user/projects/my-repo/.power-review-worktrees/42"
   },

@@ -23,8 +23,8 @@ Follow these steps in order. Copy this checklist and track progress:
 ```
 Review Progress:
 - [ ] Step 1: Load session and understand the PR
-- [ ] Step 2: List changed files
-- [ ] Step 3: Review each file's diff
+- [ ] Step 2: List changed files and discover project structure
+- [ ] Step 3: Review each file's diff (with context from surrounding code)
 - [ ] Step 4: Check existing comment threads
 - [ ] Step 5: Create draft comments for findings
 - [ ] Step 6: Summarize the review
@@ -41,7 +41,9 @@ Call `PowerReview:GetReviewSession` with the PR URL. This returns:
 
 Read the PR description carefully. Understand the intent of the change before reviewing code.
 
-### Step 2: List changed files
+Also call `PowerReview:GetWorkingDirectory` to get the filesystem path where the repository code is checked out. This tells you the working directory path, git strategy, and repo path -- useful for reading files later.
+
+### Step 2: List changed files and discover project structure
 
 Call `PowerReview:ListChangedFiles` with the PR URL. Returns each file's:
 
@@ -54,11 +56,23 @@ Plan the review order. Prioritize:
 2. Files with `add` or `edit` changes over `delete`
 3. Smaller focused files before large ones
 
+Use `PowerReview:ListRepositoryFiles` to understand the project structure around changed files. For example, if a file in `src/Services/` was changed, list that directory to see what other services exist and understand the architecture.
+
 ### Step 3: Review each file's diff
 
 For each file, call `PowerReview:GetFileDiff` with `prUrl` and `filePath`.
 
 Returns a unified diff showing all changes. If no local git repo is available, only file metadata is returned.
+
+**Reading context beyond the diff:** Use `PowerReview:ReadFile` to read files that are not part of the PR diff but are relevant to the review. This is critical for thorough reviews:
+
+- Read interfaces or base classes that changed code implements
+- Read callers of modified functions to check for breaking changes
+- Read test files to verify adequate test coverage
+- Read configuration files that might be affected by the changes
+- Read related files in the same module to understand conventions
+
+Use `offset` and `limit` parameters to read specific sections of large files instead of loading entire files.
 
 When reviewing a diff, look for:
 - Bugs, logic errors, edge cases
@@ -125,6 +139,16 @@ If you need to revise a comment you already created:
 - **Delete**: Call `PowerReview:DeleteDraftComment` with `prUrl` and `draftId`
 
 Both only work on AI-authored drafts in `Draft` status.
+
+## File access tools
+
+These tools allow you to read any file in the repository, not just the files changed in the PR:
+
+- **`GetWorkingDirectory`** -- Get the filesystem path to the working directory
+- **`ReadFile`** -- Read file contents (supports offset/limit for large files)
+- **`ListRepositoryFiles`** -- List directory contents (supports recursive listing and glob patterns)
+
+All file access tools enforce path security -- you cannot read files outside the working directory.
 
 ## Tool reference
 

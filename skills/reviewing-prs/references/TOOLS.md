@@ -10,6 +10,7 @@ All tools return JSON. Errors are returned as `{ "error": "message" }`.
 
 - Read-only tools (session, files, diff, threads, draft counts)
 - Write tools (create comment, reply, edit, delete)
+- Working directory and file access tools (working directory, read file, list files)
 
 ---
 
@@ -295,3 +296,133 @@ Delete a draft comment. Only works on AI-authored drafts in `Draft` status.
 - `"Draft not found: <id>"` -- invalid draft ID
 - `"Cannot delete draft: author mismatch"` -- trying to delete a user-authored draft
 - `"Cannot delete draft: status is 'Pending'"` -- only `Draft` status can be deleted
+
+---
+
+## GetWorkingDirectory
+
+Get the filesystem path to the working directory for a PR review. This is the git worktree (or repo checkout) where the full source code can be read on disk.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+
+**Returns:**
+
+```json
+{
+  "path": "/home/user/projects/my-repo/.power-review-worktrees/42",
+  "strategy": "Worktree",
+  "repo_path": "/home/user/projects/my-repo"
+}
+```
+
+- `path` -- the resolved working directory (prefers worktree path, falls back to repo path)
+- `strategy` -- the git strategy used (`Worktree`, `Clone`, `Cwd`)
+- `repo_path` -- the main repository path (may differ from `path` when using worktrees)
+
+**Errors:**
+- `"No session found for this PR."` -- no active session
+- `"No local git repository is available for this session."` -- session was opened without a repo path
+
+---
+
+## ReadFile
+
+Read the contents of a file from the PR working directory. The file does not need to be in the changed files list -- you can read any file in the repository. Useful for understanding context, checking callers, reviewing types/interfaces, or reading test files.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+| `filePath` | string | Yes | Relative file path within the repository (e.g., `src/Services/UserService.cs`) |
+| `offset` | int | No | Line number to start reading from (1-indexed, default: 1) |
+| `limit` | int | No | Maximum number of lines to return (default: all lines) |
+
+**Returns:**
+
+```json
+{
+  "path": "src/Services/UserService.cs",
+  "content": "using System;\n\nnamespace MyApp.Services;\n\npublic class UserService\n{\n    ...\n}",
+  "total_lines": 150,
+  "offset": 1,
+  "limit": null
+}
+```
+
+When using `offset` and `limit`:
+
+```json
+{
+  "path": "src/Services/UserService.cs",
+  "content": "    public async Task<User> GetByIdAsync(int id)\n    {\n        ...\n    }",
+  "total_lines": 150,
+  "offset": 42,
+  "limit": 20
+}
+```
+
+**Errors:**
+- `"No session found for this PR."` -- no active session
+- `"No local git repository available for this session."` -- no repo path
+- `"File not found: 'path'"` -- file does not exist
+- `"Cannot read binary file: 'path'"` -- file contains binary content
+- `"Path traversal detected: the file path escapes the working directory."` -- security violation
+
+---
+
+## ListRepositoryFiles
+
+List files in the PR repository working directory. Can list all files or filter by subdirectory and/or glob pattern. Useful for discovering project structure and finding related files beyond the PR diff.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+| `directory` | string | No | Subdirectory path to list (e.g., `src/Services`). Omit to list from root |
+| `pattern` | string | No | Glob pattern to filter files (e.g., `*.cs`, `*.ts`). Omit to list all files |
+| `recursive` | bool | No | Whether to list files recursively (default: false) |
+
+**Returns (non-recursive):**
+
+```json
+{
+  "base_path": "src",
+  "count": 4,
+  "entries": [
+    { "name": "Services", "type": "directory", "path": "src/Services" },
+    { "name": "Models", "type": "directory", "path": "src/Models" },
+    { "name": "Program.cs", "type": "file", "path": "src/Program.cs" },
+    { "name": "Startup.cs", "type": "file", "path": "src/Startup.cs" }
+  ]
+}
+```
+
+**Returns (recursive):**
+
+```json
+{
+  "base_path": "src",
+  "count": 5,
+  "entries": [
+    { "name": "UserService.cs", "type": "file", "path": "src/Services/UserService.cs" },
+    { "name": "AuthService.cs", "type": "file", "path": "src/Services/AuthService.cs" },
+    { "name": "User.cs", "type": "file", "path": "src/Models/User.cs" },
+    { "name": "Program.cs", "type": "file", "path": "src/Program.cs" },
+    { "name": "Startup.cs", "type": "file", "path": "src/Startup.cs" }
+  ]
+}
+```
+
+Hidden directories (`.git`, etc.) are automatically excluded. All paths are relative to the repository root.
+
+**Errors:**
+- `"No session found for this PR."` -- no active session
+- `"No local git repository available for this session."` -- no repo path
+- `"Directory not found: 'path'"` -- directory does not exist
+- `"Path traversal detected: the directory path escapes the working directory."` -- security violation
