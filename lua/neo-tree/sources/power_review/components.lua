@@ -19,6 +19,9 @@ local HL = {
   STATS_ADD = "PowerReviewNeoTreeStatsAdd",
   STATS_DEL = "PowerReviewNeoTreeStatsDel",
   MESSAGE = "PowerReviewNeoTreeMessage",
+  REVIEW_DONE = "PowerReviewNeoTreeReviewDone",
+  REVIEW_CHANGED = "PowerReviewNeoTreeReviewChanged",
+  REVIEW_PROGRESS = "PowerReviewNeoTreeReviewProgress",
 }
 
 --- Create highlight groups if they don't already exist
@@ -43,6 +46,9 @@ local function ensure_highlights()
     [HL.STATS_ADD] = "DiffAdd",
     [HL.STATS_DEL] = "DiffDelete",
     [HL.MESSAGE] = "Comment",
+    [HL.REVIEW_DONE] = "DiagnosticOk",
+    [HL.REVIEW_CHANGED] = "DiagnosticWarn",
+    [HL.REVIEW_PROGRESS] = "Comment",
   }
 
   for hl_name, link_to in pairs(links) do
@@ -184,6 +190,54 @@ M.comment_count = function(config, node, state)
     text = combined_text,
     highlight = primary_hl,
   }
+end
+
+--- Component: review_status
+--- Shows the review status indicator for a file:
+---  = reviewed,  = changed since last review, nothing for unreviewed.
+--- For the root node, shows review progress summary (e.g., "3/10 reviewed").
+---@param config table Component config
+---@param node table NuiTree.Node
+---@param state table Neo-tree state
+---@return table
+M.review_status = function(config, node, state)
+  ensure_highlights()
+
+  if node.type == "pr_root" then
+    -- Root node: show review progress
+    local progress = node.extra and node.extra.review_progress
+    if not progress or progress.total == 0 then
+      return {}
+    end
+    -- Only show if at least one file has been reviewed or changed
+    if progress.reviewed == 0 and progress.changed == 0 then
+      return {}
+    end
+    local text = string.format(" [%d/%d reviewed", progress.reviewed, progress.total)
+    if progress.changed > 0 then
+      text = text .. string.format(", %d changed", progress.changed)
+    end
+    text = text .. "]"
+    local hl = progress.reviewed == progress.total and HL.REVIEW_DONE or HL.REVIEW_PROGRESS
+    return { text = text, highlight = hl }
+  end
+
+  if node.type ~= "pr_file" then
+    return {}
+  end
+
+  local status = node.extra and node.extra.review_status
+  if not status or status == "unreviewed" then
+    return {}
+  end
+
+  if status == "reviewed" then
+    return { text = " ", highlight = HL.REVIEW_DONE }
+  elseif status == "changed" then
+    return { text = " ", highlight = HL.REVIEW_CHANGED }
+  end
+
+  return {}
 end
 
 --- Component: file_stats

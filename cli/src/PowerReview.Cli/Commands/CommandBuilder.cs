@@ -29,6 +29,11 @@ internal static class CommandBuilder
         root.Subcommands.Add(BuildClose(services));
         root.Subcommands.Add(BuildSessions(services));
         root.Subcommands.Add(BuildConfig(services));
+        root.Subcommands.Add(BuildMarkReviewed(services));
+        root.Subcommands.Add(BuildUnmarkReviewed(services));
+        root.Subcommands.Add(BuildMarkAllReviewed(services));
+        root.Subcommands.Add(BuildCheckIteration(services));
+        root.Subcommands.Add(BuildIterationDiff(services));
 
         return root;
     }
@@ -702,8 +707,13 @@ internal static class CommandBuilder
             var url = parseResult.GetValue(prUrl)!;
             try
             {
-                var count = await services.ReviewService.SyncAsync(url, ct);
-                CliOutput.WriteJson(new { synced = true, thread_count = count });
+                var result = await services.ReviewService.SyncAsync(url, ct);
+                CliOutput.WriteJson(new
+                {
+                    synced = true,
+                    thread_count = result.ThreadCount,
+                    iteration_check = result.IterationCheck,
+                });
             }
             catch (ReviewServiceException ex)
             {
@@ -840,6 +850,177 @@ internal static class CommandBuilder
             else
             {
                 CliOutput.WriteJson(services.Config);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- mark-reviewed ---
+
+    private static Command BuildMarkReviewed(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var file = new Option<string>("--file")
+        {
+            Description = "File path to mark as reviewed",
+            Required = true,
+        };
+
+        var cmd = new Command("mark-reviewed", "Mark a file as reviewed in the current iteration. No auth required.")
+        {
+            prUrl, file
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var filePath = parseResult.GetValue(file)!;
+            try
+            {
+                var review = services.ReviewService.MarkFileReviewed(url, filePath);
+                CliOutput.WriteJson(new { marked = true, file = filePath, review });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- unmark-reviewed ---
+
+    private static Command BuildUnmarkReviewed(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var file = new Option<string>("--file")
+        {
+            Description = "File path to unmark as reviewed",
+            Required = true,
+        };
+
+        var cmd = new Command("unmark-reviewed", "Remove the reviewed mark from a file. No auth required.")
+        {
+            prUrl, file
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var filePath = parseResult.GetValue(file)!;
+            try
+            {
+                var review = services.ReviewService.UnmarkFileReviewed(url, filePath);
+                CliOutput.WriteJson(new { unmarked = true, file = filePath, review });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- mark-all-reviewed ---
+
+    private static Command BuildMarkAllReviewed(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+
+        var cmd = new Command("mark-all-reviewed", "Mark all changed files as reviewed. No auth required.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var review = services.ReviewService.MarkAllFilesReviewed(url);
+                CliOutput.WriteJson(new { marked_all = true, review });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- check-iteration ---
+
+    private static Command BuildCheckIteration(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+
+        var cmd = new Command("check-iteration", "Check for new iterations from the remote. Auth required.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var result = await services.ReviewService.CheckIterationAsync(url, ct);
+                CliOutput.WriteJson(result);
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- iteration-diff ---
+
+    private static Command BuildIterationDiff(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var file = new Option<string>("--file")
+        {
+            Description = "File path to get iteration diff for",
+            Required = true,
+        };
+
+        var cmd = new Command("iteration-diff", "Get diff between iterations for a file. No auth required.")
+        {
+            prUrl, file
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var filePath = parseResult.GetValue(file)!;
+            try
+            {
+                var diff = await services.ReviewService.GetIterationDiffAsync(url, filePath, ct);
+                CliOutput.WriteJson(new { file = filePath, diff });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
             }
             return 0;
         });

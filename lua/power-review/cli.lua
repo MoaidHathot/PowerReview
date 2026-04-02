@@ -135,6 +135,7 @@ function M.adapt_session(cli_session)
   local git = cli_session.git or {}
   local threads_info = cli_session.threads or {}
   local iteration = cli_session.iteration or {}
+  local review = cli_session.review or {}
 
   -- Convert drafts from map {id -> draft} to array with id field
   local drafts = {}
@@ -174,6 +175,10 @@ function M.adapt_session(cli_session)
     iteration_id = iteration.iteration_id,
     source_commit = iteration.source_commit,
     target_commit = iteration.target_commit,
+    reviewed_iteration_id = review.reviewed_iteration_id,
+    reviewed_source_commit = review.reviewed_source_commit,
+    reviewed_files = review.reviewed_files or {},
+    changed_since_review = review.changed_since_review or {},
     worktree_path = git.worktree_path,
     git_strategy = git.strategy or "worktree",
     created_at = cli_session.created_at or "",
@@ -415,14 +420,14 @@ end
 
 --- Sync remote threads.
 ---@param pr_url string
----@param callback fun(err?: string, thread_count?: number)
+---@param callback fun(err?: string, result?: { thread_count: number, iteration_check?: table })
 function M.sync(pr_url, callback)
   M.run_async({ "sync", "--pr-url", pr_url }, function(err, result)
     if err then
       callback(err)
       return
     end
-    callback(nil, result and result.thread_count or 0)
+    callback(nil, result)
   end, { timeout = config.get().cli.timeouts.sync })
 end
 
@@ -433,6 +438,95 @@ function M.close(pr_url, callback)
   M.run_async({ "close", "--pr-url", pr_url }, function(err, _result)
     callback(err)
   end)
+end
+
+-- ============================================================================
+-- Iteration tracking commands
+-- ============================================================================
+
+--- Mark a file as reviewed.
+---@param pr_url string
+---@param file_path string
+---@return table|nil result, string|nil error
+function M.mark_reviewed(pr_url, file_path)
+  return M.run({ "mark-reviewed", "--pr-url", pr_url, "--file", file_path })
+end
+
+--- Mark a file as reviewed (async).
+---@param pr_url string
+---@param file_path string
+---@param callback fun(err?: string, result?: table)
+function M.mark_reviewed_async(pr_url, file_path, callback)
+  M.run_async({ "mark-reviewed", "--pr-url", pr_url, "--file", file_path }, function(err, result)
+    if err then
+      callback(err)
+      return
+    end
+    callback(nil, result)
+  end)
+end
+
+--- Unmark a file as reviewed.
+---@param pr_url string
+---@param file_path string
+---@return table|nil result, string|nil error
+function M.unmark_reviewed(pr_url, file_path)
+  return M.run({ "unmark-reviewed", "--pr-url", pr_url, "--file", file_path })
+end
+
+--- Unmark a file as reviewed (async).
+---@param pr_url string
+---@param file_path string
+---@param callback fun(err?: string, result?: table)
+function M.unmark_reviewed_async(pr_url, file_path, callback)
+  M.run_async({ "unmark-reviewed", "--pr-url", pr_url, "--file", file_path }, function(err, result)
+    if err then
+      callback(err)
+      return
+    end
+    callback(nil, result)
+  end)
+end
+
+--- Mark all files as reviewed.
+---@param pr_url string
+---@return table|nil result, string|nil error
+function M.mark_all_reviewed(pr_url)
+  return M.run({ "mark-all-reviewed", "--pr-url", pr_url })
+end
+
+--- Mark all files as reviewed (async).
+---@param pr_url string
+---@param callback fun(err?: string, result?: table)
+function M.mark_all_reviewed_async(pr_url, callback)
+  M.run_async({ "mark-all-reviewed", "--pr-url", pr_url }, function(err, result)
+    if err then
+      callback(err)
+      return
+    end
+    callback(nil, result)
+  end)
+end
+
+--- Check for new iterations from the remote.
+---@param pr_url string
+---@param callback fun(err?: string, result?: table)
+function M.check_iteration(pr_url, callback)
+  M.run_async({ "check-iteration", "--pr-url", pr_url }, function(err, result)
+    if err then
+      callback(err)
+      return
+    end
+    callback(nil, result)
+  end, { timeout = config.get().cli.timeouts.sync })
+end
+
+--- Get iteration diff for a specific file.
+---@param pr_url string
+---@param file_path string
+---@return table|nil result { file: string, diff: string }, string|nil error
+function M.get_iteration_diff(pr_url, file_path)
+  return M.run({ "iteration-diff", "--pr-url", pr_url, "--file", file_path })
 end
 
 --- Update the status of a remote comment thread.

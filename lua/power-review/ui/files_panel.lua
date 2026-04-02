@@ -27,6 +27,9 @@ local HL = {
   CHANGE_ICON = "PowerReviewPanelChangeIcon",
   EXPANDER = "PowerReviewPanelExpander",
   TITLE = "PowerReviewPanelTitle",
+  REVIEW_DONE = "PowerReviewPanelReviewDone",
+  REVIEW_CHANGED = "PowerReviewPanelReviewChanged",
+  REVIEW_PROGRESS = "PowerReviewPanelReviewProgress",
 }
 
 --- Change type config
@@ -58,6 +61,9 @@ local function ensure_highlights()
     [HL.CHANGE_ICON] = "Comment",
     [HL.EXPANDER] = "SpecialChar",
     [HL.TITLE] = "Title",
+    [HL.REVIEW_DONE] = "DiagnosticOk",
+    [HL.REVIEW_CHANGED] = "DiagnosticWarn",
+    [HL.REVIEW_PROGRESS] = "Comment",
   }
 
   for hl_name, link_to in pairs(links) do
@@ -75,6 +81,7 @@ local function build_nodes(session)
   local NuiTree = require("nui.tree")
   local helpers = require("power-review.session_helpers")
   local counts = helpers.get_draft_counts(session)
+  local review_progress = helpers.get_review_progress(session)
 
   -- Group files by directory
   local dirs = {} ---@type table<string, PowerReview.ChangedFile[]>
@@ -104,6 +111,7 @@ local function build_nodes(session)
       for _, file in ipairs(files_in_dir) do
         local file_drafts = helpers.get_drafts_for_file(session, file.path)
         local file_threads = helpers.get_threads_for_file(session, file.path)
+        local review_status, review_icon = helpers.get_file_review_status(session, file.path)
         table.insert(children, NuiTree.Node({
           text = vim.fn.fnamemodify(file.path, ":t"),
           type = "file",
@@ -114,6 +122,8 @@ local function build_nodes(session)
           deletions = file.deletions,
           draft_count = #file_drafts,
           thread_count = #file_threads,
+          review_status = review_status,
+          review_icon = review_icon,
         }))
       end
     else
@@ -122,6 +132,7 @@ local function build_nodes(session)
       for _, file in ipairs(files_in_dir) do
         local file_drafts = helpers.get_drafts_for_file(session, file.path)
         local file_threads = helpers.get_threads_for_file(session, file.path)
+        local review_status, review_icon = helpers.get_file_review_status(session, file.path)
         table.insert(file_nodes, NuiTree.Node({
           text = vim.fn.fnamemodify(file.path, ":t"),
           type = "file",
@@ -132,6 +143,8 @@ local function build_nodes(session)
           deletions = file.deletions,
           draft_count = #file_drafts,
           thread_count = #file_threads,
+          review_status = review_status,
+          review_icon = review_icon,
         }))
       end
 
@@ -157,6 +170,7 @@ local function build_nodes(session)
     pr_title = session.pr_title,
     file_count = #session.files,
     draft_counts = counts,
+    review_progress = review_progress,
   }, children)
 
   return { root }
@@ -185,11 +199,32 @@ local function prepare_node(node)
   if node.type == "root" then
     line:append(" ", HL.ROOT)
     line:append(node.text, HL.ROOT)
+    -- Review progress indicator
+    local progress = node.review_progress
+    if progress and progress.total > 0 and (progress.reviewed > 0 or progress.changed > 0) then
+      local prog_text = string.format(" [%d/%d reviewed", progress.reviewed, progress.total)
+      if progress.changed > 0 then
+        prog_text = prog_text .. string.format(", %d changed", progress.changed)
+      end
+      prog_text = prog_text .. "]"
+      local prog_hl = progress.reviewed == progress.total and HL.REVIEW_DONE or HL.REVIEW_PROGRESS
+      line:append(prog_text, prog_hl)
+    end
   elseif node.type == "directory" then
     local dir_icon = node:is_expanded() and " " or " "
     line:append(dir_icon, HL.DIR)
     line:append(node.text, HL.DIR)
   elseif node.type == "file" then
+    -- Review status indicator (before change type)
+    local rs = node.review_status
+    if rs == "reviewed" then
+      line:append(" ", HL.REVIEW_DONE)
+    elseif rs == "changed" then
+      line:append(" ", HL.REVIEW_CHANGED)
+    else
+      line:append("  ") -- spacing for alignment
+    end
+
     -- Change type icon
     local ct = change_type_config[node.change_type]
     if ct then
@@ -460,10 +495,51 @@ function M.open(session)
       if node.thread_count and node.thread_count > 0 then
         table.insert(lines, "Remote threads: " .. tostring(node.thread_count))
       end
+      if node.review_status then
+        table.insert(lines, "Review status: " .. node.review_status)
+      end
     end
     if #lines > 0 then
       vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
     end
+  end, map_opts)
+
+  -- Toggle reviewed status
+  M._split:map("n", "v", function()
+    local node = M._tree:get_node()
+    if not node or node.type ~= "file" or not node.file_path then
+      return
+    end
+
+    local review = require("power-review.review")
+    review.toggle_reviewed(node.file_path, function(err)
+      if err then
+        log.error("Failed to toggle reviewed: %s", err)
+      else
+        local pr = require("power-review")
+        local s = pr.get_current_session()
+        if s then
+          M.refresh(s)
+        end
+      end
+    end)
+  end, map_opts)
+
+  -- Mark all files reviewed
+  M._split:map("n", "V", function()
+    local review = require("power-review.review")
+    review.mark_all_reviewed(function(err)
+      if err then
+        log.error("Failed to mark all reviewed: %s", err)
+      else
+        log.info("All files marked as reviewed")
+        local pr = require("power-review")
+        local s = pr.get_current_session()
+        if s then
+          M.refresh(s)
+        end
+      end
+    end)
   end, map_opts)
 
   -- Auto-close on BufLeave (optional - let the split persist)

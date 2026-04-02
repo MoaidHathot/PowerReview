@@ -20,7 +20,7 @@ vim.api.nvim_create_user_command("PowerReview", function(cmd_opts)
   if not subcommand then
     vim.notify("[PowerReview] Usage: :PowerReview <subcommand|url>", vim.log.levels.WARN)
     vim.notify(
-      "  Subcommands: open <url>, list, delete, clean, files, comments, comment, thread, diff [file], next, prev, submit, vote, refresh, sync, close, sessions",
+      "  Subcommands: open <url>, list, delete, clean, files, comments, comment, thread, diff [file], next, prev, submit, vote, refresh, sync, close, sessions, mark_reviewed, unmark_reviewed, mark_all_reviewed, check_iteration, iteration_diff",
       vim.log.levels.INFO
     )
     return
@@ -482,6 +482,114 @@ vim.api.nvim_create_user_command("PowerReview", function(cmd_opts)
     local ui = require("power-review.ui")
     ui.toggle_description()
 
+  elseif subcommand == "mark_reviewed" then
+    local session = pr.get_current_session()
+    if not session then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    local file_path = args[2]
+    if not file_path then
+      -- Try to resolve from current buffer
+      local signs_mod = require("power-review.ui.signs")
+      local bufnr = vim.api.nvim_get_current_buf()
+      local info = signs_mod._attached_bufs[bufnr]
+      if info then
+        file_path = info.file_path
+      end
+    end
+    if not file_path then
+      vim.notify("[PowerReview] Usage: :PowerReview mark_reviewed [file_path]", vim.log.levels.WARN)
+      return
+    end
+    review.mark_reviewed(file_path, function(err)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      else
+        vim.notify("[PowerReview] Marked as reviewed: " .. file_path, vim.log.levels.INFO)
+      end
+    end)
+
+  elseif subcommand == "unmark_reviewed" then
+    local session = pr.get_current_session()
+    if not session then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    local file_path = args[2]
+    if not file_path then
+      local signs_mod = require("power-review.ui.signs")
+      local bufnr = vim.api.nvim_get_current_buf()
+      local info = signs_mod._attached_bufs[bufnr]
+      if info then
+        file_path = info.file_path
+      end
+    end
+    if not file_path then
+      vim.notify("[PowerReview] Usage: :PowerReview unmark_reviewed [file_path]", vim.log.levels.WARN)
+      return
+    end
+    review.unmark_reviewed(file_path, function(err)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      else
+        vim.notify("[PowerReview] Unmarked as reviewed: " .. file_path, vim.log.levels.INFO)
+      end
+    end)
+
+  elseif subcommand == "mark_all_reviewed" then
+    local session = pr.get_current_session()
+    if not session then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    review.mark_all_reviewed(function(err)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      else
+        vim.notify("[PowerReview] All files marked as reviewed", vim.log.levels.INFO)
+      end
+    end)
+
+  elseif subcommand == "check_iteration" then
+    local session = pr.get_current_session()
+    if not session then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    review.check_iteration(function(err, result)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      end
+      -- Notification is handled inside review.check_iteration
+    end)
+
+  elseif subcommand == "iteration_diff" then
+    local session = pr.get_current_session()
+    if not session then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    local file_path = args[2]
+    if not file_path then
+      -- Try to resolve from current buffer
+      local signs_mod = require("power-review.ui.signs")
+      local bufnr = vim.api.nvim_get_current_buf()
+      local info = signs_mod._attached_bufs[bufnr]
+      if info then
+        file_path = info.file_path
+      end
+    end
+    if not file_path then
+      vim.notify("[PowerReview] Usage: :PowerReview iteration_diff [file_path]", vim.log.levels.WARN)
+      return
+    end
+    review.iteration_diff(file_path, function(err)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      end
+    end)
+
   else
     vim.notify("[PowerReview] Unknown subcommand: " .. subcommand, vim.log.levels.WARN)
   end
@@ -496,6 +604,8 @@ end, {
       "submit", "vote", "refresh", "sync", "close",
       "approve", "approve_all", "drafts", "sessions",
       "resolve_thread", "toggle_notifications", "show_description",
+      "mark_reviewed", "unmark_reviewed", "mark_all_reviewed",
+      "check_iteration", "iteration_diff",
     }
     local matches = {}
     for _, cmd in ipairs(subcommands) do

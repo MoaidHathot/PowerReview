@@ -1,9 +1,9 @@
-# PowerReview Session File Schema (v3)
+# PowerReview Session File Schema (v4)
 
 This document defines the JSON schema for PowerReview session state files as stored by the CLI tool.
 External tools that create or consume these files **must** conform to this specification.
 
-> **Neovim adapter**: The CLI outputs v3 (nested) JSON. The Neovim plugin's `cli.adapt_session()` converts
+> **Neovim adapter**: The CLI outputs v4 (nested) JSON. The Neovim plugin's `cli.adapt_session()` converts
 > this to a flat v2-compatible shape for UI code. See `lua/power-review/cli.lua` for the mapping.
 
 ## File Location
@@ -16,7 +16,7 @@ Session files are managed by the CLI and stored at:
 
 The data directory is resolved in this order:
 
-1. `data_dir` field in CLI's `config.json`
+1. `data_dir` field in CLI's `powerreview.json`
 2. `$XDG_DATA_HOME/PowerReview`
 3. Windows: `%LOCALAPPDATA%\PowerReview`; Linux/Mac: `~/.local/share/PowerReview`
 
@@ -40,15 +40,16 @@ Writes are atomic: data is written to a `.tmp` file first, then renamed to the f
 
 ## Top-Level Object: `ReviewSession`
 
-The v3 format uses a nested structure with logical groupings.
+The v4 format uses a nested structure with logical groupings.
 
 | Field          | Type                             | Required | Description                                           |
 |----------------|----------------------------------|----------|-------------------------------------------------------|
-| `version`      | `number`                         | yes      | Schema version. Must be `3`.                          |
+| `version`      | `number`                         | yes      | Schema version. Must be `4`.                          |
 | `id`           | `string`                         | yes      | Session identifier.                                   |
 | `provider`     | `ProviderInfo`                   | yes      | Provider metadata.                                    |
 | `pull_request` | `PullRequestInfo`                | yes      | PR metadata.                                          |
 | `iteration`    | `IterationMeta`                  | no       | Iteration tracking for incremental sync.              |
+| `review`       | `ReviewState`                    | no       | Per-file review tracking and iteration change state.  |
 | `git`          | `GitInfo`                        | yes      | Git workspace state.                                  |
 | `files`        | `ChangedFile[]`                  | yes      | List of files changed in the PR.                      |
 | `threads`      | `ThreadsInfo`                    | yes      | Remote comment threads.                               |
@@ -135,6 +136,41 @@ Tracks the iteration state for incremental sync.
 | `iteration_id`  | `number \| null` | no       | Latest iteration ID the session was synced to. |
 | `source_commit` | `string \| null` | no       | Source branch commit SHA at last sync.         |
 | `target_commit` | `string \| null` | no       | Target branch commit SHA at last sync.         |
+
+---
+
+## `ReviewState` Object
+
+Tracks per-file review status and iteration change detection. This enables the reviewer to
+mark files as reviewed, detect when new iterations arrive, and perform smart resets that only
+unmark files that actually changed between iterations.
+
+| Field                   | Type             | Required | Description                                                                  |
+|-------------------------|------------------|----------|------------------------------------------------------------------------------|
+| `reviewed_iteration_id` | `number \| null` | no       | Iteration ID the reviewer last reviewed against. `null` if no review started.|
+| `reviewed_source_commit`| `string \| null` | no       | Source branch commit SHA at the time of the last review pass.                |
+| `reviewed_files`        | `string[]`       | yes      | File paths explicitly marked as reviewed in the current iteration.           |
+| `changed_since_review`  | `string[]`       | yes      | File paths that changed since the last reviewed iteration (via git diff).    |
+
+When a new iteration is detected (via `check-iteration` or during `sync`), the system:
+
+1. Compares the new source commit against `reviewed_source_commit` using `git diff --name-only`.
+2. Populates `changed_since_review` with the list of changed file paths.
+3. Removes any files in `reviewed_files` that appear in `changed_since_review` (smart reset).
+4. Updates `reviewed_iteration_id` and `reviewed_source_commit` to the new iteration's values.
+
+Files that were not modified between iterations retain their "reviewed" mark.
+
+### Example
+
+```json
+{
+  "reviewed_iteration_id": 3,
+  "reviewed_source_commit": "abc123def456789012345678901234567890abcd",
+  "reviewed_files": ["src/validators/user.lua"],
+  "changed_since_review": ["src/handlers/register.lua"]
+}
+```
 
 ---
 
@@ -391,11 +427,11 @@ In the `drafts` map:
 
 ## Full Example
 
-A complete v3 session file:
+A complete v4 session file:
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "id": "azdo_my-org_my-project_my-repo_42",
   "provider": {
     "type": "azdo",
@@ -446,6 +482,12 @@ A complete v3 session file:
     "iteration_id": 3,
     "source_commit": "abc123def456789012345678901234567890abcd",
     "target_commit": "def456abc789012345678901234567890abcd1234"
+  },
+  "review": {
+    "reviewed_iteration_id": 2,
+    "reviewed_source_commit": "999888def456789012345678901234567890ffff",
+    "reviewed_files": ["src/validators/user.lua"],
+    "changed_since_review": ["src/handlers/register.lua"]
   },
   "git": {
     "strategy": "worktree",
@@ -568,6 +610,7 @@ A complete v3 session file:
 - The `pull_request.reviewers` array shows Alice (required, no vote) and Bob (optional, approved with suggestions).
 - The `pull_request.author` uses `PersonIdentity` with `display_name`, `id`, and `unique_name`.
 - The `iteration` records the sync state (iteration 3 with commit SHAs).
+- The `review` records per-file review progress: `src/validators/user.lua` was reviewed during iteration 2, but `src/handlers/register.lua` changed since then and needs re-review.
 - The `git` object records the strategy and worktree path.
 - The `files` array shows three types of changes: edit, add, and delete. Null fields are omitted.
 - The `threads.items` array contains one file-level thread (with a reply using `parent_comment_id`) and one PR-level thread (`file_path` is omitted/null).
@@ -577,11 +620,11 @@ A complete v3 session file:
 
 ---
 
-## Neovim Adapter Mapping (v3 -> flat)
+## Neovim Adapter Mapping (v4 -> flat)
 
-The Neovim plugin's `cli.adapt_session()` function converts the nested v3 format to a flat shape:
+The Neovim plugin's `cli.adapt_session()` function converts the nested v4 format to a flat shape:
 
-| v3 Path | Flat Field |
+| v4 Path | Flat Field |
 |---------|-----------|
 | `pull_request.id` | `pr_id` |
 | `pull_request.url` | `pr_url` |
@@ -606,9 +649,23 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v3 format
 | `iteration.iteration_id` | `iteration_id` |
 | `iteration.source_commit` | `source_commit` |
 | `iteration.target_commit` | `target_commit` |
+| `review.reviewed_iteration_id` | `reviewed_iteration_id` |
+| `review.reviewed_source_commit` | `reviewed_source_commit` |
+| `review.reviewed_files` | `reviewed_files` |
+| `review.changed_since_review` | `changed_since_review` |
 | `threads.items` | `threads` (array) |
 | `drafts` (map) | `drafts` (array, sorted by `created_at`, `id` field added) |
 | `vote` (string enum) | `vote` (number: approved=10, approved_with_suggestions=5, no_vote=0, wait_for_author=-5, rejected=-10) |
+
+---
+
+## Schema Migrations
+
+### v3 -> v4
+
+- Added the `review` object (type `ReviewState`) to the top-level session.
+- Existing v3 sessions are migrated automatically: a default empty `ReviewState` is inserted with `reviewed_files: []`, `changed_since_review: []`, and null `reviewed_iteration_id` / `reviewed_source_commit`.
+- No other fields are changed. The migration is non-destructive.
 
 ---
 
@@ -619,9 +676,11 @@ When a session is refreshed (`dnx PowerReview -- open --pr-url ...` on existing 
 - **PR metadata** is re-fetched: title, description, status, is_draft, closed_at, merge_status, reviewers, labels, work_items.
 - **Files** are fully replaced with the latest iteration's changed files. Iteration metadata is updated.
 - **Threads** are fully replaced with fresh data from the provider.
+- **Review state** undergoes smart reset: if the iteration changed, files that were modified between iterations lose their "reviewed" mark; unchanged files retain it. `changed_since_review` is recomputed.
 - **Drafts** are preserved. They are never affected by refresh operations.
 
 When only threads are synced (`dnx PowerReview -- sync --pr-url ...`):
 
 - Only **threads** are re-fetched and replaced.
+- An **iteration check** is performed: if a new iteration is detected, the review state is smart-reset (same logic as refresh).
 - Files and PR metadata are not updated.

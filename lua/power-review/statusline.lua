@@ -62,10 +62,26 @@ function M.get()
 
   local helpers = require("power-review.session_helpers")
   local counts = helpers.get_draft_counts(session)
+  local progress = helpers.get_review_progress(session)
 
   local parts = {}
   -- Review mode icon + PR identifier
   table.insert(parts, string.format(" PR #%d", session.pr_id))
+
+  -- Iteration number (if tracked)
+  if session.reviewed_iteration_id and session.reviewed_iteration_id > 0 then
+    table.insert(parts, string.format("#%d", session.reviewed_iteration_id))
+  end
+
+  -- Review progress (if any files have been reviewed)
+  if progress.total > 0 and (progress.reviewed > 0 or progress.changed > 0) then
+    local prog_parts = {}
+    table.insert(prog_parts, string.format("%d/%d", progress.reviewed, progress.total))
+    if progress.changed > 0 then
+      table.insert(prog_parts, string.format("%d", progress.changed))
+    end
+    table.insert(parts, "[" .. table.concat(prog_parts, " ") .. "]")
+  end
 
   -- Draft counts (only if there are any)
   if counts.total > 0 then

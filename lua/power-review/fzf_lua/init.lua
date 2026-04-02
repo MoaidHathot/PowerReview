@@ -57,6 +57,7 @@ function M.changed_files(opts)
   local diff_cwd = get_diff_cwd(session)
   local target = normalize_branch(session.target_branch)
   local source = normalize_branch(session.source_branch)
+  local helpers = require("power-review.session_helpers")
 
   -- Build entries: display string -> file object mapping
   local entries = {}
@@ -67,7 +68,15 @@ function M.changed_files(opts)
     if file.additions and file.deletions then
       stats = string.format(" (+%d/-%d)", file.additions, file.deletions)
     end
-    local display = string.format("[%s] %s%s", icon, file.path, stats)
+    -- Review status prefix
+    local review_status, review_icon = helpers.get_file_review_status(session, file.path)
+    local review_prefix = ""
+    if review_status == "reviewed" then
+      review_prefix = review_icon .. " "
+    elseif review_status == "changed" then
+      review_prefix = review_icon .. " "
+    end
+    local display = string.format("%s[%s] %s%s", review_prefix, icon, file.path, stats)
     table.insert(entries, display)
     entry_map[display] = file
   end
@@ -161,8 +170,15 @@ function M.changed_files(opts)
     return vim.tbl_extend("force", self.winopts, new_winopts)
   end
 
+  -- Review progress for prompt
+  local progress = helpers.get_review_progress(session)
+  local progress_suffix = ""
+  if progress.total > 0 and (progress.reviewed > 0 or progress.changed > 0) then
+    progress_suffix = string.format(" [%d/%d reviewed]", progress.reviewed, progress.total)
+  end
+
   fzf_lua.fzf_exec(entries, vim.tbl_deep_extend("force", {
-    prompt = string.format("Changed Files (PR #%d)> ", session.pr_id),
+    prompt = string.format("Changed Files (PR #%d)%s> ", session.pr_id, progress_suffix),
     previewer = DiffPreviewer,
     actions = {
       ["default"] = function(selected)
@@ -171,6 +187,24 @@ function M.changed_files(opts)
           if file then
             local ui = require("power-review.ui")
             ui.open_file_diff(session, file.path)
+          end
+        end
+      end,
+      ["ctrl-v"] = function(selected)
+        if selected and selected[1] then
+          local file = entry_map[selected[1]]
+          if file then
+            local review_mod = require("power-review.review")
+            review_mod.toggle_reviewed(file.path, function(err)
+              if err then
+                vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+              else
+                -- Reopen the picker with updated state
+                vim.schedule(function()
+                  M.changed_files(opts)
+                end)
+              end
+            end)
           end
         end
       end,

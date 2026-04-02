@@ -366,4 +366,133 @@ function M.is_open()
   return M._current_diff ~= nil
 end
 
+-- ============================================================================
+-- Iteration diff (between two commit SHAs)
+-- ============================================================================
+
+--- Open a diff view between two commit SHAs for a specific file.
+--- Shows what changed between the last-reviewed iteration and the current one.
+--- Left pane = file at old_commit (previously reviewed), right pane = file at new_commit (current).
+---@param session PowerReview.ReviewSession
+---@param file_path string Relative file path
+---@param old_commit string The previously-reviewed source commit SHA
+---@param new_commit string The current source commit SHA
+---@param callback? fun(err?: string) Called after the diff view is open
+---@return boolean success
+function M.open_iteration_diff(session, file_path, old_commit, new_commit, callback)
+  callback = callback or function() end
+
+  local diff_cwd = get_diff_cwd(session)
+
+  -- Get the old commit version of the file
+  local old_cmd = { "git", "show", old_commit .. ":" .. file_path }
+  local old_result = vim.system(old_cmd, { cwd = diff_cwd, text = true }):wait()
+
+  local old_lines
+  if old_result.code == 0 and old_result.stdout then
+    old_lines = vim.split(old_result.stdout, "\n", { trimempty = false })
+    if #old_lines > 0 and old_lines[#old_lines] == "" then
+      table.remove(old_lines)
+    end
+  else
+    old_lines = { "-- File not found at " .. old_commit:sub(1, 8) .. " (new file in this iteration) --" }
+  end
+
+  -- Get the new commit version of the file
+  local new_cmd = { "git", "show", new_commit .. ":" .. file_path }
+  local new_result = vim.system(new_cmd, { cwd = diff_cwd, text = true }):wait()
+
+  local new_lines
+  if new_result.code == 0 and new_result.stdout then
+    new_lines = vim.split(new_result.stdout, "\n", { trimempty = false })
+    if #new_lines > 0 and new_lines[#new_lines] == "" then
+      table.remove(new_lines)
+    end
+  else
+    new_lines = { "-- File not found at " .. new_commit:sub(1, 8) .. " (deleted in this iteration) --" }
+  end
+
+  -- Open in a new tab
+  vim.cmd("tabnew")
+
+  -- Left pane: old commit version (readonly)
+  vim.cmd("enew")
+  local left_buf = vim.api.nvim_get_current_buf()
+  vim.bo[left_buf].buftype = "nofile"
+  vim.bo[left_buf].bufhidden = "wipe"
+  vim.bo[left_buf].swapfile = false
+  vim.bo[left_buf].modifiable = true
+  vim.api.nvim_buf_set_name(left_buf, string.format("[%s] %s", old_commit:sub(1, 8), file_path))
+  vim.api.nvim_buf_set_lines(left_buf, 0, -1, false, old_lines)
+
+  local ft = vim.filetype.match({ filename = file_path })
+  if ft then
+    vim.bo[left_buf].filetype = ft
+  end
+  vim.bo[left_buf].modifiable = false
+  vim.cmd("diffthis")
+
+  -- Right pane: new commit version (readonly)
+  vim.cmd("vnew")
+  local right_buf = vim.api.nvim_get_current_buf()
+  vim.bo[right_buf].buftype = "nofile"
+  vim.bo[right_buf].bufhidden = "wipe"
+  vim.bo[right_buf].swapfile = false
+  vim.bo[right_buf].modifiable = true
+  vim.api.nvim_buf_set_name(right_buf, string.format("[%s] %s", new_commit:sub(1, 8), file_path))
+  vim.api.nvim_buf_set_lines(right_buf, 0, -1, false, new_lines)
+
+  if ft then
+    vim.bo[right_buf].filetype = ft
+  end
+  vim.bo[right_buf].modifiable = false
+  vim.cmd("diffthis")
+
+  -- Apply subtle diff highlights
+  M.setup_diff_highlights()
+  local diff_winhighlight = build_diff_winhighlight()
+  for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    vim.wo[winid].foldmethod = "diff"
+    vim.wo[winid].foldlevel = 99
+    vim.wo[winid].wrap = false
+    local existing = vim.wo[winid].winhighlight or ""
+    if existing ~= "" then
+      vim.wo[winid].winhighlight = existing .. "," .. diff_winhighlight
+    else
+      vim.wo[winid].winhighlight = diff_winhighlight
+    end
+  end
+
+  -- Set up 'q' keymap to close the iteration diff tab
+  local diff_tabpage = vim.api.nvim_get_current_tabpage()
+  for _, buf in ipairs({ left_buf, right_buf }) do
+    vim.keymap.set("n", "q", function()
+      if vim.api.nvim_tabpage_is_valid(diff_tabpage) then
+        local tabnr = vim.api.nvim_tabpage_get_number(diff_tabpage)
+        if #vim.api.nvim_list_tabpages() > 1 then
+          pcall(vim.cmd, tabnr .. "tabclose")
+        else
+          vim.cmd("confirm qall")
+        end
+      end
+    end, { buffer = buf, silent = true, desc = "[PowerReview] Close iteration diff" })
+  end
+
+  M._current_diff = {
+    file_path = file_path,
+    session_id = session.id,
+    provider = "iteration",
+    tabpage = diff_tabpage,
+    old_commit = old_commit,
+    new_commit = new_commit,
+  }
+
+  log.debug("Opened iteration diff for %s (%s..%s)", file_path, old_commit:sub(1, 8), new_commit:sub(1, 8))
+
+  if type(callback) == "function" then
+    vim.schedule(function() callback(nil) end)
+  end
+  return true
+end
+
 return M

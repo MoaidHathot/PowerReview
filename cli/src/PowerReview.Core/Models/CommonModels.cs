@@ -82,3 +82,37 @@ public sealed class IterationMeta
     [JsonPropertyName("target_commit")]
     public string? TargetCommit { get; set; }
 }
+
+/// <summary>
+/// Tracks the reviewer's progress through iterations.
+/// Persisted in the session to survive across Neovim restarts.
+/// </summary>
+public sealed class ReviewState
+{
+    /// <summary>
+    /// The iteration ID the reviewer last reviewed against.
+    /// Null means no review pass has been started yet.
+    /// </summary>
+    [JsonPropertyName("reviewed_iteration_id")]
+    public int? ReviewedIterationId { get; set; }
+
+    /// <summary>
+    /// Source branch commit SHA at the time of the last review.
+    /// Used for git-based diff between iterations.
+    /// </summary>
+    [JsonPropertyName("reviewed_source_commit")]
+    public string? ReviewedSourceCommit { get; set; }
+
+    /// <summary>
+    /// File paths the reviewer has explicitly marked as reviewed in the current iteration.
+    /// </summary>
+    [JsonPropertyName("reviewed_files")]
+    public List<string> ReviewedFiles { get; set; } = [];
+
+    /// <summary>
+    /// File paths that have changes since the last reviewed iteration.
+    /// Computed when a new iteration is detected via git diff --name-only.
+    /// </summary>
+    [JsonPropertyName("changed_since_review")]
+    public List<string> ChangedSinceReview { get; set; } = [];
+}

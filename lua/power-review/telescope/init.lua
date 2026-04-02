@@ -54,14 +54,22 @@ function M.changed_files(opts)
   opts = opts or {}
 
   local icon_map = { add = "A", edit = "M", delete = "D", rename = "R" }
+  local helpers = require("power-review.session_helpers")
 
   -- Pre-compute diff cwd and target branch for preview
   local diff_cwd = get_diff_cwd(session)
   local target = normalize_branch(session.target_branch)
   local source = normalize_branch(session.source_branch)
 
+  -- Review progress for prompt title
+  local progress = helpers.get_review_progress(session)
+  local progress_suffix = ""
+  if progress.total > 0 and (progress.reviewed > 0 or progress.changed > 0) then
+    progress_suffix = string.format(" [%d/%d reviewed]", progress.reviewed, progress.total)
+  end
+
   pickers.new(opts, {
-    prompt_title = string.format("Changed Files (PR #%d)", session.pr_id),
+    prompt_title = string.format("Changed Files (PR #%d)%s", session.pr_id, progress_suffix),
     finder = finders.new_table({
       results = session.files,
       entry_maker = function(file)
@@ -70,7 +78,15 @@ function M.changed_files(opts)
         if file.additions and file.deletions then
           stats = string.format(" (+%d/-%d)", file.additions, file.deletions)
         end
-        local display = string.format("[%s] %s%s", icon, file.path, stats)
+        -- Review status prefix
+        local review_status, review_icon = helpers.get_file_review_status(session, file.path)
+        local review_prefix = ""
+        if review_status == "reviewed" then
+          review_prefix = review_icon .. " "
+        elseif review_status == "changed" then
+          review_prefix = review_icon .. " "
+        end
+        local display = string.format("%s[%s] %s%s", review_prefix, icon, file.path, stats)
         local ordinal = file.path
 
         return {
@@ -334,7 +350,7 @@ function M.changed_files(opts)
         end))
       end,
     }),
-    attach_mappings = function(prompt_bufnr, _map)
+    attach_mappings = function(prompt_bufnr, map)
       actions.select_default:replace(function()
         actions.close(prompt_bufnr)
         local selection = action_state.get_selected_entry()
@@ -343,6 +359,85 @@ function M.changed_files(opts)
           ui.open_file_diff(session, selection.value.path)
         end
       end)
+
+      -- Toggle reviewed status with <C-v>
+      map("n", "<C-v>", function()
+        local selection = action_state.get_selected_entry()
+        if selection then
+          local review_mod = require("power-review.review")
+          review_mod.toggle_reviewed(selection.value.path, function(err)
+            if err then
+              vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+            else
+              -- Refresh the picker by replacing the finder
+              local current_picker = action_state.get_current_picker(prompt_bufnr)
+              local updated_session = require("power-review").get_current_session()
+              if current_picker and updated_session then
+                local new_entries = {}
+                for _, file in ipairs(updated_session.files) do
+                  local file_icon = icon_map[file.change_type] or "?"
+                  local file_stats = ""
+                  if file.additions and file.deletions then
+                    file_stats = string.format(" (+%d/-%d)", file.additions, file.deletions)
+                  end
+                  local rs, ri = helpers.get_file_review_status(updated_session, file.path)
+                  local rp = ""
+                  if rs == "reviewed" then
+                    rp = ri .. " "
+                  elseif rs == "changed" then
+                    rp = ri .. " "
+                  end
+                  table.insert(new_entries, {
+                    value = file,
+                    display = string.format("%s[%s] %s%s", rp, file_icon, file.path, file_stats),
+                    ordinal = file.path,
+                    path = file.path,
+                    change_type = file.change_type,
+                  })
+                end
+                current_picker:refresh(finders.new_table({
+                  results = updated_session.files,
+                  entry_maker = function(file)
+                    local file_icon = icon_map[file.change_type] or "?"
+                    local file_stats = ""
+                    if file.additions and file.deletions then
+                      file_stats = string.format(" (+%d/-%d)", file.additions, file.deletions)
+                    end
+                    local rs, ri = helpers.get_file_review_status(updated_session, file.path)
+                    local rp = ""
+                    if rs == "reviewed" then
+                      rp = ri .. " "
+                    elseif rs == "changed" then
+                      rp = ri .. " "
+                    end
+                    return {
+                      value = file,
+                      display = string.format("%s[%s] %s%s", rp, file_icon, file.path, file_stats),
+                      ordinal = file.path,
+                      path = file.path,
+                      change_type = file.change_type,
+                    }
+                  end,
+                }), { reset_prompt = false })
+              end
+            end
+          end)
+        end
+      end)
+
+      map("i", "<C-v>", function()
+        -- Same logic for insert mode
+        local selection = action_state.get_selected_entry()
+        if selection then
+          local review_mod = require("power-review.review")
+          review_mod.toggle_reviewed(selection.value.path, function(err)
+            if err then
+              vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+            end
+          end)
+        end
+      end)
+
       return true
     end,
   }):find()

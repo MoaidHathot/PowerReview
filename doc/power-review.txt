@@ -57,7 +57,7 @@ Minimal setup with lazy.nvim: >lua
 4. CONFIGURATION                                *power-review-configuration*
 
 PowerReview uses a split configuration model:
-- CLI config ($XDG_CONFIG_HOME/PowerReview/config.json) owns auth, git
+- CLI config ($XDG_CONFIG_HOME/PowerReview/powerreview.json) owns auth, git
   strategy, provider settings, and data directory.
 - Lua config (setup()) owns UI settings: keymaps, signs, panels, diff
   provider, and CLI executable path.
@@ -106,8 +106,8 @@ log ~
 
                                         *power-review-config-cli-json*
 CLI Configuration File ~
-  The CLI reads `$XDG_CONFIG_HOME/PowerReview/config.json` (or
-  `%APPDATA%\PowerReview\config.json` on Windows). Fields:
+  The CLI reads `$XDG_CONFIG_HOME/PowerReview/powerreview.json` (or
+  `%APPDATA%\PowerReview\powerreview.json` on Windows). Fields:
 
   `auth.azdo.method`        "auto" | "az_cli" | "pat" (default: "auto")
   `auth.azdo.pat_env_var`   Env var name for AzDO PAT (default: "AZDO_PAT")
@@ -375,7 +375,7 @@ Session files are managed by the CLI and stored at:
   {data_dir}/sessions/{session_id}.json
 <
 The data directory is resolved in this order:
-1. `data_dir` field in CLI's `config.json`
+1. `data_dir` field in CLI's `powerreview.json`
 2. `$XDG_DATA_HOME/PowerReview`
 3. Windows: `%LOCALAPPDATA%\PowerReview`; Linux/Mac: `~/.local/share/PowerReview`
 

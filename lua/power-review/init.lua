@@ -205,6 +205,83 @@ function M.setup_keymaps()
   map("n", keymaps.show_description, function()
     ui.toggle_description()
   end, "Show PR description")
+
+  -- Mark current file as reviewed / toggle reviewed
+  map("n", keymaps.mark_reviewed, function()
+    if not M.get_current_session() then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    -- Try to resolve file path from current buffer
+    local signs_mod = require("power-review.ui.signs")
+    local bufnr = vim.api.nvim_get_current_buf()
+    local info = signs_mod._attached_bufs[bufnr]
+    local file_path = info and info.file_path
+    if not file_path then
+      file_path = signs_mod._resolve_review_file_path(bufnr, M.get_current_session())
+    end
+    if not file_path then
+      vim.notify("[PowerReview] Cannot determine file path for this buffer", vim.log.levels.WARN)
+      return
+    end
+    review.toggle_reviewed(file_path, function(err)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      end
+    end)
+  end, "Toggle file reviewed status")
+
+  -- Mark all files as reviewed
+  map("n", keymaps.mark_all_reviewed, function()
+    if not M.get_current_session() then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    review.mark_all_reviewed(function(err)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      else
+        vim.notify("[PowerReview] All files marked as reviewed", vim.log.levels.INFO)
+      end
+    end)
+  end, "Mark all files reviewed")
+
+  -- Check for new iterations
+  map("n", keymaps.check_iteration, function()
+    if not M.get_current_session() then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    review.check_iteration(function(err)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      end
+    end)
+  end, "Check for new iterations")
+
+  -- Open iteration diff for current file
+  map("n", keymaps.iteration_diff, function()
+    if not M.get_current_session() then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    local signs_mod = require("power-review.ui.signs")
+    local bufnr = vim.api.nvim_get_current_buf()
+    local info = signs_mod._attached_bufs[bufnr]
+    local file_path = info and info.file_path
+    if not file_path then
+      file_path = signs_mod._resolve_review_file_path(bufnr, M.get_current_session())
+    end
+    if not file_path then
+      vim.notify("[PowerReview] Cannot determine file path for this buffer", vim.log.levels.WARN)
+      return
+    end
+    review.iteration_diff(file_path, function(err)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      end
+    end)
+  end, "Iteration diff for current file")
 end
 
 --- Get the current active review session

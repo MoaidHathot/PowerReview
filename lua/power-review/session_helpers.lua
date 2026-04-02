@@ -117,4 +117,75 @@ function M.vote_label(vote)
   return labels[vote] or ("Unknown (" .. tostring(vote) .. ")")
 end
 
+-- ============================================================================
+-- Review status helpers (iteration tracking)
+-- ============================================================================
+
+--- Check if a file has been marked as reviewed in the current session.
+---@param session PowerReview.ReviewSession
+---@param file_path string
+---@return boolean
+function M.is_file_reviewed(session, file_path)
+  local norm_path = file_path:gsub("\\", "/")
+  for _, reviewed in ipairs(session.reviewed_files or {}) do
+    if reviewed:gsub("\\", "/") == norm_path then
+      return true
+    end
+  end
+  return false
+end
+
+--- Check if a file has changes since the last reviewed iteration.
+--- These are files that were previously reviewed but have been modified
+--- in a new iteration (smart reset has cleared their reviewed status).
+---@param session PowerReview.ReviewSession
+---@param file_path string
+---@return boolean
+function M.is_file_changed_since_review(session, file_path)
+  local norm_path = file_path:gsub("\\", "/")
+  for _, changed in ipairs(session.changed_since_review or {}) do
+    if changed:gsub("\\", "/") == norm_path then
+      return true
+    end
+  end
+  return false
+end
+
+--- Get the review status of a file for display purposes.
+--- Returns a status string and icon suitable for UI rendering.
+---@param session PowerReview.ReviewSession
+---@param file_path string
+---@return string status One of "reviewed", "changed", "unreviewed"
+---@return string icon Display icon
+function M.get_file_review_status(session, file_path)
+  if M.is_file_reviewed(session, file_path) then
+    return "reviewed", ""
+  elseif M.is_file_changed_since_review(session, file_path) then
+    return "changed", ""
+  else
+    return "unreviewed", ""
+  end
+end
+
+--- Count review progress for the session.
+---@param session PowerReview.ReviewSession
+---@return table { reviewed: number, changed: number, unreviewed: number, total: number }
+function M.get_review_progress(session)
+  local total = #(session.files or {})
+  local reviewed = #(session.reviewed_files or {})
+  local changed = #(session.changed_since_review or {})
+  -- unreviewed = total files minus reviewed minus changed
+  -- (changed files are NOT in reviewed_files after smart reset)
+  local unreviewed = total - reviewed - changed
+  if unreviewed < 0 then
+    unreviewed = 0
+  end
+  return {
+    reviewed = reviewed,
+    changed = changed,
+    unreviewed = unreviewed,
+    total = total,
+  }
+end
+
 return M

@@ -8,7 +8,7 @@ namespace PowerReview.Core.Models;
 /// </summary>
 public sealed class ReviewSession
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     [JsonPropertyName("version")]
     public int Version { get; set; } = CurrentVersion;
@@ -24,6 +24,13 @@ public sealed class ReviewSession
 
     [JsonPropertyName("iteration")]
     public IterationMeta Iteration { get; set; } = new();
+
+    /// <summary>
+    /// Reviewer's progress state — tracks which files have been reviewed
+    /// and which iteration was last reviewed against.
+    /// </summary>
+    [JsonPropertyName("review")]
+    public ReviewState Review { get; set; } = new();
 
     [JsonPropertyName("git")]
     public GitInfo Git { get; set; } = new();

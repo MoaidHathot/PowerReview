@@ -62,6 +62,12 @@
 ---@field source_commit? string Source branch commit SHA
 ---@field target_commit? string Target branch commit SHA
 
+---@class PowerReview.ReviewState
+---@field reviewed_iteration_id? number Iteration ID the reviewer last reviewed against
+---@field reviewed_source_commit? string Source commit SHA at time of last review
+---@field reviewed_files string[] File paths marked as reviewed in the current iteration
+---@field changed_since_review string[] File paths with changes since the last reviewed iteration
+
 ---@class PowerReview.ChangedFile
 ---@field path string Relative file path
 ---@field original_path? string Original path for renames
@@ -135,6 +141,10 @@
 ---@field iteration_id? number Latest iteration ID the session was synced to
 ---@field source_commit? string Source branch commit SHA at last sync
 ---@field target_commit? string Target branch commit SHA at last sync
+---@field reviewed_iteration_id? number Iteration ID the reviewer last reviewed against
+---@field reviewed_source_commit? string Source commit SHA at time of last review
+---@field reviewed_files string[] File paths marked as reviewed
+---@field changed_since_review string[] File paths with changes since last reviewed iteration
 ---@field worktree_path? string Path to worktree if using worktree strategy
 ---@field git_strategy PowerReview.GitStrategy
 ---@field created_at string ISO timestamp

@@ -26,6 +26,7 @@ M.default_config = {
       { "icon" },
       { "name" },
       { "comment_count" },
+      { "review_status" },
     },
     pr_dir = {
       { "indent" },
@@ -34,6 +35,7 @@ M.default_config = {
     },
     pr_file = {
       { "indent" },
+      { "review_status" },
       { "change_type" },
       { "icon" },
       { "comment_count" },
@@ -62,6 +64,7 @@ local refresh = wrap(manager.refresh)
 local function build_items(session)
   local helpers = require("power-review.session_helpers")
   local counts = helpers.get_draft_counts(session)
+  local review_progress = helpers.get_review_progress(session)
 
   -- Root node: PR info
   local root = {
@@ -77,6 +80,8 @@ local function build_items(session)
       source_branch = session.source_branch,
       target_branch = session.target_branch,
       draft_counts = counts,
+      review_progress = review_progress,
+      iteration_id = session.iteration_id,
       provider_type = session.provider_type,
     },
   }
@@ -95,6 +100,8 @@ local function build_items(session)
     local file_drafts = helpers.get_drafts_for_file(session, file.path)
     local file_threads = helpers.get_threads_for_file(session, file.path)
 
+    local review_status, review_icon = helpers.get_file_review_status(session, file.path)
+
     table.insert(root.children, {
       id = "file:" .. file.path,
       name = file.path, -- Full relative path for flat view
@@ -108,6 +115,8 @@ local function build_items(session)
         deletions = file.deletions,
         draft_count = #file_drafts,
         thread_count = #file_threads,
+        review_status = review_status,
+        review_icon = review_icon,
       },
     })
   end

@@ -259,11 +259,13 @@ function M.sync_threads(callback)
     return
   end
 
-  cli.sync(session.pr_url, function(err, thread_count)
+  cli.sync(session.pr_url, function(err, result)
     if err then
       callback("Failed to sync threads: " .. err)
       return
     end
+
+    local thread_count = result and result.thread_count or 0
 
     -- Reload session to get updated threads
     M._reload_current_session(session.pr_url)
@@ -278,8 +280,22 @@ function M.sync_threads(callback)
       end
     end
 
-    log.info("Synced %d remote thread(s)", thread_count or 0)
-    require("power-review.notifications").sync_complete(thread_count or 0)
+    -- Check if a new iteration was detected during sync
+    if result and result.iteration_check and result.iteration_check.has_new_iteration then
+      local ic = result.iteration_check
+      local changed_count = ic.changed_files and #ic.changed_files or 0
+      local msg = string.format(
+        "New iteration detected (#%s -> #%s). %d file(s) have new changes.",
+        tostring(ic.old_iteration_id or "?"),
+        tostring(ic.new_iteration_id or "?"),
+        changed_count)
+      vim.notify(msg, vim.log.levels.INFO, { title = "PowerReview" })
+      -- Refresh file panels to show updated review indicators
+      require("power-review.ui").refresh_neotree()
+    end
+
+    log.info("Synced %d remote thread(s)", thread_count)
+    require("power-review.notifications").sync_complete(thread_count)
     callback(nil, thread_count)
   end)
 end
@@ -355,6 +371,181 @@ end
 ---@return string|nil diff_content, string|nil error
 function M.get_file_diff(session, file_path)
   return nil, "Use the diff view (codediff.nvim) for file diffs"
+end
+
+-- ===== Iteration tracking =====
+
+--- Mark a file as reviewed in the current session.
+--- Updates the session via CLI and refreshes all file list UIs.
+---@param file_path string Relative file path
+---@param callback fun(err?: string)
+function M.mark_reviewed(file_path, callback)
+  local pr_mod = require("power-review")
+  local session = pr_mod.get_current_session()
+  if not session then
+    callback("No active review session")
+    return
+  end
+
+  cli.mark_reviewed_async(session.pr_url, file_path, function(err, _result)
+    if err then
+      callback("Failed to mark reviewed: " .. err)
+      return
+    end
+
+    -- Reload session to get updated review state
+    M._reload_current_session(session.pr_url)
+
+    -- Refresh all file list UIs
+    require("power-review.ui").refresh_neotree()
+
+    log.info("Marked as reviewed: %s", file_path)
+    callback(nil)
+  end)
+end
+
+--- Unmark a file as reviewed (remove its reviewed status).
+---@param file_path string Relative file path
+---@param callback fun(err?: string)
+function M.unmark_reviewed(file_path, callback)
+  local pr_mod = require("power-review")
+  local session = pr_mod.get_current_session()
+  if not session then
+    callback("No active review session")
+    return
+  end
+
+  cli.unmark_reviewed_async(session.pr_url, file_path, function(err, _result)
+    if err then
+      callback("Failed to unmark reviewed: " .. err)
+      return
+    end
+
+    M._reload_current_session(session.pr_url)
+    require("power-review.ui").refresh_neotree()
+
+    log.info("Unmarked as reviewed: %s", file_path)
+    callback(nil)
+  end)
+end
+
+--- Toggle the reviewed status of a file.
+--- If currently reviewed, unmarks it. If not reviewed, marks it.
+---@param file_path string Relative file path
+---@param callback fun(err?: string)
+function M.toggle_reviewed(file_path, callback)
+  local pr_mod = require("power-review")
+  local session = pr_mod.get_current_session()
+  if not session then
+    callback("No active review session")
+    return
+  end
+
+  local helpers = require("power-review.session_helpers")
+  if helpers.is_file_reviewed(session, file_path) then
+    M.unmark_reviewed(file_path, callback)
+  else
+    M.mark_reviewed(file_path, callback)
+  end
+end
+
+--- Mark all changed files as reviewed.
+---@param callback fun(err?: string)
+function M.mark_all_reviewed(callback)
+  local pr_mod = require("power-review")
+  local session = pr_mod.get_current_session()
+  if not session then
+    callback("No active review session")
+    return
+  end
+
+  cli.mark_all_reviewed_async(session.pr_url, function(err, _result)
+    if err then
+      callback("Failed to mark all reviewed: " .. err)
+      return
+    end
+
+    M._reload_current_session(session.pr_url)
+    require("power-review.ui").refresh_neotree()
+
+    log.info("Marked all %d files as reviewed", #session.files)
+    callback(nil)
+  end)
+end
+
+--- Check for new iterations from the remote provider.
+--- If a new iteration is detected, the CLI applies smart reset automatically.
+---@param callback fun(err?: string, result?: table)
+function M.check_iteration(callback)
+  local pr_mod = require("power-review")
+  local session = pr_mod.get_current_session()
+  if not session then
+    callback("No active review session")
+    return
+  end
+
+  cli.check_iteration(session.pr_url, function(err, result)
+    if err then
+      callback("Failed to check iteration: " .. err)
+      return
+    end
+
+    -- Reload session to get updated iteration/review state
+    M._reload_current_session(session.pr_url)
+
+    -- Refresh all UIs
+    require("power-review.ui").refresh_neotree()
+
+    if result and result.has_new_iteration then
+      local changed_count = result.changed_files and #result.changed_files or 0
+      local msg = string.format(
+        "New iteration detected (#%s -> #%s). %d file(s) have new changes.",
+        tostring(result.old_iteration_id or "?"),
+        tostring(result.new_iteration_id or "?"),
+        changed_count)
+      vim.notify(msg, vim.log.levels.INFO, { title = "PowerReview" })
+    else
+      vim.notify("No new iterations detected.", vim.log.levels.INFO, { title = "PowerReview" })
+    end
+
+    log.info("Iteration check complete: has_new=%s", tostring(result and result.has_new_iteration or false))
+    callback(nil, result)
+  end)
+end
+
+--- Open an iteration diff view for a specific file.
+--- Shows what changed between the last reviewed iteration and the current one.
+---@param file_path string Relative file path
+---@param callback? fun(err?: string)
+function M.iteration_diff(file_path, callback)
+  callback = callback or function() end
+
+  local pr_mod = require("power-review")
+  local session = pr_mod.get_current_session()
+  if not session then
+    callback("No active review session")
+    return
+  end
+
+  -- We need the reviewed_source_commit and current source_commit
+  if not session.reviewed_source_commit then
+    callback("No previous review point found. Mark files as reviewed first, then check for new iterations.")
+    return
+  end
+
+  if not session.source_commit then
+    callback("No current source commit found. Try syncing first.")
+    return
+  end
+
+  if session.reviewed_source_commit == session.source_commit then
+    callback("No iteration changes. The reviewed commit matches the current commit.")
+    return
+  end
+
+  -- Open a native diff between the two commits for this file
+  local diff_mod = require("power-review.ui.diff")
+  diff_mod.open_iteration_diff(session, file_path, session.reviewed_source_commit, session.source_commit, callback)
 end
 
 -- ===== Internal helpers =====

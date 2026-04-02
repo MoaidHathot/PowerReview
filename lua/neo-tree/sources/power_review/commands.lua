@@ -191,6 +191,45 @@ M.copy_path = function(state)
   end
 end
 
+--- Toggle the reviewed status of the selected file.
+--- If currently reviewed, unmarks it. If not reviewed, marks it.
+---@param state table Neo-tree state
+M.toggle_reviewed = function(state)
+  local node = state.tree:get_node()
+  if not node or node.type ~= "pr_file" then
+    vim.notify("[PowerReview] Select a file to toggle reviewed status", vim.log.levels.INFO)
+    return
+  end
+
+  local file_path = node.extra and node.extra.file_path
+  if not file_path then
+    return
+  end
+
+  local review = require("power-review.review")
+  review.toggle_reviewed(file_path, function(err)
+    if err then
+      vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+    else
+      refresh()
+    end
+  end)
+end
+
+--- Mark all changed files as reviewed.
+---@param state table Neo-tree state
+M.mark_all_reviewed = function(state)
+  local review = require("power-review.review")
+  review.mark_all_reviewed(function(err)
+    if err then
+      vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+    else
+      vim.notify("[PowerReview] All files marked as reviewed", vim.log.levels.INFO)
+      refresh()
+    end
+  end)
+end
+
 -- Add common commands that we don't override
 cc._add_common_commands(M)
 

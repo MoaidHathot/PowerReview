@@ -5,7 +5,7 @@ namespace PowerReview.Core.Configuration;
 
 /// <summary>
 /// Root configuration for the PowerReview CLI tool.
-/// Loaded from $XDG_CONFIG_HOME/PowerReview/config.json.
+/// Loaded from $XDG_CONFIG_HOME/PowerReview/powerreview.json.
 /// </summary>
 public sealed class PowerReviewConfig
 {

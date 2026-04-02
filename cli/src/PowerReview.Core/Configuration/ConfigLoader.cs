@@ -40,7 +40,7 @@ public static class ConfigLoader
     /// </summary>
     public static string GetConfigFilePath()
     {
-        return Path.Combine(GetConfigDir(), "config.json");
+        return Path.Combine(GetConfigDir(), "powerreview.json");
     }
 
     /// <summary>

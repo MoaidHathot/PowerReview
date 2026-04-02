@@ -182,6 +182,12 @@ public sealed class ReviewService
             session.Vote = existing.Vote;
         }
 
+        // Preserve review state from existing session
+        if (existing?.Review != null)
+        {
+            session.Review = existing.Review;
+        }
+
         // Step 11: Save session
         _store.Save(session);
 
@@ -261,13 +267,66 @@ public sealed class ReviewService
 
     /// <summary>
     /// Sync threads from the remote provider, updating the session.
+    /// Also checks for new iterations and applies smart reset if detected.
     /// </summary>
-    public async Task<int> SyncAsync(string prUrl, CancellationToken ct = default)
+    public async Task<SyncResult> SyncAsync(string prUrl, CancellationToken ct = default)
     {
         var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
 
         var threads = await provider.GetThreadsAsync(session.PullRequest.Id, ct);
 
+        // Check for new iteration (non-critical)
+        IterationCheckResult? iterationCheck = null;
+        try
+        {
+            var (files, latestIteration) = await provider.GetChangedFilesAsync(session.PullRequest.Id, ct);
+
+            if (latestIteration.Id != null && latestIteration.Id != session.Iteration.Id)
+            {
+                iterationCheck = new IterationCheckResult
+                {
+                    OldIterationId = session.Review.ReviewedIterationId ?? session.Iteration.Id,
+                    NewIterationId = latestIteration.Id,
+                    HasNewIteration = true,
+                };
+
+                using var syncLock = _store.AcquireLock(session.Id);
+                session = _store.Load(session.Id)
+                    ?? throw new ReviewServiceException($"Session disappeared during sync: {session.Id}");
+
+                var oldSourceCommit = session.Review.ReviewedSourceCommit ?? session.Iteration.SourceCommit;
+
+                session.Files = files;
+                session.Iteration = latestIteration;
+
+                if (session.Review.ReviewedIterationId != null)
+                {
+                    await ApplySmartResetAsync(session, oldSourceCommit, latestIteration.SourceCommit);
+                }
+
+                session.Threads = new ThreadsInfo
+                {
+                    SyncedAt = Timestamp(),
+                    Items = threads,
+                };
+                _store.Save(session);
+
+                iterationCheck.ChangedFiles = session.Review.ChangedSinceReview.ToList();
+                iterationCheck.Review = session.Review;
+
+                return new SyncResult
+                {
+                    ThreadCount = threads.Count,
+                    IterationCheck = iterationCheck,
+                };
+            }
+        }
+        catch
+        {
+            // Iteration check during sync is non-critical
+        }
+
+        // No new iteration — just update threads
         using var _ = _store.AcquireLock(session.Id);
         // Reload to avoid stale data
         session = _store.Load(session.Id)
@@ -280,7 +339,11 @@ public sealed class ReviewService
         };
         _store.Save(session);
 
-        return threads.Count;
+        return new SyncResult
+        {
+            ThreadCount = threads.Count,
+            IterationCheck = iterationCheck,
+        };
     }
 
     /// <summary>
@@ -405,8 +468,20 @@ public sealed class ReviewService
 
         // Refresh changed files (critical)
         var (files, iteration) = await provider.GetChangedFilesAsync(session.PullRequest.Id, ct);
+
+        // Check for new iteration and apply smart reset if needed
+        var oldIterationId = session.Iteration.Id;
+        var oldSourceCommit = session.Review.ReviewedSourceCommit ?? session.Iteration.SourceCommit;
+
         session.Files = files;
         session.Iteration = iteration;
+
+        // If iteration changed and the reviewer had a reviewed baseline, apply smart reset
+        if (iteration.Id != null && iteration.Id != oldIterationId
+            && session.Review.ReviewedIterationId != null)
+        {
+            await ApplySmartResetAsync(session, oldSourceCommit, iteration.SourceCommit);
+        }
 
         // Refresh threads (non-critical)
         try
@@ -509,6 +584,231 @@ public sealed class ReviewService
         return threads;
     }
 
+    // =========================================================================
+    // Iteration tracking
+    // =========================================================================
+
+    /// <summary>
+    /// Mark a file as reviewed. On the first call for a session, stamps the
+    /// current iteration as the reviewed baseline.
+    /// </summary>
+    public ReviewState MarkFileReviewed(string prUrl, string filePath)
+    {
+        var session = ResolveSession(prUrl);
+
+        using var _ = _store.AcquireLock(session.Id);
+        session = _store.Load(session.Id)
+            ?? throw new ReviewServiceException($"Session disappeared: {session.Id}");
+
+        // Stamp the reviewed iteration on first review action
+        if (session.Review.ReviewedIterationId == null && session.Iteration.Id != null)
+        {
+            session.Review.ReviewedIterationId = session.Iteration.Id;
+            session.Review.ReviewedSourceCommit = session.Iteration.SourceCommit;
+        }
+
+        var normalized = filePath.Replace('\\', '/');
+
+        if (!session.Review.ReviewedFiles.Any(f => f.Replace('\\', '/').Equals(normalized, StringComparison.OrdinalIgnoreCase)))
+        {
+            session.Review.ReviewedFiles.Add(filePath);
+        }
+
+        // Remove from changed_since_review if present (file has been re-reviewed)
+        session.Review.ChangedSinceReview.RemoveAll(f =>
+            f.Replace('\\', '/').Equals(normalized, StringComparison.OrdinalIgnoreCase));
+
+        _store.Save(session);
+        return session.Review;
+    }
+
+    /// <summary>
+    /// Unmark a file as reviewed.
+    /// </summary>
+    public ReviewState UnmarkFileReviewed(string prUrl, string filePath)
+    {
+        var session = ResolveSession(prUrl);
+
+        using var _ = _store.AcquireLock(session.Id);
+        session = _store.Load(session.Id)
+            ?? throw new ReviewServiceException($"Session disappeared: {session.Id}");
+
+        var normalized = filePath.Replace('\\', '/');
+        session.Review.ReviewedFiles.RemoveAll(f =>
+            f.Replace('\\', '/').Equals(normalized, StringComparison.OrdinalIgnoreCase));
+
+        _store.Save(session);
+        return session.Review;
+    }
+
+    /// <summary>
+    /// Mark all current files as reviewed.
+    /// </summary>
+    public ReviewState MarkAllFilesReviewed(string prUrl)
+    {
+        var session = ResolveSession(prUrl);
+
+        using var _ = _store.AcquireLock(session.Id);
+        session = _store.Load(session.Id)
+            ?? throw new ReviewServiceException($"Session disappeared: {session.Id}");
+
+        // Stamp the reviewed iteration on first review action
+        if (session.Review.ReviewedIterationId == null && session.Iteration.Id != null)
+        {
+            session.Review.ReviewedIterationId = session.Iteration.Id;
+            session.Review.ReviewedSourceCommit = session.Iteration.SourceCommit;
+        }
+
+        session.Review.ReviewedFiles = session.Files.Select(f => f.Path).ToList();
+        session.Review.ChangedSinceReview.Clear();
+
+        _store.Save(session);
+        return session.Review;
+    }
+
+    /// <summary>
+    /// Check whether a new iteration is available from the remote.
+    /// If a new iteration is detected, performs a smart reset:
+    /// - Computes which files changed via git diff
+    /// - Removes changed files from reviewed_files
+    /// - Updates changed_since_review
+    /// - Updates the reviewed iteration baseline
+    /// </summary>
+    public async Task<IterationCheckResult> CheckIterationAsync(string prUrl, CancellationToken ct = default)
+    {
+        var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
+
+        // Fetch the latest iteration from the remote
+        var (files, latestIteration) = await provider.GetChangedFilesAsync(session.PullRequest.Id, ct);
+
+        var result = new IterationCheckResult
+        {
+            OldIterationId = session.Review.ReviewedIterationId ?? session.Iteration.Id,
+            NewIterationId = latestIteration.Id,
+            HasNewIteration = false,
+        };
+
+        // Compare with current session iteration
+        if (latestIteration.Id == null || latestIteration.Id == session.Iteration.Id)
+        {
+            // No change — still on the same iteration
+            return result;
+        }
+
+        result.HasNewIteration = true;
+
+        // Update the session with the new files and iteration
+        using var _ = _store.AcquireLock(session.Id);
+        session = _store.Load(session.Id)
+            ?? throw new ReviewServiceException($"Session disappeared: {session.Id}");
+
+        var oldSourceCommit = session.Review.ReviewedSourceCommit ?? session.Iteration.SourceCommit;
+        var newSourceCommit = latestIteration.SourceCommit;
+
+        // Perform smart reset
+        await ApplySmartResetAsync(session, oldSourceCommit, newSourceCommit);
+
+        // Update session iteration to latest
+        session.Iteration = latestIteration;
+        session.Files = files;
+
+        _store.Save(session);
+
+        result.ChangedFiles = session.Review.ChangedSinceReview.ToList();
+        result.Review = session.Review;
+
+        return result;
+    }
+
+    /// <summary>
+    /// Get the diff content between two iteration commits for a specific file.
+    /// Uses git diff with commit SHAs.
+    /// </summary>
+    public async Task<string> GetIterationDiffAsync(string prUrl, string filePath, CancellationToken ct = default)
+    {
+        var session = ResolveSession(prUrl);
+
+        var oldCommit = session.Review.ReviewedSourceCommit;
+        var newCommit = session.Iteration.SourceCommit;
+
+        if (string.IsNullOrEmpty(oldCommit))
+            throw new ReviewServiceException("No previous iteration to compare against. Mark files as reviewed first.");
+
+        if (string.IsNullOrEmpty(newCommit))
+            throw new ReviewServiceException("No current iteration commit available.");
+
+        if (oldCommit == newCommit)
+            throw new ReviewServiceException("No changes between iterations — same commit.");
+
+        var repoPath = session.Git.WorktreePath ?? session.Git.RepoPath
+            ?? throw new ReviewServiceException("No git repository available for diff.");
+
+        var (success, diff, stderr) = await GitOperations.TryRunAsync(
+            ["diff", oldCommit, newCommit, "--", filePath.Replace('\\', '/')],
+            repoPath,
+            ct: ct);
+
+        if (!success)
+            throw new ReviewServiceException($"Git diff failed: {stderr}");
+
+        return diff;
+    }
+
+    /// <summary>
+    /// Apply the smart reset logic when a new iteration is detected.
+    /// - Computes which files changed between the old and new source commits
+    /// - Removes changed files from reviewed_files
+    /// - Stores changed files in changed_since_review
+    /// - Updates the reviewed iteration baseline
+    /// </summary>
+    private async Task ApplySmartResetAsync(ReviewSession session, string? oldSourceCommit, string? newSourceCommit)
+    {
+        var changedFiles = new List<string>();
+
+        // Try git-based diff to find which files changed between iterations
+        if (!string.IsNullOrEmpty(oldSourceCommit) && !string.IsNullOrEmpty(newSourceCommit)
+            && oldSourceCommit != newSourceCommit)
+        {
+            var repoPath = session.Git.WorktreePath ?? session.Git.RepoPath;
+            if (repoPath != null)
+            {
+                var (success, stdout, _) = await GitOperations.TryRunAsync(
+                    ["diff", "--name-only", oldSourceCommit, newSourceCommit],
+                    repoPath);
+
+                if (success && !string.IsNullOrWhiteSpace(stdout))
+                {
+                    changedFiles = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(f => f.Trim())
+                        .ToList();
+                }
+            }
+        }
+
+        if (changedFiles.Count > 0)
+        {
+            // Smart reset: only remove reviewed status for files that actually changed
+            var changedSet = new HashSet<string>(
+                changedFiles.Select(f => f.Replace('\\', '/')),
+                StringComparer.OrdinalIgnoreCase);
+
+            session.Review.ReviewedFiles.RemoveAll(f =>
+                changedSet.Contains(f.Replace('\\', '/')));
+
+            session.Review.ChangedSinceReview = changedFiles;
+        }
+        else
+        {
+            // If we couldn't determine changes (no git, same commit, etc.),
+            // preserve the reviewed state as-is and clear changed list
+            session.Review.ChangedSinceReview.Clear();
+        }
+
+        // Update the reviewed baseline to the new iteration
+        session.Review.ReviewedIterationId = session.Iteration.Id;
+        session.Review.ReviewedSourceCommit = newSourceCommit ?? session.Iteration.SourceCommit;
+    }
+
     // --- Private helpers ---
 
     /// <summary>
@@ -544,6 +844,26 @@ public sealed class ReviewService
             _config.Providers.AzDo.ApiVersion);
 
         return (session, provider);
+    }
+
+    /// <summary>
+    /// Resolve a PR URL to its session (no auth needed).
+    /// </summary>
+    private ReviewSession ResolveSession(string prUrl)
+    {
+        var parsed = UrlParser.Parse(prUrl)
+            ?? throw new ReviewServiceException($"Could not parse PR URL: {prUrl}");
+
+        var sessionId = ReviewSession.ComputeId(
+            parsed.ProviderType,
+            parsed.Organization,
+            parsed.Project,
+            parsed.Repository,
+            parsed.PrId);
+
+        return _store.Load(sessionId)
+            ?? throw new ReviewServiceException(
+                $"No session found for PR {prUrl}. Run 'powerreview open --pr-url {prUrl}' first.");
     }
 
     /// <summary>
@@ -642,4 +962,37 @@ public sealed class ReviewServiceException : Exception
 {
     public ReviewServiceException(string message) : base(message) { }
     public ReviewServiceException(string message, Exception inner) : base(message, inner) { }
+}
+
+/// <summary>
+/// Result of checking for new iterations.
+/// </summary>
+public sealed class IterationCheckResult
+{
+    /// <summary>The iteration ID the reviewer was previously reviewing.</summary>
+    public int? OldIterationId { get; set; }
+
+    /// <summary>The latest iteration ID from the remote.</summary>
+    public int? NewIterationId { get; set; }
+
+    /// <summary>Whether a new iteration was detected.</summary>
+    public bool HasNewIteration { get; set; }
+
+    /// <summary>Files that changed between the old and new iterations.</summary>
+    public List<string> ChangedFiles { get; set; } = [];
+
+    /// <summary>The updated review state after applying the smart reset.</summary>
+    public ReviewState? Review { get; set; }
+}
+
+/// <summary>
+/// Result of a sync operation, including optional iteration check.
+/// </summary>
+public sealed class SyncResult
+{
+    /// <summary>Number of threads synced from the remote.</summary>
+    public int ThreadCount { get; set; }
+
+    /// <summary>Iteration check result, if a new iteration was detected during sync.</summary>
+    public IterationCheckResult? IterationCheck { get; set; }
 }

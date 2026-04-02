@@ -12,9 +12,14 @@ public static class SessionMigration
     /// </summary>
     public static ReviewSession Migrate(ReviewSession session)
     {
-        // Future migrations go here.
-        // For v3 (initial .NET version), we just ensure the version is set.
-        // If we ever need to read v2 Lua sessions, add migration logic here.
+        // v3 -> v4: Add ReviewState for iteration tracking.
+        // The ReviewState property has default values (empty lists, null IDs),
+        // so existing v3 sessions automatically get a valid empty ReviewState
+        // when deserialized. No data transformation needed.
+        if (session.Version < 4)
+        {
+            session.Review ??= new ReviewState();
+        }
 
         session.Version = ReviewSession.CurrentVersion;
         return session;

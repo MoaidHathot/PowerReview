@@ -1,7 +1,7 @@
 --- PowerReview.nvim configuration module
 --- Manages default config, user overrides, and per-repo settings.
 --- Auth, git strategy, and provider config are owned by the CLI tool
---- (configured at $XDG_CONFIG_HOME/PowerReview/config.json).
+--- (configured at $XDG_CONFIG_HOME/PowerReview/powerreview.json).
 --- This module only holds UI-related config: keymaps, signs, panels, diff provider, CLI path.
 local M = {}
 
@@ -94,6 +94,8 @@ local function defaults()
             ["<C-x>"] = "open_split",
             ["<C-t>"] = "open_tabnew",
             ["a"] = "add_comment",
+            ["v"] = "toggle_reviewed",
+            ["V"] = "mark_all_reviewed",
             ["i"] = "show_file_details",
             ["R"] = "refresh",
             ["y"] = "copy_path",
@@ -105,6 +107,7 @@ local function defaults()
             { "icon" },
             { "name" },
             { "comment_count" },
+            { "review_status" },
           },
           pr_dir = {
             { "indent" },
@@ -113,6 +116,7 @@ local function defaults()
           },
           pr_file = {
             { "indent" },
+            { "review_status" },
             { "change_type" },
             { "icon" },
             { "comment_count" },
@@ -163,6 +167,10 @@ local function defaults()
       show_description = "<leader>pd",
       resolve_thread = "<leader>px",
       ai_drafts = "<leader>pi",
+      mark_reviewed = "<leader>pm",
+      mark_all_reviewed = "<leader>pM",
+      check_iteration = "<leader>pI",
+      iteration_diff = "<leader>pn",
     },
 
     -- Logging

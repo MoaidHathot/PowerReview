@@ -72,7 +72,7 @@ require("telescope").load_extension("power_review")
 
 PowerReview has a split configuration model:
 
-- **CLI config** (`$XDG_CONFIG_HOME/PowerReview/config.json`) -- owns authentication, git strategy, provider settings, and data directory. See [CLI Configuration](#cli-configuration) below.
+- **CLI config** (`$XDG_CONFIG_HOME/PowerReview/powerreview.json`) -- owns authentication, git strategy, provider settings, and data directory. See [CLI Configuration](#cli-configuration) below.
 - **Lua config** (`require("power-review").setup({...})`) -- owns UI settings only: keymaps, signs, panels, diff provider, CLI executable path.
 
 ### Neovim Plugin Configuration
@@ -141,7 +141,7 @@ require("power-review").setup({
 
 ### CLI Configuration
 
-The CLI reads its config from `$XDG_CONFIG_HOME/PowerReview/config.json` (or `%APPDATA%\PowerReview\config.json` on Windows). Create this file to configure authentication, git strategy, and providers:
+The CLI reads its config from `$XDG_CONFIG_HOME/PowerReview/powerreview.json` (or `%APPDATA%\PowerReview\powerreview.json` on Windows). Create this file to configure authentication, git strategy, and providers:
 
 ```json
 {
@@ -182,7 +182,7 @@ Session data is stored at `{data_dir}/sessions/`. The default data directory is 
 
 ## Authentication
 
-Authentication is configured in the CLI's `config.json` (see [CLI Configuration](#cli-configuration)).
+Authentication is configured in the CLI's `powerreview.json` (see [CLI Configuration](#cli-configuration)).
 
 ### Azure DevOps
 
