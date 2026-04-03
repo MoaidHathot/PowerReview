@@ -40,6 +40,45 @@ function M.install()
       return copy
     end,
 
+    --- Mock vim.schedule: run fn immediately (tests are synchronous).
+    schedule = function(fn)
+      fn()
+    end,
+
+    --- Mock vim.tbl_isempty: check if a table has no entries.
+    tbl_isempty = function(tbl)
+      return next(tbl) == nil
+    end,
+
+    --- Mock vim.json.decode: thin wrapper around a JSON library.
+    --- In busted we can use cjson or dkjson if available; otherwise stub.
+    json = {
+      decode = function(str)
+        -- Try dkjson (pure Lua, commonly bundled with LuaRocks/busted)
+        local ok, dkjson = pcall(require, "dkjson")
+        if ok then
+          return dkjson.decode(str)
+        end
+        -- Try cjson
+        local ok2, cjson = pcall(require, "cjson")
+        if ok2 then
+          return cjson.decode(str)
+        end
+        error("No JSON decoder available in test environment")
+      end,
+      encode = function(val)
+        local ok, dkjson = pcall(require, "dkjson")
+        if ok then
+          return dkjson.encode(val)
+        end
+        local ok2, cjson = pcall(require, "cjson")
+        if ok2 then
+          return cjson.encode(val)
+        end
+        error("No JSON encoder available in test environment")
+      end,
+    },
+
     --- Mock vim.islist: check if a table is a list (sequential integer keys).
     islist = function(tbl)
       if type(tbl) ~= "table" then

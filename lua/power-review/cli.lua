@@ -76,7 +76,8 @@ end
 ---@param opts? { stdin?: string, timeout?: number }
 function M.run_async(args, callback, opts)
   opts = opts or {}
-  local timeout = opts.timeout or 30000
+  local cfg_timeouts = config.get().cli.timeouts or {}
+  local timeout = opts.timeout or cfg_timeouts.default or 30000
 
   local cmd = type(M._executable) == "table" and { unpack(M._executable) } or { M._executable }
   for _, arg in ipairs(args) do
@@ -162,7 +163,7 @@ function M.adapt_session(cli_session)
     pr_url = pr.url or "",
     pr_title = pr.title or "",
     pr_description = pr.description or "",
-    pr_author = pr.author and pr.author.display_name or "",
+    pr_author = (pr.author and pr.author.display_name) or "",
     pr_status = pr.status or "active",
     pr_is_draft = pr.is_draft or false,
     pr_closed_at = pr.closed_at,
@@ -590,14 +591,14 @@ function M._adapt_session_summaries(result)
   for _, s in ipairs(result) do
     table.insert(summaries, {
       id = s.id or "",
-      pr_id = s.pull_request and s.pull_request.id or s.pr_id or 0,
-      pr_title = s.pull_request and s.pull_request.title or s.pr_title or "",
-      pr_url = s.pull_request and s.pull_request.url or s.pr_url or "",
-      pr_status = s.pull_request and s.pull_request.status or s.pr_status,
-      provider_type = s.provider and s.provider.type or s.provider_type or "azdo",
-      org = s.provider and s.provider.organization or s.org or "",
-      project = s.provider and s.provider.project or s.project or "",
-      repo = s.provider and s.provider.repository or s.repo or "",
+      pr_id = (s.pull_request and s.pull_request.id) or s.pr_id or 0,
+      pr_title = (s.pull_request and s.pull_request.title) or s.pr_title or "",
+      pr_url = (s.pull_request and s.pull_request.url) or s.pr_url or "",
+      pr_status = (s.pull_request and s.pull_request.status) or s.pr_status,
+      provider_type = (s.provider and s.provider.type) or s.provider_type or "azdo",
+      org = (s.provider and s.provider.organization) or s.org or "",
+      project = (s.provider and s.provider.project) or s.project or "",
+      repo = (s.provider and s.provider.repository) or s.repo or "",
       draft_count = s.draft_count or 0,
       created_at = s.created_at or "",
       updated_at = s.updated_at or "",

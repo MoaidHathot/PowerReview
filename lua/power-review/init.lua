@@ -373,7 +373,7 @@ function M.api.create_draft_comment(opts)
 
   -- Reload session to get fresh state
   local review = require("power-review.review")
-  review._reload_current_session(session.pr_url)
+  review._reload_current_session(session.pr_url, result)
 
   -- Refresh UI
   local ui = require("power-review.ui")
@@ -406,7 +406,7 @@ function M.api.edit_draft_comment(draft_id, new_body)
 
   -- Reload session
   local review = require("power-review.review")
-  review._reload_current_session(session.pr_url)
+  review._reload_current_session(session.pr_url, result)
 
   -- Refresh UI
   local ui = require("power-review.ui")
@@ -451,7 +451,7 @@ function M.api.delete_draft_comment(draft_id)
 
   -- Reload session
   local review = require("power-review.review")
-  review._reload_current_session(session.pr_url)
+  review._reload_current_session(session.pr_url, result)
 
   -- Refresh UI
   require("power-review.ui").refresh_neotree()
@@ -479,7 +479,7 @@ function M.api.approve_draft(draft_id)
 
   -- Reload session
   local review = require("power-review.review")
-  review._reload_current_session(session.pr_url)
+  review._reload_current_session(session.pr_url, result)
 
   -- Refresh UI
   local updated_session = M._current_session
@@ -512,7 +512,7 @@ function M.api.approve_all_drafts()
 
   -- Reload session
   local review = require("power-review.review")
-  review._reload_current_session(session.pr_url)
+  review._reload_current_session(session.pr_url, result)
 
   return result.approved or 0, nil
 end
@@ -543,7 +543,7 @@ function M.api.unapprove_draft(draft_id)
 
   -- Reload session
   local review = require("power-review.review")
-  review._reload_current_session(session.pr_url)
+  review._reload_current_session(session.pr_url, result)
 
   -- Refresh UI
   require("power-review.ui").refresh_neotree()
@@ -556,7 +556,7 @@ end
 
 --- Submit all pending comments to the remote provider
 ---@param callback fun(err?: string, result?: PowerReview.SubmitResult)
----@param progress_cb? fun(current: number, total: number, draft: PowerReview.DraftComment)
+---@param progress_cb? fun(status: string, pending_count: number)
 function M.api.submit_pending(callback, progress_cb)
   local session = M._current_session
   if not session then
@@ -672,7 +672,7 @@ function M.api.reply_to_thread(opts)
 
   -- Reload session
   local review = require("power-review.review")
-  review._reload_current_session(session.pr_url)
+  review._reload_current_session(session.pr_url, result)
 
   -- Refresh UI
   require("power-review.ui").refresh_neotree()

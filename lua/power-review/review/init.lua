@@ -9,6 +9,22 @@ local cli = require("power-review.cli")
 local config = require("power-review.config")
 local watcher = require("power-review.watcher")
 
+--- Detect the git repository root from the current working directory.
+--- Returns the repo root path, or nil if not inside a git repo.
+---@return string|nil
+local function find_git_root()
+  local cwd = vim.fn.getcwd()
+  local git_dir = vim.fn.finddir(".git", cwd .. ";")
+  if git_dir == "" then
+    return nil
+  end
+  local root = vim.fn.fnamemodify(git_dir, ":h")
+  if root == "." then
+    root = cwd
+  end
+  return root
+end
+
 --- Start a new review from a PR URL.
 --- Delegates to `powerreview open --pr-url <url>` which handles auth, API, git, and session.
 ---@param pr_url string The PR URL
@@ -16,17 +32,7 @@ local watcher = require("power-review.watcher")
 function M.start_review(pr_url, callback)
   log.info("Starting review for: %s", pr_url)
 
-  -- Determine repo path for CLI
-  local repo_path = nil
-  local cwd = vim.fn.getcwd()
-  -- Check if we're in a git repo
-  local git_dir = vim.fn.finddir(".git", cwd .. ";")
-  if git_dir ~= "" then
-    repo_path = vim.fn.fnamemodify(git_dir, ":h")
-    if repo_path == "." then
-      repo_path = cwd
-    end
-  end
+  local repo_path = find_git_root()
 
   cli.open(pr_url, repo_path, function(err, session)
     if err then
@@ -80,15 +86,7 @@ function M.resume_session(session_id_or_url, callback)
     end
 
     -- Use open to re-fetch and resume (CLI handles existing session merging)
-    local repo_path = nil
-    local cwd = vim.fn.getcwd()
-    local git_dir = vim.fn.finddir(".git", cwd .. ";")
-    if git_dir ~= "" then
-      repo_path = vim.fn.fnamemodify(git_dir, ":h")
-      if repo_path == "." then
-        repo_path = cwd
-      end
-    end
+    local repo_path = find_git_root()
 
     cli.open(pr_url, repo_path, function(err, session)
       if err then
@@ -190,20 +188,23 @@ end
 --- Submit all pending draft comments.
 ---@param session PowerReview.ReviewSession
 ---@param callback fun(err?: string, result?: PowerReview.SubmitResult)
----@param progress_cb? fun(current: number, total: number, draft: PowerReview.DraftComment)
+---@param progress_cb? fun(status: string, pending_count: number)
 function M.submit_pending(session, callback, progress_cb)
-  -- The CLI handles submission atomically; we can't report per-draft progress
-  -- but we can report start/finish
+  local pending_count = 0
+  for _, d in ipairs(session.drafts) do
+    if d.status == "pending" then
+      pending_count = pending_count + 1
+    end
+  end
+
+  if pending_count == 0 then
+    callback("No pending drafts to submit")
+    return
+  end
+
+  -- The CLI handles submission atomically; report start/finish, not per-draft
   if progress_cb then
-    local pending_count = 0
-    for _, d in ipairs(session.drafts) do
-      if d.status == "pending" then
-        pending_count = pending_count + 1
-      end
-    end
-    if pending_count > 0 then
-      progress_cb(1, pending_count, session.drafts[1])
-    end
+    progress_cb("submitting", pending_count)
   end
 
   cli.submit(session.pr_url, function(err, result)
@@ -213,7 +214,7 @@ function M.submit_pending(session, callback, progress_cb)
     end
 
     -- Reload session to get updated draft statuses
-    M._reload_current_session(session.pr_url)
+    M._reload_current_session(session.pr_url, result)
 
     callback(nil, result)
   end)
@@ -268,7 +269,7 @@ function M.sync_threads(callback)
     local thread_count = result and result.thread_count or 0
 
     -- Reload session to get updated threads
-    M._reload_current_session(session.pr_url)
+    M._reload_current_session(session.pr_url, result)
 
     -- Refresh UI
     require("power-review.ui.signs").refresh()
@@ -394,7 +395,7 @@ function M.mark_reviewed(file_path, callback)
     end
 
     -- Reload session to get updated review state
-    M._reload_current_session(session.pr_url)
+    M._reload_current_session(session.pr_url, _result)
 
     -- Refresh all file list UIs
     require("power-review.ui").refresh_neotree()
@@ -421,7 +422,7 @@ function M.unmark_reviewed(file_path, callback)
       return
     end
 
-    M._reload_current_session(session.pr_url)
+    M._reload_current_session(session.pr_url, _result)
     require("power-review.ui").refresh_neotree()
 
     log.info("Unmarked as reviewed: %s", file_path)
@@ -465,7 +466,7 @@ function M.mark_all_reviewed(callback)
       return
     end
 
-    M._reload_current_session(session.pr_url)
+    M._reload_current_session(session.pr_url, _result)
     require("power-review.ui").refresh_neotree()
 
     log.info("Marked all %d files as reviewed", #session.files)
@@ -491,7 +492,7 @@ function M.check_iteration(callback)
     end
 
     -- Reload session to get updated iteration/review state
-    M._reload_current_session(session.pr_url)
+    M._reload_current_session(session.pr_url, result)
 
     -- Refresh all UIs
     require("power-review.ui").refresh_neotree()
@@ -560,9 +561,20 @@ function M._navigate_to_review(session)
 end
 
 --- Reload the current session from CLI after a mutation.
---- Updates the in-memory session object.
+--- If `mutation_result` contains a `session` field (returned by some CLI mutations),
+--- uses that directly instead of spawning a new CLI process.
 ---@param pr_url string
-function M._reload_current_session(pr_url)
+---@param mutation_result? table Optional result from the mutation that may contain updated session data
+function M._reload_current_session(pr_url, mutation_result)
+  -- If the mutation response includes updated session data, use it directly
+  if mutation_result and mutation_result.session then
+    local updated = cli.adapt_session(mutation_result.session)
+    local pr_mod = require("power-review")
+    pr_mod._set_current_session(updated)
+    return
+  end
+
+  -- Otherwise, fall back to a CLI reload
   local updated, err = cli.reload_session(pr_url)
   if updated then
     local pr_mod = require("power-review")

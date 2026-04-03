@@ -9,7 +9,7 @@ local config = require("power-review.config")
 ---@type userdata|nil UV fs_event handle
 M._handle = nil
 
----@type userdata|nil Debounce timer
+---@type uv_timer_t|nil Debounce timer
 M._timer = nil
 
 ---@type string|nil Currently watched file path
@@ -106,7 +106,7 @@ function M._on_change(pr_url)
   -- Capture old session state for diff notifications
   local old_ai_count = 0
   for _, d in ipairs(current.drafts or {}) do
-    if d.author == "ai" or d.author == "Ai" then
+    if (d.author or ""):lower() == "ai" then
       old_ai_count = old_ai_count + 1
     end
   end
@@ -138,7 +138,7 @@ function M._on_change(pr_url)
     -- Check for AI draft count changes
     local new_ai_count = 0
     for _, d in ipairs(updated.drafts or {}) do
-      if d.author == "ai" or d.author == "Ai" then
+      if (d.author or ""):lower() == "ai" then
         new_ai_count = new_ai_count + 1
       end
     end

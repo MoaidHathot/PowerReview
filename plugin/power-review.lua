@@ -217,10 +217,10 @@ vim.api.nvim_create_user_command("PowerReview", function(cmd_opts)
 
       vim.notify(string.format("[PowerReview] Submitting %d comment(s)...", counts.pending), vim.log.levels.INFO)
 
-      local function progress_cb(current, total, draft_item)
+      local function progress_cb(status, pending_count)
         vim.schedule(function()
           vim.notify(
-            string.format("[PowerReview] Submitting %d/%d: %s:%d", current, total, draft_item.file_path, draft_item.line_start),
+            string.format("[PowerReview] %s %d comment(s)...", status, pending_count),
             vim.log.levels.INFO
           )
         end)
@@ -343,55 +343,7 @@ vim.api.nvim_create_user_command("PowerReview", function(cmd_opts)
       return
     end
 
-    local helpers = require("power-review.session_helpers")
-    local current_vote = session.vote
-    local current_label = current_vote and helpers.vote_label(current_vote) or "None"
-
-    vim.notify("[PowerReview] Current vote: " .. current_label, vim.log.levels.INFO)
-
-    local choices = helpers.get_vote_choices(current_vote)
-    vim.ui.select(choices, {
-      prompt = "Set review vote (current: " .. current_label .. "):",
-      format_item = function(c)
-        return c.label
-      end,
-    }, function(selected)
-      if not selected then
-        return
-      end
-
-      -- Skip if same as current
-      if selected.is_current then
-        vim.notify("[PowerReview] Vote unchanged: " .. selected.label, vim.log.levels.INFO)
-        return
-      end
-
-      -- Confirmation for destructive votes (reject, wait)
-      local needs_confirm = selected.value == -10 or selected.value == -5
-      local function do_vote()
-        pr.api.set_vote(selected.value, function(err)
-          if err then
-            vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-          else
-            vim.notify("[PowerReview] Vote set: " .. selected.label, vim.log.levels.INFO)
-          end
-        end)
-      end
-
-      if needs_confirm then
-        vim.ui.input({
-          prompt = string.format("Confirm vote '%s'? (y/n): ", selected.label),
-        }, function(input)
-          if input == "y" or input == "Y" then
-            do_vote()
-          else
-            vim.notify("[PowerReview] Vote cancelled", vim.log.levels.INFO)
-          end
-        end)
-      else
-        do_vote()
-      end
-    end)
+    require("power-review.ui").set_vote()
 
   elseif subcommand == "refresh" then
     review.refresh_session(function(err)

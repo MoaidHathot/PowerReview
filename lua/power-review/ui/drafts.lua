@@ -73,7 +73,7 @@ local function build_nodes(session)
   -- Apply filter
   local filtered_drafts = {}
   for _, d in ipairs(session.drafts) do
-    if M._filter == "all" or (d.author == "ai" or d.author == "Ai") then
+    if M._filter == "all" or (d.author or ""):lower() == "ai" then
       table.insert(filtered_drafts, d)
     end
   end
@@ -82,7 +82,7 @@ local function build_nodes(session)
   local all_counts = helpers.get_draft_counts(session)
   local ai_count = 0
   for _, d in ipairs(session.drafts) do
-    if d.author == "ai" or d.author == "Ai" then
+    if (d.author or ""):lower() == "ai" then
       ai_count = ai_count + 1
     end
   end
@@ -617,7 +617,7 @@ function M._setup_keymaps(split, tree, session)
     -- Count AI drafts that can be deleted (only status = "draft")
     local ai_drafts = {}
     for _, d in ipairs(current.drafts) do
-      if (d.author == "ai" or d.author == "Ai") and d.status == "draft" then
+      if (d.author or ""):lower() == "ai" and d.status == "draft" then
         table.insert(ai_drafts, d)
       end
     end
