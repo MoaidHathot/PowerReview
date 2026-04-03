@@ -9,6 +9,7 @@ All tools return JSON. Errors are returned as `{ "error": "message" }`.
 ## Contents
 
 - Read-only tools (session, files, diff, threads, draft counts)
+- Sync and iteration tools (sync threads, check iteration, iteration diff)
 - Write tools (create comment, reply, edit, delete)
 - Working directory and file access tools (working directory, read file, list files)
 
@@ -41,9 +42,22 @@ Get PR review session metadata.
     "status": "Active",
     "is_draft": false,
     "merge_status": "Succeeded",
+    "created_at": "2025-01-01T00:00:00Z",
+    "closed_at": null,
     "reviewers": [{ "name": "...", "vote": 0, "is_required": true }],
     "labels": [],
     "work_items": [{ "id": 456, "title": "...", "url": "..." }]
+  },
+  "iteration": {
+    "id": 3,
+    "source_commit": "abc123...",
+    "target_commit": "def456..."
+  },
+  "review": {
+    "reviewed_iteration_id": 2,
+    "reviewed_source_commit": "999888...",
+    "reviewed_files": ["src/file.cs"],
+    "changed_since_review": ["src/other.cs"]
   },
   "files": [...],
   "drafts": { "uuid-1": { ... }, "uuid-2": { ... } },
@@ -190,6 +204,115 @@ Get a summary of draft comment counts by status.
 
 ---
 
+## SyncThreads
+
+Sync comment threads from the remote provider (e.g., Azure DevOps). Updates the local session with the latest threads and checks for new iterations. Call this before reading threads to ensure you have the most up-to-date data.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+
+**Returns:**
+
+```json
+{
+  "synced": true,
+  "thread_count": 8,
+  "iteration_check": {
+    "old_iteration_id": 2,
+    "new_iteration_id": 3,
+    "has_new_iteration": true,
+    "changed_files": ["src/main.cs", "src/utils.cs"],
+    "review": {
+      "reviewed_iteration_id": 3,
+      "reviewed_source_commit": "abc123...",
+      "reviewed_files": ["src/config.cs"],
+      "changed_since_review": ["src/main.cs", "src/utils.cs"]
+    }
+  }
+}
+```
+
+When no new iteration is detected, `iteration_check` is `null`.
+
+**Errors:**
+- `"No session found for this PR."` -- no active session
+- Provider-specific sync errors
+
+---
+
+## CheckIteration
+
+Check whether the PR author has pushed new commits since your last review. If a new iteration is detected, performs a smart reset: identifies which files changed, removes them from the reviewed list, and updates the review baseline. Returns the list of files that changed between iterations.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+
+**Returns:**
+
+```json
+{
+  "old_iteration_id": 2,
+  "new_iteration_id": 3,
+  "has_new_iteration": true,
+  "changed_files": ["src/main.cs", "src/utils.cs"],
+  "review": {
+    "reviewed_iteration_id": 3,
+    "reviewed_source_commit": "abc123...",
+    "reviewed_files": ["src/config.cs"],
+    "changed_since_review": ["src/main.cs", "src/utils.cs"]
+  }
+}
+```
+
+When no new iteration exists:
+
+```json
+{
+  "old_iteration_id": 3,
+  "new_iteration_id": 3,
+  "has_new_iteration": false,
+  "changed_files": [],
+  "review": null
+}
+```
+
+**Errors:**
+- `"No session found for this PR."` -- no active session
+
+---
+
+## GetIterationDiff
+
+Get the diff between the previously reviewed iteration and the current iteration for a specific file. This shows only what changed since you last reviewed, not the full PR diff. Requires that a review baseline exists (files must have been marked as reviewed previously).
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+| `filePath` | string | Yes | Relative file path to get the iteration diff for |
+
+**Returns:**
+
+```json
+{
+  "file": "src/main.cs",
+  "diff": "diff --git a/src/main.cs b/src/main.cs\n..."
+}
+```
+
+**Errors:**
+- `"No session found for this PR."` -- no active session
+- Review baseline errors (no previous review to diff against)
+
+---
+
 ## CreateComment
 
 Create a new draft review comment on a file and line, or a file-level comment.
@@ -203,6 +326,9 @@ Create a new draft review comment on a file and line, or a file-level comment.
 | `body` | string | Yes | Comment body in markdown format |
 | `lineStart` | int | No | Line number (1-indexed). Omit for file-level comments |
 | `lineEnd` | int | No | End line for range comments (1-indexed) |
+| `colStart` | int | No | Starting column (character offset) within the start line for highlighting a specific word or expression |
+| `colEnd` | int | No | Ending column (character offset) within the end line |
+| `agentName` | string | No | Name identifying this agent (e.g. "SecurityReviewer", "StyleChecker"). Helps distinguish comments when multiple AI agents review the same PR |
 
 **Returns:**
 
@@ -213,9 +339,12 @@ Create a new draft review comment on a file and line, or a file-level comment.
     "file_path": "src/main.cs",
     "line_start": 42,
     "line_end": null,
+    "col_start": null,
+    "col_end": null,
     "body": "Consider handling null here",
     "status": "Draft",
     "author": "Ai",
+    "author_name": "SecurityReviewer",
     "thread_id": null,
     "created_at": "2025-01-01T00:00:00Z",
     "updated_at": "2025-01-01T00:00:00Z"
@@ -239,6 +368,7 @@ Create a draft reply to an existing remote comment thread.
 | `prUrl` | string | Yes | The pull request URL |
 | `threadId` | int | Yes | The remote thread ID to reply to |
 | `body` | string | Yes | Reply body in markdown format |
+| `agentName` | string | No | Name identifying this agent (e.g. "SecurityReviewer", "StyleChecker"). Helps distinguish comments when multiple AI agents review the same PR |
 
 **Returns:**
 
@@ -250,6 +380,7 @@ Create a draft reply to an existing remote comment thread.
     "body": "Good point, I agree this should be handled.",
     "status": "Draft",
     "author": "Ai",
+    "author_name": "SecurityReviewer",
     "thread_id": 1
   },
   "note": "Draft reply created. The user must approve it before it can be submitted."

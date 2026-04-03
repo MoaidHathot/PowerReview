@@ -102,7 +102,7 @@ The v4 format uses a nested structure with logical groupings.
 
 | Field           | Type             | Required | Description                                    |
 |-----------------|------------------|----------|------------------------------------------------|
-| `display_name`  | `string`         | yes      | Display name.                                  |
+| `name`          | `string`         | yes      | Display name.                                  |
 | `id`            | `string \| null` | no       | Provider-assigned ID.                          |
 | `unique_name`   | `string \| null` | no       | Email or login.                                |
 
@@ -133,7 +133,7 @@ Tracks the iteration state for incremental sync.
 
 | Field           | Type             | Required | Description                                    |
 |-----------------|------------------|----------|------------------------------------------------|
-| `iteration_id`  | `number \| null` | no       | Latest iteration ID the session was synced to. |
+| `id`            | `number \| null` | no       | Latest iteration ID the session was synced to. |
 | `source_commit` | `string \| null` | no       | Source branch commit SHA at last sync.         |
 | `target_commit` | `string \| null` | no       | Target branch commit SHA at last sync.         |
 
@@ -187,8 +187,8 @@ Files that were not modified between iterations retain their "reviewed" mark.
 | Value            | Description                                                    |
 |------------------|----------------------------------------------------------------|
 | `"worktree"`     | A dedicated git worktree was created for the review.           |
-| `"checkout"`     | The source branch was checked out in the main working tree.    |
-| `"reused_main"`  | The main worktree was already on the correct branch.           |
+| `"clone"`        | The repository was cloned for the review.                      |
+| `"cwd"`          | The current working directory is used directly.                |
 
 ---
 
@@ -227,7 +227,7 @@ The `vote` field is a string enum (or `null`):
 | `name`        | `string`         | yes      | Display name of the reviewer.                        |
 | `id`          | `string \| null` | no       | Provider-assigned reviewer ID.                       |
 | `unique_name` | `string \| null` | no       | Reviewer email or login.                             |
-| `vote`        | `string \| null` | yes      | Review vote string enum (same as session `vote`).    |
+| `vote`        | `number \| null` | yes      | Review vote (integer). See Vote Values.          |
 | `is_required` | `boolean`        | yes      | Whether the reviewer is a required reviewer.         |
 
 ### Example
@@ -237,7 +237,7 @@ The `vote` field is a string enum (or `null`):
   "name": "Alice Smith",
   "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "unique_name": "alice@example.com",
-  "vote": "approved",
+  "vote": 10,
   "is_required": true
 }
 ```
@@ -271,17 +271,13 @@ The `vote` field is a string enum (or `null`):
 | `path`          | `string`         | yes      | Relative file path.                                  |
 | `original_path` | `string \| null`| no       | Original path before rename.                         |
 | `change_type`   | `string`         | yes      | `"add"`, `"edit"`, `"delete"`, or `"rename"`.        |
-| `additions`     | `number \| null` | no       | Lines added. Provider-dependent.                     |
-| `deletions`     | `number \| null` | no       | Lines deleted. Provider-dependent.                   |
 
 ### Example
 
 ```json
 {
   "path": "src/utils/helper.lua",
-  "change_type": "edit",
-  "additions": 15,
-  "deletions": 3
+  "change_type": "edit"
 }
 ```
 
@@ -334,9 +330,11 @@ A comment thread fetched from the provider and cached locally.
     {
       "id": 67890,
       "thread_id": 12345,
-      "author": "Jane Smith",
-      "author_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-      "author_unique_name": "jane@example.com",
+      "author": {
+        "name": "Jane Smith",
+        "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        "unique_name": "jane@example.com"
+      },
       "body": "Consider using `pcall` here for error safety.",
       "created_at": "2026-03-26T08:00:00Z",
       "updated_at": "2026-03-26T09:15:00Z",
@@ -356,9 +354,7 @@ A single comment within a `CommentThread`.
 |---------------------|------------------|----------|------------------------------------------------|
 | `id`                | `number`         | yes      | Provider-assigned comment ID.                  |
 | `thread_id`         | `number`         | yes      | Parent thread ID.                              |
-| `author`            | `string`         | yes      | Comment author display name.                   |
-| `author_id`         | `string \| null` | no       | Provider-assigned author ID.                   |
-| `author_unique_name`| `string \| null` | no       | Author email or login.                         |
+| `author`            | `PersonIdentity` | yes      | Comment author identity.                       |
 | `parent_comment_id` | `number \| null` | no       | Parent comment ID for nested replies.          |
 | `body`              | `string`         | yes      | Comment content (markdown).                    |
 | `created_at`        | `string`         | yes      | ISO 8601 UTC timestamp of creation.            |
@@ -383,6 +379,7 @@ Drafts follow a strict lifecycle: `draft` -> `pending` -> `submitted`.
 | `body`              | `string`         | yes      | Comment content (markdown).                                                  |
 | `status`            | `string`         | yes      | Draft lifecycle status. See Draft Status Values.                             |
 | `author`            | `string`         | yes      | Who created the draft. See Draft Author Values.                              |
+| `author_name`       | `string \| null` | no       | Display name of the agent or person (e.g. "SecurityReviewer").               |
 | `thread_id`         | `number \| null` | yes      | Remote thread ID when replying, or `null` for new threads.                   |
 | `parent_comment_id` | `number \| null` | yes      | Specific comment being replied to, or `null`.                                |
 | `created_at`        | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
@@ -446,7 +443,7 @@ A complete v4 session file:
     "title": "Add input validation to user registration",
     "description": "This PR adds server-side validation for the user registration endpoint.",
     "author": {
-      "display_name": "John Doe",
+      "name": "John Doe",
       "id": "c3d4e5f6-a7b8-9012-cdef-3456789abcde",
       "unique_name": "john@example.com"
     },
@@ -466,7 +463,7 @@ A complete v4 session file:
         "name": "Bob Jones",
         "id": "f6a7b8c9-d0e1-2345-6789-0abcdef12345",
         "unique_name": "bob@example.com",
-        "vote": "approved_with_suggestions",
+        "vote": 5,
         "is_required": false
       }
     ],
@@ -480,7 +477,7 @@ A complete v4 session file:
     ]
   },
   "iteration": {
-    "iteration_id": 3,
+    "id": 3,
     "source_commit": "abc123def456789012345678901234567890abcd",
     "target_commit": "def456abc789012345678901234567890abcd1234"
   },
@@ -498,21 +495,15 @@ A complete v4 session file:
   "files": [
     {
       "path": "src/handlers/register.lua",
-      "change_type": "edit",
-      "additions": 35,
-      "deletions": 4
+      "change_type": "edit"
     },
     {
       "path": "src/validators/user.lua",
-      "change_type": "add",
-      "additions": 87,
-      "deletions": 0
+      "change_type": "add"
     },
     {
       "path": "src/old_validator.lua",
-      "change_type": "delete",
-      "additions": 0,
-      "deletions": 52
+      "change_type": "delete"
     }
   ],
   "threads": {
@@ -530,9 +521,11 @@ A complete v4 session file:
           {
             "id": 200,
             "thread_id": 100,
-            "author": "Alice Smith",
-            "author_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-            "author_unique_name": "alice@example.com",
+            "author": {
+              "name": "Alice Smith",
+              "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+              "unique_name": "alice@example.com"
+            },
             "body": "Should we add rate limiting here?",
             "created_at": "2026-03-27T10:30:00Z",
             "updated_at": "2026-03-27T10:30:00Z",
@@ -541,9 +534,11 @@ A complete v4 session file:
           {
             "id": 201,
             "thread_id": 100,
-            "author": "John Doe",
-            "author_id": "c3d4e5f6-a7b8-9012-cdef-3456789abcde",
-            "author_unique_name": "john@example.com",
+            "author": {
+              "name": "John Doe",
+              "id": "c3d4e5f6-a7b8-9012-cdef-3456789abcde",
+              "unique_name": "john@example.com"
+            },
             "parent_comment_id": 200,
             "body": "Good point, I'll add it in a follow-up PR.",
             "created_at": "2026-03-27T11:00:00Z",
@@ -562,9 +557,11 @@ A complete v4 session file:
           {
             "id": 202,
             "thread_id": 101,
-            "author": "Bob Jones",
-            "author_id": "f6a7b8c9-d0e1-2345-6789-0abcdef12345",
-            "author_unique_name": "bob@example.com",
+            "author": {
+              "name": "Bob Jones",
+              "id": "f6a7b8c9-d0e1-2345-6789-0abcdef12345",
+              "unique_name": "bob@example.com"
+            },
             "body": "Looks good overall. One minor comment on the handler file.",
             "created_at": "2026-03-27T10:15:00Z",
             "updated_at": "2026-03-27T10:15:00Z",
@@ -609,8 +606,8 @@ A complete v4 session file:
 - The `vote` is `"no_vote"` -- the reviewer has not cast a meaningful vote yet.
 - The `pull_request.status` is `"active"` and `is_draft` is `false` -- this is an open, non-draft PR.
 - The `pull_request.merge_status` is `"succeeded"` -- the PR can merge cleanly.
-- The `pull_request.reviewers` array shows Alice (required, no vote) and Bob (optional, approved with suggestions).
-- The `pull_request.author` uses `PersonIdentity` with `display_name`, `id`, and `unique_name`.
+- The `pull_request.reviewers` array shows Alice (required, no vote) and Bob (optional, vote 5 = approved with suggestions).
+- The `pull_request.author` uses `PersonIdentity` with `name`, `id`, and `unique_name`.
 - The `iteration` records the sync state (iteration 3 with commit SHAs).
 - The `review` records per-file review progress: `src/validators/user.lua` was reviewed during iteration 2, but `src/handlers/register.lua` changed since then and needs re-review.
 - The `git` object records the strategy and worktree path.
@@ -632,7 +629,7 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v4 format
 | `pull_request.url` | `pr_url` |
 | `pull_request.title` | `pr_title` |
 | `pull_request.description` | `pr_description` |
-| `pull_request.author.display_name` | `pr_author` |
+| `pull_request.author.name` | `pr_author` |
 | `pull_request.status` | `pr_status` |
 | `pull_request.is_draft` | `pr_is_draft` |
 | `pull_request.closed_at` | `pr_closed_at` |
@@ -648,7 +645,7 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v4 format
 | `provider.repository` | `repo` |
 | `git.strategy` | `git_strategy` |
 | `git.worktree_path` | `worktree_path` |
-| `iteration.iteration_id` | `iteration_id` |
+| `iteration.id` | `iteration_id` |
 | `iteration.source_commit` | `source_commit` |
 | `iteration.target_commit` | `target_commit` |
 | `review.reviewed_iteration_id` | `reviewed_iteration_id` |

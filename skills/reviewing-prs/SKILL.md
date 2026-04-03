@@ -25,7 +25,7 @@ Review Progress:
 - [ ] Step 1: Load session and understand the PR
 - [ ] Step 2: List changed files and discover project structure
 - [ ] Step 3: Review each file's diff (with context from surrounding code)
-- [ ] Step 4: Check existing comment threads
+- [ ] Step 4: Sync and check existing comment threads
 - [ ] Step 5: Create draft comments for findings
 - [ ] Step 6: Summarize the review
 ```
@@ -38,6 +38,8 @@ Call `PowerReview:GetReviewSession` with the PR URL. This returns:
 - Current vote status
 - Draft and file counts
 - Reviewer list and work items
+- Iteration metadata (current iteration ID and commit SHAs)
+- Review state (which files have been reviewed, which changed since last review)
 
 Read the PR description carefully. Understand the intent of the change before reviewing code.
 
@@ -83,9 +85,13 @@ When reviewing a diff, look for:
 - Naming and convention violations
 - Missing or inadequate tests for the changes
 
-### Step 4: Check existing threads
+### Step 4: Sync and check existing threads
 
-Call `PowerReview:ListCommentThreads` to see existing remote comments and local drafts. Use the optional `filePath` parameter to filter by file.
+First, call `PowerReview:SyncThreads` to fetch the latest comment threads from the remote provider and check for new iterations. This ensures you have up-to-date data before reading threads.
+
+If the sync result indicates a new iteration (`iteration_check.has_new_iteration` is `true`), the PR author has pushed new commits since the last review. The changed files are listed in `iteration_check.changed_files` -- you may want to focus on those files.
+
+Then call `PowerReview:ListCommentThreads` to see existing remote comments and local drafts. Use the optional `filePath` parameter to filter by file.
 
 Avoid duplicating feedback that already exists in threads. Read existing threads to understand ongoing discussions.
 
@@ -100,8 +106,15 @@ For each finding, call `PowerReview:CreateComment` with:
 | `body` | Yes | Comment body in markdown |
 | `lineStart` | No | Line number (1-indexed). Omit for file-level comments |
 | `lineEnd` | No | End line for range comments (1-indexed) |
+| `colStart` | No | Starting column offset for highlighting a specific expression |
+| `colEnd` | No | Ending column offset |
+| `agentName` | No | Name identifying this agent (e.g. "SecurityReviewer") |
 
-To reply to an existing thread instead, call `PowerReview:ReplyToThread` with `prUrl`, `threadId`, and `body`.
+To reply to an existing thread instead, call `PowerReview:ReplyToThread` with `prUrl`, `threadId`, `body`, and optionally `agentName`.
+
+#### Agent identification
+
+When multiple AI agents review the same PR, use the `agentName` parameter to identify which agent created each comment. This helps users distinguish between different agents' feedback. The name is stored on the draft as `author_name`.
 
 #### Writing effective comments
 
@@ -119,6 +132,27 @@ After reviewing all files, check your draft counts with `PowerReview:GetDraftCou
 - Key findings (bugs, security, performance)
 - Number of comments left
 - Whether the PR is ready to approve or needs changes
+
+## Iteration tracking
+
+PowerReview tracks PR iterations (each push by the PR author creates a new iteration). This allows incremental re-reviews after the author pushes changes.
+
+### Checking for new iterations
+
+Call `PowerReview:CheckIteration` to detect if the PR author pushed new commits since the last review. If a new iteration is found, the tool:
+
+1. Identifies which files changed between iterations using `git diff --name-only`
+2. Removes those files from the "reviewed" list (smart reset)
+3. Updates the review baseline to the new iteration
+4. Returns the list of changed files
+
+Files that were not modified between iterations retain their "reviewed" status.
+
+### Viewing iteration diffs
+
+Call `PowerReview:GetIterationDiff` with `prUrl` and `filePath` to see only what changed since the last review, rather than the full PR diff. This is useful for incremental re-reviews -- you only need to check what the author changed, not re-review the entire file.
+
+Requires that a review baseline exists (files must have been marked as reviewed in a previous iteration).
 
 ## Safety rules
 
