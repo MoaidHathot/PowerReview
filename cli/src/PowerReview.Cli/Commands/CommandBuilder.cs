@@ -333,13 +333,14 @@ internal static class CommandBuilder
         var body = new Option<string?>("--body") { Description = "Comment body text" };
         var bodyStdin = new Option<bool>("--body-stdin") { Description = "Read comment body from stdin" };
         var author = new Option<string?>("--author") { Description = "Author type: 'user' or 'ai' (default: user)" };
+        var authorName = new Option<string?>("--author-name") { Description = "Display name for the comment author (e.g. 'SecurityReviewer')" };
         var threadId = new Option<int?>("--thread-id") { Description = "Reply to existing thread (thread ID)" };
         var parentCommentId = new Option<int?>("--parent-comment-id") { Description = "Parent comment ID for nested replies" };
 
         var cmd = new Command("create", "Create a new draft comment")
         {
             prUrl, filePath, lineStart, lineEnd, colStart, colEnd,
-            body, bodyStdin, author, threadId, parentCommentId
+            body, bodyStdin, author, authorName, threadId, parentCommentId
         };
 
         cmd.SetAction(parseResult =>
@@ -374,6 +375,7 @@ internal static class CommandBuilder
                     ColEnd = parseResult.GetValue(colEnd),
                     Body = commentBody,
                     Author = draftAuthor,
+                    AuthorName = parseResult.GetValue(authorName),
                     ThreadId = parseResult.GetValue(threadId),
                     ParentCommentId = parseResult.GetValue(parentCommentId),
                 });
@@ -568,10 +570,11 @@ internal static class CommandBuilder
         var body = new Option<string?>("--body") { Description = "Reply body text" };
         var bodyStdin = new Option<bool>("--body-stdin") { Description = "Read reply body from stdin" };
         var author = new Option<string?>("--author") { Description = "Author type: 'user' or 'ai' (default: user)" };
+        var authorName = new Option<string?>("--author-name") { Description = "Display name for the comment author (e.g. 'SecurityReviewer')" };
 
         var cmd = new Command("reply", "Create a reply draft to an existing thread. No auth required.")
         {
-            prUrl, threadIdOpt, body, bodyStdin, author
+            prUrl, threadIdOpt, body, bodyStdin, author, authorName
         };
 
         cmd.SetAction(parseResult =>
@@ -603,6 +606,7 @@ internal static class CommandBuilder
                     Body = replyBody,
                     ThreadId = tid,
                     Author = draftAuthor,
+                    AuthorName = parseResult.GetValue(authorName),
                 });
 
                 CliOutput.WriteJson(new { id, draft });

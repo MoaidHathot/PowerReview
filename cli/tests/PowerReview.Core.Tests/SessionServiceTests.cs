@@ -85,6 +85,7 @@ public class SessionServiceTests : IDisposable
         Assert.Equal("comment", draft.Body);
         Assert.Equal(DraftStatus.Draft, draft.Status);
         Assert.Equal(DraftAuthor.User, draft.Author);
+        Assert.Null(draft.AuthorName);
         Assert.Null(draft.ThreadId);
     }
 
@@ -101,6 +102,53 @@ public class SessionServiceTests : IDisposable
 
         Assert.Equal(DraftAuthor.Ai, draft.Author);
         Assert.True(draft.IsAiAuthored);
+    }
+
+    [Fact]
+    public void CreateDraft_AuthorName_StoredOnDraft()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Author = DraftAuthor.Ai,
+            AuthorName = "SecurityReviewer",
+            Body = "Security issue found",
+        });
+
+        Assert.Equal(DraftAuthor.Ai, draft.Author);
+        Assert.Equal("SecurityReviewer", draft.AuthorName);
+    }
+
+    [Fact]
+    public void CreateDraft_AuthorName_NullWhenOmitted()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Author = DraftAuthor.Ai,
+            Body = "No name provided",
+        });
+
+        Assert.Equal(DraftAuthor.Ai, draft.Author);
+        Assert.Null(draft.AuthorName);
+    }
+
+    [Fact]
+    public void CreateDraft_AuthorName_WorksWithUserAuthor()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Author = DraftAuthor.User,
+            AuthorName = "John",
+            Body = "User comment with name",
+        });
+
+        Assert.Equal(DraftAuthor.User, draft.Author);
+        Assert.Equal("John", draft.AuthorName);
     }
 
     [Fact]

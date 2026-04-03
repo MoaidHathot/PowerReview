@@ -18,7 +18,8 @@ public sealed class ThreadTools
         SessionService sessionService,
         [Description("The pull request URL")] string prUrl,
         [Description("The remote thread ID to reply to")] int threadId,
-        [Description("Reply body in markdown format")] string body)
+        [Description("Reply body in markdown format")] string body,
+        [Description("Optional name identifying this agent (e.g. 'SecurityReviewer', 'StyleChecker'). Helps distinguish comments when multiple AI agents review the same PR.")] string? agentName = null)
     {
         try
         {
@@ -28,6 +29,7 @@ public sealed class ThreadTools
                 Body = body,
                 ThreadId = threadId,
                 Author = DraftAuthor.Ai,
+                AuthorName = agentName,
             });
 
             return ToolHelpers.ToJson(new

@@ -61,6 +61,7 @@ public sealed class SessionService
             Body = body,
             Status = DraftStatus.Draft,
             Author = request.Author ?? DraftAuthor.User,
+            AuthorName = request.AuthorName,
             ThreadId = request.ThreadId,
             ParentCommentId = request.ParentCommentId,
             CreatedAt = now,
@@ -347,6 +348,7 @@ public sealed class CreateDraftRequest
     public int? ColEnd { get; set; }
     public string? Body { get; set; }
     public DraftAuthor? Author { get; set; }
+    public string? AuthorName { get; set; }
 
     /// <summary>
     /// If set, this draft is a reply to an existing remote thread.

@@ -36,6 +36,13 @@ public sealed class DraftComment
     public DraftAuthor Author { get; set; } = DraftAuthor.User;
 
     /// <summary>
+    /// Optional display name identifying the agent or person who created this draft.
+    /// Useful when multiple AI agents create comments (e.g. "SecurityReviewer", "StyleChecker").
+    /// </summary>
+    [JsonPropertyName("author_name")]
+    public string? AuthorName { get; set; }
+
+    /// <summary>
     /// If set, this draft is a reply to an existing remote thread.
     /// If null, this draft will create a new thread on submission.
     /// </summary>

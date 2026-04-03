@@ -228,4 +228,39 @@ public class ModelSerializationTests
         Assert.Contains("\"Rename\"", json);
         Assert.Contains("\"original_path\"", json);
     }
+
+    [Fact]
+    public void DraftComment_AuthorName_RoundTrips()
+    {
+        var draft = new DraftComment
+        {
+            Body = "test",
+            Author = DraftAuthor.Ai,
+            AuthorName = "SecurityReviewer",
+            CreatedAt = "2024-01-01T00:00:00Z",
+            UpdatedAt = "2024-01-01T00:00:00Z",
+        };
+
+        var json = JsonSerializer.Serialize(draft, JsonOptions);
+        Assert.Contains("\"author_name\"", json);
+        Assert.Contains("SecurityReviewer", json);
+
+        var deserialized = JsonSerializer.Deserialize<DraftComment>(json, JsonOptions)!;
+        Assert.Equal("SecurityReviewer", deserialized.AuthorName);
+    }
+
+    [Fact]
+    public void DraftComment_AuthorName_OmittedWhenNull()
+    {
+        var draft = new DraftComment
+        {
+            Body = "test",
+            Author = DraftAuthor.Ai,
+            CreatedAt = "2024-01-01T00:00:00Z",
+            UpdatedAt = "2024-01-01T00:00:00Z",
+        };
+
+        var json = JsonSerializer.Serialize(draft, JsonOptions);
+        Assert.DoesNotContain("author_name", json);
+    }
 }

@@ -24,7 +24,8 @@ public sealed class DraftTools
         [Description("Line number to attach the comment to (1-indexed). Omit for file-level comments.")] int? lineStart = null,
         [Description("Optional end line for range comments (1-indexed)")] int? lineEnd = null,
         [Description("Optional starting column (character offset) within the start line for highlighting a specific word or expression")] int? colStart = null,
-        [Description("Optional ending column (character offset) within the end line")] int? colEnd = null)
+        [Description("Optional ending column (character offset) within the end line")] int? colEnd = null,
+        [Description("Optional name identifying this agent (e.g. 'SecurityReviewer', 'StyleChecker'). Helps distinguish comments when multiple AI agents review the same PR.")] string? agentName = null)
     {
         try
         {
@@ -38,6 +39,7 @@ public sealed class DraftTools
                 ColEnd = colEnd,
                 Body = body,
                 Author = DraftAuthor.Ai,
+                AuthorName = agentName,
             });
 
             return ToolHelpers.ToJson(new
