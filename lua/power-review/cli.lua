@@ -298,7 +298,7 @@ end
 
 --- Create a draft comment.
 ---@param pr_url string
----@param opts table { file_path?: string, line_start?: number, line_end?: number, col_start?: number, col_end?: number, body: string, author?: string, thread_id?: number, parent_comment_id?: number }
+---@param opts table { file_path?: string, line_start?: number, line_end?: number, col_start?: number, col_end?: number, body: string, author?: string, author_name?: string, thread_id?: number, parent_comment_id?: number }
 ---@return table|nil result { id: string, draft: table }, string|nil error
 function M.create_draft(pr_url, opts)
   local args = { "comment", "create", "--pr-url", pr_url }
@@ -325,6 +325,10 @@ function M.create_draft(pr_url, opts)
   if opts.author then
     table.insert(args, "--author")
     table.insert(args, opts.author)
+  end
+  if opts.author_name then
+    table.insert(args, "--author-name")
+    table.insert(args, opts.author_name)
   end
   if opts.thread_id then
     table.insert(args, "--thread-id")
@@ -385,12 +389,17 @@ end
 ---@param thread_id number
 ---@param body string
 ---@param author? string
+---@param author_name? string
 ---@return table|nil result, string|nil error
-function M.reply_to_thread(pr_url, thread_id, body, author)
+function M.reply_to_thread(pr_url, thread_id, body, author, author_name)
   local args = { "reply", "--pr-url", pr_url, "--thread-id", tostring(thread_id), "--body-stdin" }
   if author then
     table.insert(args, "--author")
     table.insert(args, author)
+  end
+  if author_name then
+    table.insert(args, "--author-name")
+    table.insert(args, author_name)
   end
   return M.run(args, { stdin = body })
 end

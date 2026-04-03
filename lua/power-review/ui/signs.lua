@@ -280,7 +280,12 @@ function M._format_draft_virt_text(ind)
 
   -- Draft badge
   local badge_hl = M._hl_groups[ind.kind]
-  local label = ind.kind == "ai_draft" and "  [AI Draft] " or "  [Draft] "
+  local label
+  if ind.kind == "ai_draft" then
+    label = ind.author_name and string.format("  [AI Draft: %s] ", ind.author_name) or "  [AI Draft] "
+  else
+    label = "  [Draft] "
+  end
   table.insert(chunks, { label, badge_hl })
 
   -- Body preview (first line, capped)
@@ -309,6 +314,7 @@ end
 ---@field count? number Number of comments at this location
 ---@field preview? string First comment body preview
 ---@field author? string First comment author
+---@field author_name? string Display name of the agent (for AI drafts)
 ---@field draft_id? string For drafts, the draft comment ID
 ---@field thread_id? number For remote threads, the thread ID
 ---@field thread_status? string Thread status string (active/resolved/etc.)
@@ -336,6 +342,7 @@ function M.build_indicators(session, file_path)
         count = 1,
         preview = draft.body,
         author = draft.author,
+        author_name = draft.author_name,
         draft_id = draft.id,
       })
     end

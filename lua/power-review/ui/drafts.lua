@@ -109,7 +109,7 @@ local function build_nodes(session)
     local draft_children = {}
     for _, d in ipairs(by_status.draft) do
       local preview = d.body:gsub("\n", " "):sub(1, 50)
-      local author_label = d.author == "ai" and " AI" or ""
+      local author_label = d.author == "ai" and (d.author_name and " AI:" .. d.author_name or " AI") or ""
       local loc_label = d.file_path or "(PR-level)"
       if d.line_start then
         loc_label = loc_label .. ":" .. tostring(d.line_start)
@@ -141,7 +141,7 @@ local function build_nodes(session)
     local pending_children = {}
     for _, d in ipairs(by_status.pending) do
       local preview = d.body:gsub("\n", " "):sub(1, 50)
-      local author_label = d.author == "ai" and " AI" or ""
+      local author_label = d.author == "ai" and (d.author_name and " AI:" .. d.author_name or " AI") or ""
       local loc_label = d.file_path or "(PR-level)"
       if d.line_start then
         loc_label = loc_label .. ":" .. tostring(d.line_start)
@@ -575,7 +575,7 @@ function M._setup_keymaps(split, tree, session)
         string.format("File: %s:%d", draft.file_path, draft.line_start),
         draft.line_end and string.format("Range: %d-%d", draft.line_start, draft.line_end) or "",
         string.format("Status: %s", draft.status),
-        string.format("Author: %s", draft.author),
+        string.format("Author: %s", draft.author_name and (draft.author .. " (" .. draft.author_name .. ")") or draft.author),
         string.format("Created: %s", draft.created_at),
         string.format("Updated: %s", draft.updated_at),
         "",
@@ -706,7 +706,7 @@ function M._select_fallback(session)
     prompt = "Draft comments:",
     format_item = function(d)
       local preview = d.body:gsub("\n", " "):sub(1, 50)
-      local author_label = d.author == "ai" and " (AI)" or ""
+      local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)") or ""
       local loc = d.file_path or "(PR-level)"
       if d.line_start then
         loc = loc .. ":" .. tostring(d.line_start)

@@ -349,7 +349,7 @@ function M.edit_comment_at_cursor()
       prompt = "Select draft to edit:",
       format_item = function(d)
         local preview = d.body:gsub("\n", " "):sub(1, 60)
-        local author_label = d.author == "ai" and " (AI)" or ""
+        local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)") or ""
         return string.format("[%s]%s %s", d.status:upper(), author_label, preview)
       end,
     }, function(selected)
@@ -492,7 +492,7 @@ function M.approve_comment_at_cursor()
       prompt = "Select draft to approve:",
       format_item = function(d)
         local preview = d.body:gsub("\n", " "):sub(1, 60)
-        local author_label = d.author == "ai" and " (AI)" or ""
+        local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)") or ""
         return string.format("[%s]%s %s", d.status:upper(), author_label, preview)
       end,
     }, function(selected)
@@ -562,7 +562,7 @@ function M.unapprove_comment_at_cursor()
       prompt = "Select draft to unapprove:",
       format_item = function(d)
         local preview = d.body:gsub("\n", " "):sub(1, 60)
-        local author_label = d.author == "ai" and " (AI)" or ""
+        local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)") or ""
         return string.format("[%s]%s %s", d.status:upper(), author_label, preview)
       end,
     }, function(selected)

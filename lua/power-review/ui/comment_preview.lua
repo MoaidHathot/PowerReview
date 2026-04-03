@@ -124,7 +124,11 @@ function M.build(item, session)
       for _, rd in ipairs(reply_drafts) do
         local s_icon = M.status_icons[rd.status] or "?"
         local ai_label = rd.author == "ai" and " 󰚩" or ""
-        add(string.format("  %s%s %s  [%s]", s_icon, ai_label, rd.author, rd.status:upper()), "DiagnosticHint")
+        local author_display = rd.author
+        if rd.author_name then
+          author_display = author_display .. " (" .. rd.author_name .. ")"
+        end
+        add(string.format("  %s%s %s  [%s]", s_icon, ai_label, author_display, rd.status:upper()), "DiagnosticHint")
         add("")
         add_body(rd.body, "  ", nil)
         add("")
@@ -142,7 +146,11 @@ function M.build(item, session)
 
     add(string.format("%s%s  Draft Comment  [%s]", s_icon, ai_label, item.status:upper()), "DiagnosticHint")
     add(string.format("   %s  %s", item.file_path, loc), "Directory")
-    add(string.format("   Author: %s", item.author), "Title")
+    local author_display = item.author
+    if item.author_name then
+      author_display = author_display .. " (" .. item.author_name .. ")"
+    end
+    add(string.format("   Author: %s", author_display), "Title")
     if item.created_at ~= "" then
       add(string.format("   Created: %s", M.format_time(item.created_at)), "Comment")
     end
@@ -201,6 +209,7 @@ function M.build_items(session, get_all_threads)
       line_end = draft.line_end,
       status = draft.status,
       author = draft.author,
+      author_name = draft.author_name,
       body = draft.body,
       reply_count = 0,
       thread_id = draft.thread_id,
@@ -226,12 +235,16 @@ function M.format_display(item)
     range = string.format(":%d", item.line_start)
   end
   local reply_badge = item.reply_count > 0 and string.format(" (%d)", item.reply_count) or ""
+  local author_display = item.author
+  if item.author_name then
+    author_display = author_display .. ":" .. item.author_name
+  end
 
   return string.format(
     "%s%s %s%s %s%s %s",
     kind_label, icon,
     item.file_path, range,
-    item.author, reply_badge,
+    author_display, reply_badge,
     preview
   )
 end

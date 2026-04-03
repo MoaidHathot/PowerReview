@@ -280,6 +280,7 @@ function M.changed_files(opts)
               table.insert(line_comments[draft.line_start].drafts, {
                 body = draft.body or "",
                 author = draft.author or "user",
+                author_name = draft.author_name,
                 status = draft.status or "draft",
               })
             end
@@ -323,7 +324,7 @@ function M.changed_files(opts)
                 if #first_line > 60 then
                   first_line = first_line:sub(1, 57) .. "..."
                 end
-                local label = d.author == "ai" and "  [AI Draft] " or "  [Draft] "
+                local label = d.author == "ai" and (d.author_name and "  [AI Draft: " .. d.author_name .. "] " or "  [AI Draft] ") or "  [Draft] "
                 table.insert(chunks, { label, "DiagnosticWarn" })
                 if first_line ~= "" then
                   table.insert(chunks, { first_line, "DiagnosticWarn" })

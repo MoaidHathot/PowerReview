@@ -233,7 +233,7 @@ function M.open_thread_viewer(opts)
         prompt = "Select draft to edit:",
         format_item = function(d)
           local preview = d.body:gsub("\n", " "):sub(1, 60)
-          local author_label = d.author == "ai" and " (AI)" or ""
+          local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)") or ""
           return string.format("[%s]%s %s", d.status:upper(), author_label, preview)
         end,
       }, function(selected)
@@ -316,7 +316,7 @@ function M.open_thread_viewer(opts)
         prompt = "Select draft to approve:",
         format_item = function(d)
           local preview = d.body:gsub("\n", " "):sub(1, 60)
-          local author_label = d.author == "ai" and " (AI)" or ""
+          local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)") or ""
           return string.format("[%s]%s %s", d.status:upper(), author_label, preview)
         end,
       }, function(selected)
@@ -507,7 +507,7 @@ function M._build_thread_content(threads, drafts, file_path, line)
   -- Local drafts
   for _, draft in ipairs(drafts) do
     local status_badge = string.format("[%s]", draft.status:upper())
-    local author_label = draft.author == "ai" and " (AI)" or ""
+    local author_label = draft.author == "ai" and (draft.author_name and " (AI: " .. draft.author_name .. ")" or " (AI)") or ""
     local header = string.format("%s%s %s", status_badge, author_label, draft.created_at or "")
     table.insert(lines, header)
 

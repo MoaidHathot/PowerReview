@@ -112,6 +112,7 @@
 ---@field body string Markdown content
 ---@field status PowerReview.DraftStatus
 ---@field author PowerReview.DraftAuthor
+---@field author_name? string Display name of the agent or person (e.g. "SecurityReviewer")
 ---@field thread_id? number nil for new threads, set for replies to remote threads
 ---@field parent_comment_id? number For replies, the comment being replied to
 ---@field created_at string ISO timestamp
