@@ -282,6 +282,23 @@ function M.setup_keymaps()
       end
     end)
   end, "Iteration diff for current file")
+
+  -- Navigate to next/prev unreviewed file
+  map("n", keymaps.next_unreviewed, function()
+    if not M.get_current_session() then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    ui.goto_unreviewed_file(1)
+  end, "Next unreviewed file")
+
+  map("n", keymaps.prev_unreviewed, function()
+    if not M.get_current_session() then
+      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
+      return
+    end
+    ui.goto_unreviewed_file(-1)
+  end, "Previous unreviewed file")
 end
 
 --- Get the current active review session

@@ -143,6 +143,7 @@ local function defaults()
       enabled = true,        -- Master toggle for all notifications
       ai_activity = true,    -- Notify when AI creates/edits/deletes drafts
       sync_complete = true,  -- Notify when thread sync completes
+      watcher = true,        -- Notify when session file changes externally (e.g. AI agent via MCP)
     },
 
     -- Keymaps
@@ -171,6 +172,8 @@ local function defaults()
       mark_all_reviewed = "<leader>pM",
       check_iteration = "<leader>pI",
       iteration_diff = "<leader>pn",
+      next_unreviewed = "]u",
+      prev_unreviewed = "[u",
     },
 
     -- Logging

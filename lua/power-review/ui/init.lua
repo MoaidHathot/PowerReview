@@ -589,6 +589,79 @@ function M.goto_prev_comment()
   signs.goto_prev_comment()
 end
 
+--- Navigate to the next unreviewed (or changed-since-review) file.
+--- Opens the file's diff view. Wraps around.
+---@param direction number 1 for forward, -1 for backward
+function M.goto_unreviewed_file(direction)
+  direction = direction or 1
+  local pr = require("power-review")
+  local session = pr.get_current_session()
+  if not session then
+    log.warn("No active review session")
+    return
+  end
+
+  local helpers = require("power-review.session_helpers")
+  local files = session.files or {}
+  if #files == 0 then
+    log.info("No changed files in this review")
+    return
+  end
+
+  -- Collect unreviewed and changed files
+  local targets = {}
+  for _, f in ipairs(files) do
+    local status = helpers.get_file_review_status(session, f.path)
+    if status == "unreviewed" or status == "changed" then
+      table.insert(targets, f)
+    end
+  end
+
+  if #targets == 0 then
+    log.info("All files have been reviewed")
+    return
+  end
+
+  -- Find current file to determine position
+  local signs_mod = require("power-review.ui.signs")
+  local bufnr = vim.api.nvim_get_current_buf()
+  local info = signs_mod._attached_bufs[bufnr]
+  local current_file = info and info.file_path
+
+  -- Find the target file relative to current position
+  local target
+  if not current_file then
+    target = direction > 0 and targets[1] or targets[#targets]
+  else
+    -- Find index of current file in the target list
+    local current_idx = nil
+    for i, f in ipairs(targets) do
+      if f.path:gsub("\\", "/") == current_file:gsub("\\", "/") then
+        current_idx = i
+        break
+      end
+    end
+
+    if current_idx then
+      if direction > 0 then
+        target = targets[current_idx % #targets + 1]
+      else
+        target = targets[(current_idx - 2) % #targets + 1]
+      end
+    else
+      -- Current file is not in the unreviewed list; find the nearest
+      -- For simplicity, just pick the first/last
+      target = direction > 0 and targets[1] or targets[#targets]
+    end
+  end
+
+  if target then
+    local status, icon = helpers.get_file_review_status(session, target.path)
+    log.info("%s %s (%s)", icon, target.path, status)
+    M.open_file_diff(session, target.path)
+  end
+end
+
 --- Get comment indicators at the cursor's current line.
 ---@return PowerReview.CommentIndicator[]
 function M.get_comments_at_cursor()

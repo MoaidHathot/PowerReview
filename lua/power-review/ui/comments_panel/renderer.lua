@@ -129,6 +129,77 @@ end
 -- Section building
 -- ============================================================================
 
+--- Build a short code context snippet for a comment location.
+--- Reads 1 line before + the target line(s) from the source buffer or worktree.
+--- Returns display lines with a subtle left border and line numbers.
+---@param file_path string
+---@param line_start? number 1-indexed
+---@param line_end? number 1-indexed
+---@param session PowerReview.ReviewSession
+---@return string[] context_lines
+---@return table[] context_hls Highlight entries { line: number, col_start: number, col_end: number, hl_group: string }
+local function build_code_context(file_path, line_start, line_end, session)
+  if not line_start or line_start < 1 then
+    return {}, {}
+  end
+
+  line_end = line_end or line_start
+  local context_before = 1
+  local read_from = math.max(1, line_start - context_before)
+  local read_to = line_end
+
+  -- Try to read from an attached buffer first
+  local signs_mod = require("power-review.ui.signs")
+  local file_lines
+  for bufnr, info in pairs(signs_mod._attached_bufs) do
+    if info.file_path == file_path and vim.api.nvim_buf_is_valid(bufnr) then
+      local total = vim.api.nvim_buf_line_count(bufnr)
+      read_to = math.min(read_to, total)
+      file_lines = vim.api.nvim_buf_get_lines(bufnr, read_from - 1, read_to, false)
+      break
+    end
+  end
+
+  -- Fallback: try reading from worktree path
+  if not file_lines then
+    local base = session.worktree_path or vim.fn.getcwd()
+    local full_path = base:gsub("[\\/]$", "") .. "/" .. file_path:gsub("\\", "/")
+    local ok_read, content = pcall(vim.fn.readfile, full_path, "", read_to)
+    if ok_read and #content >= read_from then
+      file_lines = {}
+      for i = read_from, math.min(read_to, #content) do
+        table.insert(file_lines, content[i])
+      end
+    end
+  end
+
+  if not file_lines or #file_lines == 0 then
+    return {}, {}
+  end
+
+  local context_lines = {}
+  local context_hls = {}
+  local indent = "    "
+
+  for i, line in ipairs(file_lines) do
+    local actual_line = read_from + i - 1
+    local is_target = actual_line >= line_start and actual_line <= line_end
+    local prefix = is_target and "  " or "  "
+    local display = string.format("%s%s%3d  %s", indent, prefix, actual_line, line)
+    -- Cap line length to avoid very wide lines
+    if #display > 120 then
+      display = display:sub(1, 117) .. "..."
+    end
+    table.insert(context_lines, display)
+    -- Use code context highlight for the whole line
+    local line_idx = #context_lines
+    local hl = is_target and HL.CODE_CONTEXT_BG or HL.CODE_CONTEXT
+    table.insert(context_hls, { line = line_idx, col_start = 0, col_end = -1, hl_group = hl })
+  end
+
+  return context_lines, context_hls
+end
+
 --- Build all sections from the session data.
 ---@param session PowerReview.ReviewSession
 ---@param panel_width? number Current panel width for text wrapping
@@ -280,6 +351,18 @@ function M.build_sections(session, panel_width, collapsed)
         table.insert(hls, { line = #lines, col_start = #t_expander, col_end = #t_expander + #status_icon_str, hl_group = status_hl })
 
         if not is_thread_collapsed then
+          -- Code context snippet
+          local ctx_lines, ctx_hls = build_code_context(fp, thread.line_start, thread.line_end, session)
+          if #ctx_lines > 0 then
+            for _, cl in ipairs(ctx_lines) do
+              table.insert(lines, cl)
+              -- Adjust highlight line numbers
+            end
+            for _, ch in ipairs(ctx_hls) do
+              table.insert(hls, { line = #lines - #ctx_lines + ch.line, col_start = ch.col_start, col_end = ch.col_end, hl_group = ch.hl_group })
+            end
+          end
+
           for ci, comment in ipairs(thread.comments or {}) do
             if not comment.is_deleted then
               local indent = ci == 1 and "    " or "      "
@@ -359,6 +442,18 @@ function M.build_sections(session, panel_width, collapsed)
         table.insert(hls, { line = 1, col_start = 2, col_end = 2 + #s_icon, hl_group = s_hl })
         if draft.author == "ai" then
           table.insert(hls, { line = 1, col_start = 2 + #s_icon, col_end = 2 + #s_icon + #ai_label, hl_group = HL.AI_BADGE })
+        end
+
+        -- Code context snippet
+        local d_ctx_lines, d_ctx_hls = build_code_context(fp, draft.line_start, draft.line_end, session)
+        if #d_ctx_lines > 0 then
+          local base_line = #lines
+          for _, cl in ipairs(d_ctx_lines) do
+            table.insert(lines, cl)
+          end
+          for _, ch in ipairs(d_ctx_hls) do
+            table.insert(hls, { line = base_line + ch.line, col_start = ch.col_start, col_end = ch.col_end, hl_group = ch.hl_group })
+          end
         end
 
         local body_lines = M.wrap_body(draft.body, body_width and (body_width - 4) or nil)

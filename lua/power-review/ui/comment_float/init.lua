@@ -46,6 +46,10 @@ M._thread_context = nil
 ---@type boolean
 M._thread_context_visible = false
 
+--- Code context popup (shown above editor with the code being commented on)
+---@type table|nil
+M._code_context = nil
+
 --- Timer for debounced preview updates
 ---@type userdata|nil
 M._preview_timer = nil
@@ -107,6 +111,9 @@ end
 function M.close_editor()
   preview_mod.close_preview(M)
   preview_mod.close_thread_context(M)
+  -- Close code context popup
+  local editor_mod = require("power-review.ui.comment_float.editor")
+  editor_mod._close_code_context(M)
   -- Close split window if in split mode
   if M._editor_split_winid and vim.api.nvim_win_is_valid(M._editor_split_winid) then
     pcall(vim.api.nvim_win_close, M._editor_split_winid, true)

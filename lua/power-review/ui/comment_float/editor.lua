@@ -283,6 +283,16 @@ function M.open(opts, float_module)
   float_module._editor_opts = opts
   float_module._editor_hidden = false
   float_module._editor_split_winid = nil
+
+  -- Show code context above the editor (the lines being commented on)
+  if opts.line and opts.file_path and not is_reply then
+    vim.schedule(function()
+      if not editor.winid or not vim.api.nvim_win_is_valid(editor.winid) then
+        return
+      end
+      M._show_code_context(editor.winid, opts, float_module)
+    end)
+  end
 end
 
 --- Fallback comment editor when nui.nvim is not available.
@@ -329,6 +339,167 @@ function M.fallback(opts)
       end
     end
   end)
+end
+
+--- Show a code context popup above the editor displaying the lines being commented on.
+--- Reads from the review working directory or the current buffer.
+---@param editor_winid number
+---@param opts table Editor opts with file_path, line, line_end, session
+---@param float_module table Reference to the parent comment_float module
+function M._show_code_context(editor_winid, opts, float_module)
+  -- Close any existing code context popup
+  M._close_code_context(float_module)
+
+  local ok_popup, Popup = pcall(require, "nui.popup")
+  if not ok_popup then
+    return
+  end
+
+  local line_start = opts.line
+  local line_end = opts.line_end or line_start
+  local context_before = 2
+  local context_after = 2
+  local read_from = math.max(1, line_start - context_before)
+  local read_to = line_end + context_after
+
+  -- Try to read the file content
+  local file_lines
+  local session = opts.session
+
+  -- Try reading from review working directory via signs resolution
+  local source_bufnr = nil
+  local signs_mod = require("power-review.ui.signs")
+  for bufnr, info in pairs(signs_mod._attached_bufs) do
+    if info.file_path == opts.file_path and vim.api.nvim_buf_is_valid(bufnr) then
+      source_bufnr = bufnr
+      break
+    end
+  end
+
+  if source_bufnr then
+    local total = vim.api.nvim_buf_line_count(source_bufnr)
+    read_to = math.min(read_to, total)
+    file_lines = vim.api.nvim_buf_get_lines(source_bufnr, read_from - 1, read_to, false)
+  else
+    -- Fallback: try reading from worktree path
+    local base = session and session.worktree_path or vim.fn.getcwd()
+    local full_path = base:gsub("[\\/]$", "") .. "/" .. opts.file_path:gsub("\\", "/")
+    local ok_read, content = pcall(vim.fn.readfile, full_path, "", read_to)
+    if ok_read and #content >= read_from then
+      file_lines = {}
+      for i = read_from, math.min(read_to, #content) do
+        table.insert(file_lines, content[i])
+      end
+    end
+  end
+
+  if not file_lines or #file_lines == 0 then
+    return
+  end
+
+  -- Build display lines with line numbers and highlight indicators
+  local display_lines = {}
+  for i, line in ipairs(file_lines) do
+    local actual_line = read_from + i - 1
+    local prefix
+    local is_target = actual_line >= line_start and actual_line <= line_end
+    if is_target then
+      prefix = string.format(" %3d ", actual_line)
+    else
+      prefix = string.format("  %3d ", actual_line)
+    end
+    table.insert(display_lines, prefix .. line)
+  end
+
+  -- Detect filetype for syntax highlighting
+  local ext = opts.file_path:match("%.([^%.]+)$")
+  local ft = ext and vim.filetype.match({ filename = "file." .. ext }) or nil
+
+  -- Position above the editor
+  local win_pos = vim.api.nvim_win_get_position(editor_winid)
+  local editor_width = vim.api.nvim_win_get_width(editor_winid)
+  local context_height = math.min(#display_lines, 12, win_pos[1] - 1)
+
+  if context_height < 1 then
+    return
+  end
+
+  local context_row = win_pos[1] - context_height - 2
+  if context_row < 0 then
+    context_row = 0
+  end
+
+  local popup = Popup({
+    enter = false,
+    focusable = false,
+    relative = "editor",
+    position = {
+      row = context_row,
+      col = win_pos[2],
+    },
+    size = {
+      width = editor_width,
+      height = context_height,
+    },
+    border = {
+      style = "rounded",
+      text = {
+        top = string.format("  %s:%d ", opts.file_path, line_start),
+        top_align = "left",
+      },
+    },
+    buf_options = {
+      modifiable = false,
+      readonly = true,
+      buftype = "nofile",
+    },
+    win_options = {
+      winhighlight = "Normal:NormalFloat,FloatBorder:FloatBorder",
+      wrap = false,
+      number = false,
+      cursorline = false,
+    },
+  })
+
+  popup:mount()
+
+  vim.bo[popup.bufnr].modifiable = true
+  vim.api.nvim_buf_set_lines(popup.bufnr, 0, -1, false, display_lines)
+  vim.bo[popup.bufnr].modifiable = false
+
+  -- Highlight target lines
+  local ns = vim.api.nvim_create_namespace("power_review_code_context")
+  for i, _ in ipairs(display_lines) do
+    local actual_line = read_from + i - 1
+    if actual_line >= line_start and actual_line <= line_end then
+      pcall(vim.api.nvim_buf_set_extmark, popup.bufnr, ns, i - 1, 0, {
+        line_hl_group = "Visual",
+        priority = 50,
+      })
+    end
+  end
+
+  -- Try to apply syntax highlighting
+  if ft then
+    vim.schedule(function()
+      if popup.bufnr and vim.api.nvim_buf_is_valid(popup.bufnr) then
+        pcall(vim.treesitter.start, popup.bufnr, ft)
+      end
+    end)
+  end
+
+  float_module._code_context = popup
+end
+
+--- Close the code context popup.
+---@param float_module table Reference to the parent comment_float module
+function M._close_code_context(float_module)
+  if float_module._code_context then
+    pcall(function()
+      float_module._code_context:unmount()
+    end)
+    float_module._code_context = nil
+  end
 end
 
 return M

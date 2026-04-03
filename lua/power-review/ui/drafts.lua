@@ -420,11 +420,31 @@ function M._setup_keymaps(split, tree, session)
     end
 
     -- Leaf: navigate to file/line
-    if node.file_path and node.line_start then
+    if node.file_path then
       local ui = require("power-review.ui")
       ui.open_file_diff(session, node.file_path, function()
         vim.schedule(function()
-          pcall(vim.api.nvim_win_set_cursor, 0, { node.line_start, 0 })
+          if node.line_start then
+            pcall(vim.api.nvim_win_set_cursor, 0, { node.line_start, 0 })
+          end
+        end)
+      end)
+    end
+  end, { noremap = true })
+
+  -- Open diff and jump to file+line (o)
+  split:map("n", "o", function()
+    local node = tree:get_node()
+    if not node or node.node_type ~= "draft_item" then
+      return
+    end
+    if node.file_path then
+      local ui = require("power-review.ui")
+      ui.open_file_diff(session, node.file_path, function()
+        vim.schedule(function()
+          if node.line_start then
+            pcall(vim.api.nvim_win_set_cursor, 0, { node.line_start, 0 })
+          end
         end)
       end)
     end
@@ -608,6 +628,75 @@ function M._setup_keymaps(split, tree, session)
     log.info("Filter: %s", M._filter == "ai" and "AI only" or "all drafts")
   end, { noremap = true })
 
+  -- Approve all drafts for the file under cursor (F)
+  split:map("n", "F", function()
+    local node = tree:get_node()
+    if not node then
+      log.info("Select a draft or status group to approve by file")
+      return
+    end
+
+    -- Resolve file path from the node (works on draft items and status groups)
+    local target_file = node.file_path
+    if not target_file then
+      -- If on a status group, look at first child
+      if node:has_children() then
+        local child_ids = node:get_child_ids()
+        if #child_ids > 0 then
+          local first_child = tree:get_node(child_ids[1])
+          target_file = first_child and first_child.file_path
+        end
+      end
+    end
+
+    if not target_file then
+      log.info("Cannot determine file for bulk approve")
+      return
+    end
+
+    local current = pr.get_current_session()
+    if not current then return end
+
+    -- Find all drafts with status "draft" for this file
+    local file_drafts = {}
+    for _, d in ipairs(current.drafts) do
+      if d.status == "draft" and d.file_path and d.file_path:gsub("\\", "/") == target_file:gsub("\\", "/") then
+        table.insert(file_drafts, d)
+      end
+    end
+
+    if #file_drafts == 0 then
+      log.info("No drafts to approve in %s", target_file)
+      return
+    end
+
+    vim.ui.input({
+      prompt = string.format("Approve all %d draft(s) in %s? (y/n): ", #file_drafts, target_file),
+    }, function(input)
+      if input == "y" or input == "Y" then
+        local approved = 0
+        local errors = 0
+        for _, d in ipairs(file_drafts) do
+          local ok_a, err_a = pr.api.approve_draft(d.id)
+          if ok_a then
+            approved = approved + 1
+          else
+            errors = errors + 1
+            log.warn("Failed to approve %s: %s", d.id, err_a or "unknown")
+          end
+        end
+        log.info("Approved %d draft(s) in %s%s", approved, target_file,
+          errors > 0 and string.format(" (%d failed)", errors) or "")
+        local updated = pr.get_current_session()
+        if updated then
+          session = updated
+          M.refresh(updated)
+        end
+        require("power-review.ui").refresh_neotree()
+      end
+    end)
+  end, { noremap = true })
+
   -- Batch delete all AI drafts (X)
   split:map("n", "X", function()
     local current = pr.get_current_session()
@@ -664,7 +753,7 @@ function M._setup_keymaps(split, tree, session)
       if split.winid and vim.api.nvim_win_is_valid(split.winid) then
         vim.api.nvim_set_option_value(
           "winbar",
-          " a:approve A:all a:unapprove e:edit d:del X:del-AI f:filter R:refresh q:close",
+          " a:approve A:all F:file u:unapprove e:edit d:del o:open X:del-AI f:filter R:refresh q:close",
           { win = split.winid }
         )
       end

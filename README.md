@@ -496,7 +496,7 @@ PowerReview.nvim/
       PowerReview.Core/          -- Core library (models, services, providers, auth, git)
       PowerReview.Cli/           -- Console app (.NET global tool)
         Commands/                -- System.CommandLine CLI commands
-        Mcp/                     -- MCP server (stdio transport, 12 tools)
+        Mcp/                     -- MCP server (stdio transport, 15 tools)
     tests/
       PowerReview.Core.Tests/    -- xUnit tests
 ```
@@ -504,12 +504,13 @@ PowerReview.nvim/
 ## Roadmap
 
 - [ ] Full GitHub provider implementation
-- [ ] Additional diff providers (diffview.nvim, native vim diff)
-- [ ] fzf-lua picker support
-- [ ] Thread resolution/status management
-- [ ] File-level comments (not line-specific)
+- [ ] Additional diff providers (diffview.nvim)
 - [ ] PR description editing
 - [ ] CI/pipeline status integration
+- [x] fzf-lua picker support
+- [x] Thread resolution/status management
+- [x] File-level comments (not line-specific)
+- [x] Native vim diff (default diff provider)
 
 ## License
 

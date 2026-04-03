@@ -93,7 +93,7 @@ end
 --- Notify about session file changes detected by the watcher.
 ---@param session table The updated session
 function M.watcher_update(session)
-  if category_enabled("sync_complete") then
+  if category_enabled("watcher") then
     vim.notify("[PowerReview] Session updated (external change detected)", vim.log.levels.INFO)
   end
 end

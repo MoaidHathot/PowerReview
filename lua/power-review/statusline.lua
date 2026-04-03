@@ -29,23 +29,29 @@ local function resolve_current_file(session)
 end
 
 --- Count comments (remote threads + drafts) for a specific file.
+--- Distinguishes active vs resolved remote threads.
 ---@param session PowerReview.ReviewSession
 ---@param file_path string
----@return number remote_count, number draft_count
+---@return number active_count, number resolved_count, number draft_count
 local function count_file_comments(session, file_path)
   local helpers = require("power-review.session_helpers")
   local remote_threads = helpers.get_threads_for_file(session, file_path)
   local drafts = helpers.get_drafts_for_file(session, file_path)
 
-  -- Count only non-system, file-level threads with a line
-  local remote_count = 0
+  local active_count = 0
+  local resolved_count = 0
   for _, thread in ipairs(remote_threads) do
     if thread.line_start and thread.line_start > 0 and not thread.is_deleted then
-      remote_count = remote_count + 1
+      local status = (thread.status or "active"):lower()
+      if status == "active" or status == "pending" then
+        active_count = active_count + 1
+      else
+        resolved_count = resolved_count + 1
+      end
     end
   end
 
-  return remote_count, #drafts
+  return active_count, resolved_count, #drafts
 end
 
 --- Get the statusline display string for lualine.
@@ -98,12 +104,15 @@ function M.get()
   -- Per-file comment count for current buffer
   local file_path = resolve_current_file(session)
   if file_path then
-    local remote, drafts = count_file_comments(session, file_path)
-    local total = remote + drafts
+    local active, resolved, drafts = count_file_comments(session, file_path)
+    local total = active + resolved + drafts
     if total > 0 then
       local file_parts = {}
-      if remote > 0 then
-        table.insert(file_parts, remote .. "")
+      if active > 0 then
+        table.insert(file_parts, active .. "")
+      end
+      if resolved > 0 then
+        table.insert(file_parts, resolved .. "")
       end
       if drafts > 0 then
         table.insert(file_parts, drafts .. "")
