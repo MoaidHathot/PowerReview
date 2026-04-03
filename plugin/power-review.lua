@@ -6,9 +6,10 @@ if vim.g.loaded_power_review then
 end
 vim.g.loaded_power_review = true
 
--- Require Neovim >= 0.10.0 for vim.system and modern extmarks
-if vim.fn.has("nvim-0.10.0") ~= 1 then
-  vim.notify("[PowerReview] Requires Neovim >= 0.10.0", vim.log.levels.ERROR)
+-- Require minimum Neovim version (vim.system, extmark signs, treesitter APIs)
+local version_err = require("power-review.utils.version").check()
+if version_err then
+  vim.notify(version_err, vim.log.levels.ERROR)
   return
 end
 
