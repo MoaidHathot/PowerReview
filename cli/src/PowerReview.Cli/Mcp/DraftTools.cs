@@ -22,7 +22,9 @@ public sealed class DraftTools
         [Description("Relative file path to comment on")] string filePath,
         [Description("Comment body in markdown format")] string body,
         [Description("Line number to attach the comment to (1-indexed). Omit for file-level comments.")] int? lineStart = null,
-        [Description("Optional end line for range comments (1-indexed)")] int? lineEnd = null)
+        [Description("Optional end line for range comments (1-indexed)")] int? lineEnd = null,
+        [Description("Optional starting column (character offset) within the start line for highlighting a specific word or expression")] int? colStart = null,
+        [Description("Optional ending column (character offset) within the end line")] int? colEnd = null)
     {
         try
         {
@@ -32,6 +34,8 @@ public sealed class DraftTools
                 FilePath = filePath,
                 LineStart = lineStart,
                 LineEnd = lineEnd,
+                ColStart = colStart,
+                ColEnd = colEnd,
                 Body = body,
                 Author = DraftAuthor.Ai,
             });

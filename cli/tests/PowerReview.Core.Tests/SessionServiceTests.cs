@@ -23,7 +23,7 @@ public class SessionServiceTests : IDisposable
             Directory.Delete(_tempDir, recursive: true);
     }
 
-    private string CreateAndSaveSession()
+    private string CreateAndSaveSession(List<ChangedFile>? files = null)
     {
         var now = DateTime.UtcNow.ToString("o");
         var session = new ReviewSession
@@ -37,6 +37,7 @@ public class SessionServiceTests : IDisposable
                 Repository = "repo",
             },
             PullRequest = new PullRequestInfo { Id = 1, Title = "Test" },
+            Files = files ?? [],
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -49,7 +50,7 @@ public class SessionServiceTests : IDisposable
     [Fact]
     public void CreateDraft_AddsToSession()
     {
-        var sessionId = CreateAndSaveSession();
+        var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
 
         var (id, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
         {
@@ -77,11 +78,11 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSession();
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest());
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "comment" });
 
         Assert.Equal("", draft.FilePath);
         Assert.Null(draft.LineStart);
-        Assert.Equal("", draft.Body);
+        Assert.Equal("comment", draft.Body);
         Assert.Equal(DraftStatus.Draft, draft.Status);
         Assert.Equal(DraftAuthor.User, draft.Author);
         Assert.Null(draft.ThreadId);
@@ -122,6 +123,158 @@ public class SessionServiceTests : IDisposable
     {
         Assert.Throws<SessionServiceException>(() =>
             _service.CreateDraft("nonexistent", new CreateDraftRequest()));
+    }
+
+    [Fact]
+    public void CreateDraft_EmptyBody_Throws()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "" }));
+        Assert.Contains("body cannot be empty", ex.Message);
+    }
+
+    [Fact]
+    public void CreateDraft_WhitespaceBody_Throws()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "   " }));
+        Assert.Contains("body cannot be empty", ex.Message);
+    }
+
+    [Fact]
+    public void CreateDraft_NullBody_Throws()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.CreateDraft(sessionId, new CreateDraftRequest { Body = null }));
+        Assert.Contains("body cannot be empty", ex.Message);
+    }
+
+    [Fact]
+    public void CreateDraft_EmptyBodyOnReply_Allowed()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        // Replies skip body validation (the body might be intentionally empty for some workflows)
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            ThreadId = 42,
+            Body = "",
+        });
+        Assert.Equal("", draft.Body);
+    }
+
+    [Fact]
+    public void CreateDraft_FileNotInChangedFiles_Throws()
+    {
+        var sessionId = CreateAndSaveSession([
+            new ChangedFile { Path = "src/real-file.cs" },
+        ]);
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.CreateDraft(sessionId, new CreateDraftRequest
+            {
+                FilePath = "src/nonexistent.cs",
+                Body = "comment",
+            }));
+        Assert.Contains("not part of this PR", ex.Message);
+    }
+
+    [Fact]
+    public void CreateDraft_FileInChangedFiles_Succeeds()
+    {
+        var sessionId = CreateAndSaveSession([
+            new ChangedFile { Path = "src/real-file.cs" },
+        ]);
+
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            FilePath = "src/real-file.cs",
+            Body = "looks good",
+        });
+
+        Assert.Equal("src/real-file.cs", draft.FilePath);
+    }
+
+    [Fact]
+    public void CreateDraft_FileMatchIsCaseInsensitive()
+    {
+        var sessionId = CreateAndSaveSession([
+            new ChangedFile { Path = "src/MyFile.cs" },
+        ]);
+
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            FilePath = "src/myfile.cs",
+            Body = "case insensitive match",
+        });
+
+        Assert.Equal("src/myfile.cs", draft.FilePath);
+    }
+
+    [Fact]
+    public void CreateDraft_FileMatchNormalizesSlashes()
+    {
+        var sessionId = CreateAndSaveSession([
+            new ChangedFile { Path = "src/utils/helper.cs" },
+        ]);
+
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            FilePath = "src\\utils\\helper.cs",
+            Body = "backslash path",
+        });
+
+        Assert.Equal("src\\utils\\helper.cs", draft.FilePath);
+    }
+
+    [Fact]
+    public void CreateDraft_NoFilePathSkipsFileValidation()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        // PR-level comment (no file) should work even with no files in the session
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            Body = "general PR comment",
+        });
+
+        Assert.Equal("", draft.FilePath);
+    }
+
+    [Fact]
+    public void CreateDraft_ReplySkipsFileValidation()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        // Reply to a thread should work even with a file path not in changed files
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            ThreadId = 42,
+            FilePath = "any/path.cs",
+            Body = "reply text",
+        });
+
+        Assert.True(draft.IsReply);
+    }
+
+    [Fact]
+    public void CreateDraft_EmptyFilesList_FileComment_Throws()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.CreateDraft(sessionId, new CreateDraftRequest
+            {
+                FilePath = "some/file.cs",
+                Body = "comment on file",
+            }));
+        Assert.Contains("not part of this PR", ex.Message);
     }
 
     // --- EditDraft ---
@@ -294,7 +447,10 @@ public class SessionServiceTests : IDisposable
     [Fact]
     public void GetDrafts_FilterByFile()
     {
-        var sessionId = CreateAndSaveSession();
+        var sessionId = CreateAndSaveSession([
+            new ChangedFile { Path = "a.cs" },
+            new ChangedFile { Path = "b.cs" },
+        ]);
         _service.CreateDraft(sessionId, new CreateDraftRequest { FilePath = "a.cs", Body = "1" });
         _service.CreateDraft(sessionId, new CreateDraftRequest { FilePath = "b.cs", Body = "2" });
         _service.CreateDraft(sessionId, new CreateDraftRequest { FilePath = "a.cs", Body = "3" });
@@ -308,7 +464,7 @@ public class SessionServiceTests : IDisposable
     [Fact]
     public void GetDrafts_PathNormalization()
     {
-        var sessionId = CreateAndSaveSession();
+        var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
         _service.CreateDraft(sessionId, new CreateDraftRequest { FilePath = "src\\main.cs", Body = "1" });
 
         var result = _service.GetDrafts(sessionId, "src/main.cs");
@@ -581,7 +737,7 @@ public class SessionServiceTests : IDisposable
     [Fact]
     public void FullLifecycle_CreateEditApproveUnapproveDelete()
     {
-        var sessionId = CreateAndSaveSession();
+        var sessionId = CreateAndSaveSession([new ChangedFile { Path = "test.cs" }]);
 
         // Create
         var (draftId, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest

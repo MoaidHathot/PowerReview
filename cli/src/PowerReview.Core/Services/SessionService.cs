@@ -18,6 +18,8 @@ public sealed class SessionService
 
     /// <summary>
     /// Create a new draft comment and add it to the session.
+    /// Validates that file-attached comments reference a file that exists in the PR's changed files,
+    /// and that the comment body is not empty.
     /// </summary>
     /// <returns>The created draft's ID and the draft itself.</returns>
     public (string Id, DraftComment Draft) CreateDraft(string sessionId, CreateDraftRequest request)
@@ -25,17 +27,38 @@ public sealed class SessionService
         using var _ = _store.AcquireLock(sessionId);
 
         var session = LoadOrThrow(sessionId);
+
+        // Validate body is not empty for non-reply drafts
+        var body = request.Body ?? "";
+        var isReply = request.ThreadId.HasValue;
+        if (string.IsNullOrWhiteSpace(body) && !isReply)
+            throw new SessionServiceException("Comment body cannot be empty.");
+
+        // Validate file path exists in the PR's changed files (skip for replies and PR-level comments)
+        var filePath = request.FilePath ?? "";
+        if (!string.IsNullOrEmpty(filePath) && !isReply)
+        {
+            var normalized = NormalizePath(filePath);
+            var fileExists = session.Files.Any(f =>
+                NormalizePath(f.Path).Equals(normalized, StringComparison.OrdinalIgnoreCase));
+
+            if (!fileExists)
+                throw new SessionServiceException(
+                    $"File '{filePath}' is not part of this PR's changed files. " +
+                    $"Use 'files' command to see the list of changed files.");
+        }
+
         var now = Timestamp();
         var id = Guid.NewGuid().ToString("D");
 
         var draft = new DraftComment
         {
-            FilePath = request.FilePath ?? "",
+            FilePath = filePath,
             LineStart = request.LineStart,
             LineEnd = request.LineEnd,
             ColStart = request.ColStart,
             ColEnd = request.ColEnd,
-            Body = request.Body ?? "",
+            Body = body,
             Status = DraftStatus.Draft,
             Author = request.Author ?? DraftAuthor.User,
             ThreadId = request.ThreadId,

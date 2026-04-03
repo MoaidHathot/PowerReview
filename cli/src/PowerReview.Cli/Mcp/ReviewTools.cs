@@ -292,4 +292,75 @@ public sealed class ReviewTools
             }),
         });
     }
+
+    // ========================================================================
+    // Sync and iteration tools
+    // ========================================================================
+
+    [McpServerTool, Description(
+        "Sync comment threads from the remote provider (e.g., Azure DevOps). " +
+        "Updates the local session with the latest threads and checks for new iterations. " +
+        "Call this before reading threads to ensure you have the most up-to-date data.")]
+    public static async Task<string> SyncThreads(
+        ReviewService reviewService,
+        [Description("The pull request URL")] string prUrl,
+        CancellationToken ct)
+    {
+        try
+        {
+            var result = await reviewService.SyncAsync(prUrl, ct);
+            return ToolHelpers.ToJson(new
+            {
+                synced = true,
+                thread_count = result.ThreadCount,
+                iteration_check = result.IterationCheck,
+            });
+        }
+        catch (ReviewServiceException ex)
+        {
+            return ToolHelpers.ToJson(new { error = ex.Message });
+        }
+    }
+
+    [McpServerTool, Description(
+        "Check whether the PR author has pushed new commits since your last review. " +
+        "If a new iteration is detected, performs a smart reset: identifies which files changed, " +
+        "removes them from the reviewed list, and updates the review baseline. " +
+        "Returns the list of files that changed between iterations.")]
+    public static async Task<string> CheckIteration(
+        ReviewService reviewService,
+        [Description("The pull request URL")] string prUrl,
+        CancellationToken ct)
+    {
+        try
+        {
+            var result = await reviewService.CheckIterationAsync(prUrl, ct);
+            return ToolHelpers.ToJson(result);
+        }
+        catch (ReviewServiceException ex)
+        {
+            return ToolHelpers.ToJson(new { error = ex.Message });
+        }
+    }
+
+    [McpServerTool, Description(
+        "Get the diff between the previously reviewed iteration and the current iteration for a specific file. " +
+        "This shows only what changed since you last reviewed, not the full PR diff. " +
+        "Requires that a review baseline exists (files must have been marked as reviewed previously).")]
+    public static async Task<string> GetIterationDiff(
+        ReviewService reviewService,
+        [Description("The pull request URL")] string prUrl,
+        [Description("Relative file path to get the iteration diff for")] string filePath,
+        CancellationToken ct)
+    {
+        try
+        {
+            var diff = await reviewService.GetIterationDiffAsync(prUrl, filePath, ct);
+            return ToolHelpers.ToJson(new { file = filePath, diff });
+        }
+        catch (ReviewServiceException ex)
+        {
+            return ToolHelpers.ToJson(new { error = ex.Message });
+        }
+    }
 }

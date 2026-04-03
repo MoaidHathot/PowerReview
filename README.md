@@ -15,6 +15,7 @@ A Neovim plugin for reviewing Pull Requests from Azure DevOps (with GitHub suppo
 - **Comment signs/extmarks** -- Inline indicators in diff buffers showing where comments and drafts exist
 - **Telescope pickers** -- Fuzzy find changed files, comments, and sessions
 - **CLI + MCP server** -- .NET CLI tool with built-in MCP server for external AI agents (Claude, Copilot, etc.) to review PRs
+- **Repository file access** -- AI agents can read any file in the repo (not just changed files) for full context during review
 - **Session persistence** -- JSON-based session storage; resume reviews across Neovim restarts
 
 ## Requirements
@@ -348,6 +349,8 @@ dnx PowerReview -- vote --pr-url <url> --value <value>         # Set review vote
 dnx PowerReview -- sync --pr-url <url>                         # Sync threads from remote
 dnx PowerReview -- close --pr-url <url>                        # Close a review session
 dnx PowerReview -- sessions list|delete|clean                  # Manage saved sessions
+dnx PowerReview -- working-dir --pr-url <url>                   # Get working directory path
+dnx PowerReview -- read-file --pr-url <url> --file <path>      # Read any file from the repo
 dnx PowerReview -- config --path-only                          # Show configuration
 dnx PowerReview -- mcp                                         # Start MCP server (stdio)
 ```
@@ -383,12 +386,18 @@ The MCP server exposes these tools to AI agents:
 | `ListChangedFiles` | `prUrl` | List all changed files with change types |
 | `GetFileDiff` | `prUrl`, `filePath` | Get unified diff for a specific file |
 | `ListCommentThreads` | `prUrl`, `filePath?` | List remote threads and local drafts |
+| `GetDraftCounts` | `prUrl` | Get draft comment counts by status |
 | `CreateComment` | `prUrl`, `filePath`, `lineStart`, `body`, `lineEnd?` | Create a draft comment (author=ai) |
 | `ReplyToThread` | `prUrl`, `threadId`, `body` | Reply to an existing thread (author=ai) |
 | `EditDraftComment` | `prUrl`, `draftId`, `newBody` | Edit a draft comment (draft status only) |
 | `DeleteDraftComment` | `prUrl`, `draftId` | Delete a draft comment (draft status only) |
+| `GetWorkingDirectory` | `prUrl` | Get the filesystem path to the PR working directory |
+| `ReadFile` | `prUrl`, `filePath`, `offset?`, `limit?` | Read any file in the repository (not just changed files) |
+| `ListRepositoryFiles` | `prUrl`, `directory?`, `pattern?`, `recursive?` | List/discover files in the repository structure |
 
 AI-created comments are tagged with `author=ai` and start as drafts that require user approval before submission.
+
+The file access tools (`GetWorkingDirectory`, `ReadFile`, `ListRepositoryFiles`) let AI agents read any file in the repository for context -- not just files changed in the PR. This is useful for understanding callers, checking types/interfaces, reviewing tests, or exploring project structure. All file paths are security-validated to prevent access outside the repository root.
 
 ### Architecture
 
@@ -487,7 +496,7 @@ PowerReview.nvim/
       PowerReview.Core/          -- Core library (models, services, providers, auth, git)
       PowerReview.Cli/           -- Console app (.NET global tool)
         Commands/                -- System.CommandLine CLI commands
-        Mcp/                     -- MCP server (stdio transport, 8 tools)
+        Mcp/                     -- MCP server (stdio transport, 12 tools)
     tests/
       PowerReview.Core.Tests/    -- xUnit tests
 ```
