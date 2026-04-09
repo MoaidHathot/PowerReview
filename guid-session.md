@@ -21,7 +21,7 @@ Write down steps for:
 - creating comments
 - approving comments
 - submitting comments
-- attemp to approve the PR (although in draft)
+- attempt to approve the PR (although in draft)
 
 There should be complete example, meaning I only need to copy-paste the CLI commands. Explain very briefly each command what is doing and how it is effect the review.
 
