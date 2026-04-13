@@ -23,23 +23,6 @@ function M.install()
     --- Captured notifications: { { msg, level }, ... }
     _notifications = {},
 
-    --- Mock vim.notify: records calls for assertion.
-    notify = function(msg, level)
-      table.insert(mock._notifications, { msg = msg, level = level })
-    end,
-
-    --- Mock vim.deepcopy: simple deep copy (tables only, no metatables).
-    deepcopy = function(tbl)
-      if type(tbl) ~= "table" then
-        return tbl
-      end
-      local copy = {}
-      for k, v in pairs(tbl) do
-        copy[k] = mock.deepcopy(v)
-      end
-      return copy
-    end,
-
     --- Mock vim.schedule: run fn immediately (tests are synchronous).
     schedule = function(fn)
       fn()
@@ -96,6 +79,25 @@ function M.install()
       return count > 0
     end,
   }
+
+  --- Mock vim.notify: records calls for assertion.
+  --- Defined after the table so `mock` is a valid upvalue.
+  mock.notify = function(msg, level)
+    table.insert(mock._notifications, { msg = msg, level = level })
+  end
+
+  --- Mock vim.deepcopy: simple deep copy (tables only, no metatables).
+  --- Defined after the table so `mock` is a valid upvalue for recursion.
+  mock.deepcopy = function(tbl)
+    if type(tbl) ~= "table" then
+      return tbl
+    end
+    local copy = {}
+    for k, v in pairs(tbl) do
+      copy[k] = mock.deepcopy(v)
+    end
+    return copy
+  end
 
   -- Install as global
   _G.vim = mock
