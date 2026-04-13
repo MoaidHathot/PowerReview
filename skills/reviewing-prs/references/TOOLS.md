@@ -8,9 +8,9 @@ All tools return JSON. Errors are returned as `{ "error": "message" }`.
 
 ## Contents
 
-- Read-only tools (session, files, diff, threads, draft counts)
+- Read-only tools (session, PR description, files, diff, threads, draft counts)
 - Sync and iteration tools (sync threads, check iteration, iteration diff)
-- Write tools (create comment, reply, edit, delete)
+- Write tools (create comment, reply, edit, delete, update thread status)
 - Working directory and file access tools (working directory, read file, list files)
 - Fix worktree tools (prepare worktree, get path, create branch)
 - Proposal tools (create proposal, list proposals, get proposal diff)
@@ -69,6 +69,45 @@ Get PR review session metadata.
 ```
 
 **Error:** `"No session found for this PR. Run 'powerreview open --pr-url <url>' first."`
+
+---
+
+## GetPullRequestDescription
+
+Get the full pull request description, title, metadata, reviewers, labels, and work items. Returns the complete PR context useful for understanding what the PR is about.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+
+**Returns:**
+
+```json
+{
+  "title": "Add input validation to user registration",
+  "description": "This PR adds server-side validation...",
+  "author": { "name": "John Doe", "id": "c3d4e5f6-..." },
+  "source_branch": "feature/user-validation",
+  "target_branch": "main",
+  "status": "Active",
+  "is_draft": false,
+  "merge_status": "Succeeded",
+  "created_at": "2026-03-27T10:00:00Z",
+  "closed_at": null,
+  "reviewers": [
+    { "name": "Alice Smith", "vote": 0, "is_required": true }
+  ],
+  "labels": ["backend", "validation"],
+  "work_items": [
+    { "id": 1234, "title": "Implement input validation", "url": "https://..." }
+  ]
+}
+```
+
+**Errors:**
+- `"No session found for this PR."` -- no active session
 
 ---
 
@@ -388,6 +427,43 @@ Create a draft reply to an existing remote comment thread.
   "note": "Draft reply created. The user must approve it before it can be submitted."
 }
 ```
+
+---
+
+## UpdateThreadStatus
+
+Update the status of a comment thread on the remote provider. Use this to resolve threads that have been addressed, or reactivate them.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+| `threadId` | int | Yes | The remote thread ID to update |
+| `status` | string | Yes | New thread status. One of: `active`, `fixed`, `wontfix`, `closed`, `bydesign`, `pending` |
+
+**Returns:**
+
+```json
+{
+  "thread_id": 100,
+  "status": "fixed",
+  "thread": {
+    "id": 100,
+    "file_path": "src/main.cs",
+    "line_start": 42,
+    "status": "Fixed",
+    "comments": [...]
+  }
+}
+```
+
+Valid status values: `active`, `fixed` (also accepts `resolved`), `wontfix` (also accepts `wont-fix`), `closed`, `bydesign` (also accepts `by-design`), `pending`.
+
+**Errors:**
+- `"Invalid thread status: '<value>'. Use: active, fixed, wontfix, closed, bydesign, pending"` -- unrecognized status
+- `"No session found for this PR."` -- no active session
+- Provider-specific errors (e.g., thread not found on AzDO)
 
 ---
 
