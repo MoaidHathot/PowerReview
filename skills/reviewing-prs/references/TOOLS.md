@@ -2,7 +2,7 @@
 
 Complete API documentation for all PowerReview MCP server tools.
 
-The MCP server name is `PowerReview`. All tool calls should use the format `PowerReview:<tool_name>`.
+The MCP server name is `PowerReview`. Tools are listed below by their short name (e.g., `SyncThreads`). When calling via MCP, the server may prefix the tool name depending on your MCP client configuration.
 
 All tools return JSON. Errors are returned as `{ "error": "message" }`.
 

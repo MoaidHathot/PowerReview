@@ -16,6 +16,12 @@ powerreview open --pr-url <url> --repo-path <path>
 
 All tools require `prUrl` -- the full pull request URL (Azure DevOps or GitHub format).
 
+## Tool invocation
+
+This skill assumes the AI agent is connected to the **PowerReview MCP server** (`powerreview mcp` via stdio). Tools are called by their MCP tool name (e.g., `GetReviewSession`, `CreateComment`).
+
+If using the CLI instead of MCP, each tool has an equivalent CLI command. See [references/TOOLS.md](references/TOOLS.md) for the full API reference.
+
 ## PR review workflow
 
 Follow these steps in order. Copy this checklist and track progress:
@@ -32,7 +38,7 @@ Review Progress:
 
 ### Step 1: Load the session
 
-Call `PowerReview:GetReviewSession` with the PR URL. This returns:
+Call `GetReviewSession` with the PR URL. This returns:
 
 - PR title, description, author, branches
 - Current vote status
@@ -43,11 +49,11 @@ Call `PowerReview:GetReviewSession` with the PR URL. This returns:
 
 Read the PR description carefully. Understand the intent of the change before reviewing code.
 
-Also call `PowerReview:GetWorkingDirectory` to get the filesystem path where the repository code is checked out. This tells you the working directory path, git strategy, and repo path -- useful for reading files later.
+Also call `GetWorkingDirectory` to get the filesystem path where the repository code is checked out. This tells you the working directory path, git strategy, and repo path -- useful for reading files later.
 
 ### Step 2: List changed files and discover project structure
 
-Call `PowerReview:ListChangedFiles` with the PR URL. Returns each file's:
+Call `ListChangedFiles` with the PR URL. Returns each file's:
 
 - `path` -- relative file path
 - `change_type` -- `add`, `edit`, `delete`, or `rename`
@@ -58,15 +64,15 @@ Plan the review order. Prioritize:
 2. Files with `add` or `edit` changes over `delete`
 3. Smaller focused files before large ones
 
-Use `PowerReview:ListRepositoryFiles` to understand the project structure around changed files. For example, if a file in `src/Services/` was changed, list that directory to see what other services exist and understand the architecture.
+Use `ListRepositoryFiles` to understand the project structure around changed files. For example, if a file in `src/Services/` was changed, list that directory to see what other services exist and understand the architecture.
 
 ### Step 3: Review each file's diff
 
-For each file, call `PowerReview:GetFileDiff` with `prUrl` and `filePath`.
+For each file, call `GetFileDiff` with `prUrl` and `filePath`.
 
 Returns a unified diff showing all changes. If no local git repo is available, only file metadata is returned.
 
-**Reading context beyond the diff:** Use `PowerReview:ReadFile` to read files that are not part of the PR diff but are relevant to the review. This is critical for thorough reviews:
+**Reading context beyond the diff:** Use `ReadFile` to read files that are not part of the PR diff but are relevant to the review. This is critical for thorough reviews:
 
 - Read interfaces or base classes that changed code implements
 - Read callers of modified functions to check for breaking changes
@@ -87,17 +93,17 @@ When reviewing a diff, look for:
 
 ### Step 4: Sync and check existing threads
 
-First, call `PowerReview:SyncThreads` to fetch the latest comment threads from the remote provider and check for new iterations. This ensures you have up-to-date data before reading threads.
+First, call `SyncThreads` to fetch the latest comment threads from the remote provider and check for new iterations. This ensures you have up-to-date data before reading threads.
 
 If the sync result indicates a new iteration (`iteration_check.has_new_iteration` is `true`), the PR author has pushed new commits since the last review. The changed files are listed in `iteration_check.changed_files` -- you may want to focus on those files.
 
-Then call `PowerReview:ListCommentThreads` to see existing remote comments and local drafts. Use the optional `filePath` parameter to filter by file.
+Then call `ListCommentThreads` to see existing remote comments and local drafts. Use the optional `filePath` parameter to filter by file.
 
 Avoid duplicating feedback that already exists in threads. Read existing threads to understand ongoing discussions.
 
 ### Step 5: Create draft comments
 
-For each finding, call `PowerReview:CreateComment` with:
+For each finding, call `CreateComment` with:
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -110,7 +116,7 @@ For each finding, call `PowerReview:CreateComment` with:
 | `colEnd` | No | Ending column offset |
 | `agentName` | No | Name identifying this agent (e.g. "SecurityReviewer") |
 
-To reply to an existing thread instead, call `PowerReview:ReplyToThread` with `prUrl`, `threadId`, `body`, and optionally `agentName`.
+To reply to an existing thread instead, call `ReplyToThread` with `prUrl`, `threadId`, `body`, and optionally `agentName`.
 
 #### Agent identification
 
@@ -126,7 +132,7 @@ When multiple AI agents review the same PR, use the `agentName` parameter to ide
 
 ### Step 6: Summarize
 
-After reviewing all files, check your draft counts with `PowerReview:GetDraftCounts` to confirm all comments were created. Then provide a summary to the user covering:
+After reviewing all files, check your draft counts with `GetDraftCounts` to confirm all comments were created. Then provide a summary to the user covering:
 
 - Overall assessment of the PR
 - Key findings (bugs, security, performance)
@@ -139,7 +145,7 @@ PowerReview tracks PR iterations (each push by the PR author creates a new itera
 
 ### Checking for new iterations
 
-Call `PowerReview:CheckIteration` to detect if the PR author pushed new commits since the last review. If a new iteration is found, the tool:
+Call `CheckIteration` to detect if the PR author pushed new commits since the last review. If a new iteration is found, the tool:
 
 1. Identifies which files changed between iterations using `git diff --name-only`
 2. Removes those files from the "reviewed" list (smart reset)
@@ -150,7 +156,7 @@ Files that were not modified between iterations retain their "reviewed" status.
 
 ### Viewing iteration diffs
 
-Call `PowerReview:GetIterationDiff` with `prUrl` and `filePath` to see only what changed since the last review, rather than the full PR diff. This is useful for incremental re-reviews -- you only need to check what the author changed, not re-review the entire file.
+Call `GetIterationDiff` with `prUrl` and `filePath` to see only what changed since the last review, rather than the full PR diff. This is useful for incremental re-reviews -- you only need to check what the author changed, not re-review the entire file.
 
 Requires that a review baseline exists (files must have been marked as reviewed in a previous iteration).
 
@@ -169,8 +175,8 @@ The draft lifecycle is: `Draft` -> `Pending` -> `Submitted`.
 
 If you need to revise a comment you already created:
 
-- **Edit**: Call `PowerReview:EditDraftComment` with `prUrl`, `draftId`, and `newBody`
-- **Delete**: Call `PowerReview:DeleteDraftComment` with `prUrl` and `draftId`
+- **Edit**: Call `EditDraftComment` with `prUrl`, `draftId`, and `newBody`
+- **Delete**: Call `DeleteDraftComment` with `prUrl` and `draftId`
 
 Both only work on AI-authored drafts in `Draft` status.
 

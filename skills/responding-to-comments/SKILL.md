@@ -16,6 +16,35 @@ powerreview open --pr-url <url> --repo-path <path>
 
 All tools require `prUrl` -- the full pull request URL (Azure DevOps or GitHub format).
 
+## Tool invocation
+
+This skill assumes the AI agent is connected to the **PowerReview MCP server** (`powerreview mcp` via stdio). Tools are called by their MCP tool name (e.g., `SyncThreads`, `CreateProposal`).
+
+If using the CLI instead of MCP, each tool has an equivalent CLI command. The mapping:
+
+| MCP Tool | CLI Equivalent |
+|----------|---------------|
+| `SyncThreads(prUrl)` | `powerreview sync --pr-url <url>` |
+| `ListCommentThreads(prUrl)` | `powerreview threads --pr-url <url>` |
+| `GetReviewSession(prUrl)` | `powerreview session --pr-url <url>` |
+| `ReplyToThread(prUrl, threadId, body)` | `powerreview reply --pr-url <url> --thread-id <n> --body <text>` |
+| `PrepareFixWorktree(prUrl)` | `powerreview fix-worktree prepare --pr-url <url>` |
+| `CreateFixBranch(prUrl, threadId)` | `powerreview fix-worktree create-branch --pr-url <url> --thread-id <n>` |
+| `ReadFile(prUrl, filePath)` | `powerreview read-file --pr-url <url> --file <path>` |
+| `CreateProposal(prUrl, ...)` | `powerreview proposal create --pr-url <url> --thread-id <n> --branch <b> --description <d>` |
+| `ListProposals(prUrl)` | `powerreview proposal list --pr-url <url>` |
+| `GetDraftCounts(prUrl)` | (available via `GetReviewSession` output) |
+
+User-only operations (not available as MCP tools):
+
+| Operation | CLI Command |
+|-----------|-------------|
+| Approve proposal | `powerreview proposal approve --pr-url <url> --proposal-id <id>` |
+| Apply proposal | `powerreview proposal apply --pr-url <url> --proposal-id <id> [--push]` |
+| Reject proposal | `powerreview proposal reject --pr-url <url> --proposal-id <id>` |
+| View proposal diff | `powerreview proposal diff --pr-url <url> --proposal-id <id>` |
+| Submit replies | `powerreview submit --pr-url <url>` |
+
 ## Comment response workflow
 
 When the user wants you to respond to comments on their PR, follow these steps:
@@ -31,9 +60,9 @@ Response Progress:
 
 ### Step 1: Sync and load threads
 
-1. Call `PowerReview:SyncThreads` to fetch the latest comment threads from the remote provider.
-2. Call `PowerReview:ListCommentThreads` to see all threads and their statuses.
-3. Call `PowerReview:GetReviewSession` to understand the PR context (branches, files, iteration).
+1. Call `SyncThreads` to fetch the latest comment threads from the remote provider.
+2. Call `ListCommentThreads` to see all threads and their statuses.
+3. Call `GetReviewSession` to understand the PR context (branches, files, iteration).
 
 ### Step 2: Identify new/unaddressed comments
 
@@ -61,7 +90,7 @@ Use when the comment raises a valid point but the current approach is intentiona
 
 #### For replies (Action A and C):
 
-Call `PowerReview:ReplyToThread` with:
+Call `ReplyToThread` with:
 - `prUrl` -- the pull request URL
 - `threadId` -- the thread ID to reply to
 - `body` -- the reply in markdown
@@ -75,18 +104,18 @@ Follow this sequence:
 
 1. **Prepare the worktree** (once per PR):
    ```
-   PowerReview:PrepareFixWorktree(prUrl)
+   PrepareFixWorktree(prUrl)
    ```
    Returns the worktree path where you can make changes.
 
 2. **Create a fix branch** for the specific thread:
    ```
-   PowerReview:CreateFixBranch(prUrl, threadId)
+   CreateFixBranch(prUrl, threadId)
    ```
    Returns the branch name and worktree path.
 
 3. **Make code changes** in the worktree:
-   - Read the relevant file(s) using `PowerReview:ReadFile`
+   - Read the relevant file(s) using `ReadFile`
    - Use your file editing tools to modify the files in the worktree path
    - The worktree is a separate git checkout -- changes here do NOT affect the user's working directory
 
@@ -95,13 +124,13 @@ Follow this sequence:
 
 5. **Create a reply draft** (optional but recommended):
    ```
-   PowerReview:ReplyToThread(prUrl, threadId, "Fixed: <description of what was done>")
+   ReplyToThread(prUrl, threadId, "Fixed: <description of what was done>")
    ```
    Note the returned `draft_id`.
 
 6. **Register the proposal**:
    ```
-   PowerReview:CreateProposal(prUrl, threadId, branchName, description, filesChanged, replyDraftId)
+   CreateProposal(prUrl, threadId, branchName, description, filesChanged, replyDraftId)
    ```
 
 The proposal is created as a draft. The user can:
@@ -118,7 +147,7 @@ After processing all comments, provide a summary:
 - How many proposals were created (pending user approval)
 - How many draft replies were created (pending user approval)
 
-Call `PowerReview:ListProposals` and `PowerReview:GetDraftCounts` to verify all actions were recorded.
+Call `ListProposals` and `GetDraftCounts` to verify all actions were recorded.
 
 ## Safety rules
 
