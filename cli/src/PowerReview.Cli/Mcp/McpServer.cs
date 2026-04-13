@@ -33,6 +33,8 @@ internal static class McpServer
         builder.Services.AddSingleton<SessionService>();
         builder.Services.AddSingleton(new AuthResolver(config.Auth));
         builder.Services.AddSingleton<ReviewService>();
+        builder.Services.AddSingleton<FixWorktreeService>();
+        builder.Services.AddSingleton<ProposalService>();
 
         // Register MCP server with stdio transport and tool discovery
         builder.Services

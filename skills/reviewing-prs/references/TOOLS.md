@@ -12,6 +12,8 @@ All tools return JSON. Errors are returned as `{ "error": "message" }`.
 - Sync and iteration tools (sync threads, check iteration, iteration diff)
 - Write tools (create comment, reply, edit, delete)
 - Working directory and file access tools (working directory, read file, list files)
+- Fix worktree tools (prepare worktree, get path, create branch)
+- Proposal tools (create proposal, list proposals, get proposal diff)
 
 ---
 
@@ -557,3 +559,202 @@ Hidden directories (`.git`, etc.) are automatically excluded. All paths are rela
 - `"No local git repository available for this session."` -- no repo path
 - `"Directory not found: 'path'"` -- directory does not exist
 - `"Path traversal detected: the directory path escapes the working directory."` -- security violation
+
+---
+
+## PrepareFixWorktree
+
+Prepare an isolated fix worktree for making code changes in response to PR comments. The worktree is created from the PR's source branch. Idempotent: if a worktree already exists, returns its path. Call this before creating fix branches or making code changes.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+
+**Returns:**
+
+```json
+{
+  "worktree_path": "/home/user/projects/my-repo/.power-review-fixes/42",
+  "base_branch": "feature/user-validation",
+  "created": true,
+  "note": "Fix worktree created. Use CreateFixBranch to create a branch for each fix."
+}
+```
+
+When the worktree already exists, `created` is `false`.
+
+**Errors:**
+- `"No git repository path available."` -- session was opened without a local repo
+- `"PR source branch is not set."` -- PR metadata missing source branch
+- Git worktree creation errors
+
+---
+
+## GetFixWorktreePath
+
+Get the filesystem path to the fix worktree. Returns the path where the AI agent should make code changes. Returns an error if the worktree has not been prepared yet.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+
+**Returns:**
+
+```json
+{
+  "path": "/home/user/projects/my-repo/.power-review-fixes/42"
+}
+```
+
+**Errors:**
+- `"No fix worktree exists. Call PrepareFixWorktree first."` -- worktree not yet created
+
+---
+
+## CreateFixBranch
+
+Create a new fix branch in the worktree for a specific comment thread. The branch is created from the PR's source branch and named `powerreview/fix/thread-{threadId}`. After creating the branch, make your code changes in the worktree path and commit them. Then call CreateProposal to register the fix.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+| `threadId` | int | Yes | The thread ID to create a fix branch for |
+
+**Returns:**
+
+```json
+{
+  "branch": "powerreview/fix/thread-42",
+  "worktree_path": "/home/user/projects/my-repo/.power-review-fixes/42",
+  "thread_id": 42,
+  "note": "Fix branch created. Make your changes in '/home/user/...', then: 1) git add + git commit in the worktree, 2) Call CreateProposal to register the fix."
+}
+```
+
+If the branch already exists, it is checked out.
+
+**Errors:**
+- `"No fix worktree exists. Call PrepareFixWorktree first."` -- worktree not created
+- `"Fix worktree directory does not exist."` -- worktree was deleted externally
+- Git branch creation errors
+
+---
+
+## CreateProposal
+
+Register a proposed code fix after making changes on a fix branch. The AI agent should have already: 1) Called PrepareFixWorktree, 2) Called CreateFixBranch, 3) Made code changes and committed them, 4) Optionally called ReplyToThread to create a linked reply draft. The proposal starts as a draft that the user must approve before it can be applied.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+| `threadId` | int | Yes | The remote thread ID this fix responds to |
+| `branchName` | string | Yes | Name of the fix branch holding the committed changes |
+| `description` | string | Yes | Human-readable description of what this fix does |
+| `filesChanged` | string | No | Comma-separated list of file paths that were modified |
+| `replyDraftId` | string | No | UUID of a linked reply draft (auto-approved when proposal is approved) |
+| `agentName` | string | No | Name identifying this agent |
+
+**Returns:**
+
+```json
+{
+  "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+  "proposal": {
+    "thread_id": 42,
+    "description": "Added null check for user input",
+    "status": "Draft",
+    "author": "Ai",
+    "author_name": "CodeFixer",
+    "branch_name": "powerreview/fix/thread-42",
+    "files_changed": ["src/main.cs"],
+    "reply_draft_id": "a1b2c3d4-...",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  },
+  "note": "Proposal created. The user must approve it before it can be applied to the PR branch."
+}
+```
+
+The proposal is always created with `author=Ai` and `status=Draft`.
+
+**Errors:**
+- `"Branch name is required."` -- empty branch name
+- `"Description is required."` -- empty description
+- `"Thread N not found in the session."` -- thread doesn't exist (sync threads first)
+- `"Linked reply draft not found: <id>"` -- invalid reply draft UUID
+
+---
+
+## ListProposals
+
+List all proposed code fixes and their statuses (draft, approved, applied, rejected). Includes count summaries and full proposal details.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+
+**Returns:**
+
+```json
+{
+  "counts": {
+    "draft": 2,
+    "approved": 1,
+    "applied": 0,
+    "rejected": 0,
+    "total": 3
+  },
+  "proposals": [
+    {
+      "id": "uuid-1",
+      "proposal": {
+        "thread_id": 42,
+        "description": "Fixed null check",
+        "status": "Draft",
+        "branch_name": "powerreview/fix/thread-42",
+        ...
+      }
+    }
+  ]
+}
+```
+
+---
+
+## GetProposalDiff
+
+Get the code diff for a proposed fix. Shows the changes between the fix branch and the PR source branch.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+| `proposalId` | string | Yes | The proposal UUID to get the diff for |
+
+**Returns:**
+
+```json
+{
+  "proposal_id": "uuid-1",
+  "description": "Fixed null check",
+  "branch": "powerreview/fix/thread-42",
+  "status": "Draft",
+  "diff": "diff --git a/src/main.cs b/src/main.cs\n..."
+}
+```
+
+**Errors:**
+- `"Proposal not found: <id>"` -- invalid proposal ID
+- `"No fix worktree exists."` -- worktree not created
+- Git diff errors

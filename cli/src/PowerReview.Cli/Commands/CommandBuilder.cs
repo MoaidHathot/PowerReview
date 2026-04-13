@@ -39,6 +39,8 @@ internal static class CommandBuilder
         root.Subcommands.Add(BuildReadFile(services));
         root.Subcommands.Add(BuildFileContent(services));
         root.Subcommands.Add(BuildUpdateDescription(services));
+        root.Subcommands.Add(BuildFixWorktree(services));
+        root.Subcommands.Add(BuildProposal(services));
 
         return root;
     }
@@ -1400,5 +1402,522 @@ internal static class CommandBuilder
             "pending" => ThreadStatus.Pending,
             _ => null,
         };
+    }
+
+    // =========================================================================
+    // fix-worktree commands
+    // =========================================================================
+
+    private static Command BuildFixWorktree(ServiceFactory services)
+    {
+        var cmd = new Command("fix-worktree", "Manage the fix worktree for AI agents to make code changes in response to PR comments.");
+
+        cmd.Subcommands.Add(BuildFixWorktreePrepare(services));
+        cmd.Subcommands.Add(BuildFixWorktreeCleanup(services));
+        cmd.Subcommands.Add(BuildFixWorktreePath(services));
+        cmd.Subcommands.Add(BuildFixWorktreeCreateBranch(services));
+
+        return cmd;
+    }
+
+    private static Command BuildFixWorktreePrepare(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("prepare", "Create a fix worktree for AI agents to work in. Idempotent — returns existing worktree if already created.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var result = await services.FixWorktreeService.PrepareAsync(sessionId, ct);
+                CliOutput.WriteJson(new
+                {
+                    worktree_path = result.WorktreePath,
+                    base_branch = result.BaseBranch,
+                    created = result.Created,
+                });
+            }
+            catch (FixWorktreeServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildFixWorktreeCleanup(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("cleanup", "Remove the fix worktree and clean up all fix branches.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                await services.FixWorktreeService.CleanupAsync(sessionId, ct);
+                CliOutput.WriteJson(new { cleaned = true });
+            }
+            catch (FixWorktreeServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildFixWorktreePath(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("path", "Get the fix worktree path for a PR. No auth required.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var path = services.FixWorktreeService.GetWorktreePath(sessionId);
+
+                if (path == null)
+                    return CliOutput.WriteError("No fix worktree exists for this session. Run 'fix-worktree prepare' first.");
+
+                CliOutput.WriteJson(new { path });
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildFixWorktreeCreateBranch(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var threadIdOpt = new Option<int>("--thread-id")
+        {
+            Description = "The thread ID to create a fix branch for",
+            Required = true,
+        };
+
+        var cmd = new Command("create-branch", "Create a fix branch in the worktree for a specific comment thread.")
+        {
+            prUrl, threadIdOpt
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var threadId = parseResult.GetValue(threadIdOpt);
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var branchName = await services.FixWorktreeService.CreateFixBranchAsync(sessionId, threadId, ct);
+                var worktreePath = services.FixWorktreeService.GetWorktreePath(sessionId);
+                CliOutput.WriteJson(new
+                {
+                    branch = branchName,
+                    worktree_path = worktreePath,
+                    thread_id = threadId,
+                });
+            }
+            catch (FixWorktreeServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // =========================================================================
+    // proposal commands
+    // =========================================================================
+
+    private static Command BuildProposal(ServiceFactory services)
+    {
+        var cmd = new Command("proposal", "Manage proposed code fixes from AI agents.");
+
+        cmd.Subcommands.Add(BuildProposalCreate(services));
+        cmd.Subcommands.Add(BuildProposalList(services));
+        cmd.Subcommands.Add(BuildProposalDiff(services));
+        cmd.Subcommands.Add(BuildProposalApprove(services));
+        cmd.Subcommands.Add(BuildProposalApply(services));
+        cmd.Subcommands.Add(BuildProposalReject(services));
+        cmd.Subcommands.Add(BuildProposalDelete(services));
+
+        return cmd;
+    }
+
+    private static Command BuildProposalCreate(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var threadIdOpt = new Option<int>("--thread-id")
+        {
+            Description = "The remote thread ID this proposal responds to",
+            Required = true,
+        };
+        var branchOpt = new Option<string>("--branch")
+        {
+            Description = "Name of the fix branch holding the changes",
+            Required = true,
+        };
+        var descriptionOpt = new Option<string?>("--description")
+        {
+            Description = "Description of what the fix does",
+        };
+        var descriptionStdin = new Option<bool>("--description-stdin")
+        {
+            Description = "Read description from stdin",
+        };
+        var filesOpt = new Option<string?>("--files")
+        {
+            Description = "Comma-separated list of changed file paths",
+        };
+        var author = new Option<string?>("--author")
+        {
+            Description = "Author type: 'user' or 'ai' (default: ai)",
+        };
+        var authorName = new Option<string?>("--author-name")
+        {
+            Description = "Display name for the agent that created this proposal",
+        };
+        var replyDraftId = new Option<string?>("--reply-draft-id")
+        {
+            Description = "UUID of a linked reply draft to auto-approve on proposal approval",
+        };
+
+        var cmd = new Command("create", "Register a proposed code fix. The AI agent should have already committed changes to the fix branch.")
+        {
+            prUrl, threadIdOpt, branchOpt, descriptionOpt, descriptionStdin,
+            filesOpt, author, authorName, replyDraftId
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var useStdin = parseResult.GetValue(descriptionStdin);
+
+            var desc = parseResult.GetValue(descriptionOpt);
+            if (useStdin)
+            {
+                desc = Console.In.ReadToEnd().TrimEnd();
+            }
+
+            if (string.IsNullOrWhiteSpace(desc))
+                return CliOutput.WriteUsageError("Provide --description or --description-stdin");
+
+            var authorStr = parseResult.GetValue(author);
+            DraftAuthor? draftAuthor = authorStr?.ToLowerInvariant() switch
+            {
+                "ai" => DraftAuthor.Ai,
+                "user" => DraftAuthor.User,
+                null => null,
+                _ => DraftAuthor.Ai,
+            };
+
+            var filesStr = parseResult.GetValue(filesOpt);
+            var filesList = filesStr?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var (id, proposal) = services.ProposalService.CreateProposal(sessionId, new CreateProposalRequest
+                {
+                    ThreadId = parseResult.GetValue(threadIdOpt),
+                    BranchName = parseResult.GetValue(branchOpt)!,
+                    Description = desc!,
+                    FilesChanged = filesList,
+                    Author = draftAuthor,
+                    AuthorName = parseResult.GetValue(authorName),
+                    ReplyDraftId = parseResult.GetValue(replyDraftId),
+                });
+
+                CliOutput.WriteJson(new { id, proposal });
+            }
+            catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildProposalList(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("list", "List all proposals and their statuses.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var proposals = services.ProposalService.GetProposals(sessionId);
+                var counts = services.ProposalService.GetProposalCounts(sessionId);
+
+                CliOutput.WriteJson(new
+                {
+                    counts,
+                    proposals = proposals.Select(kvp => new
+                    {
+                        id = kvp.Key,
+                        proposal = kvp.Value,
+                    }),
+                });
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildProposalDiff(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var proposalId = new Option<string>("--proposal-id")
+        {
+            Description = "The proposal UUID to get the diff for",
+            Required = true,
+        };
+
+        var cmd = new Command("diff", "View the code diff for a proposed fix.")
+        {
+            prUrl, proposalId
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var id = parseResult.GetValue(proposalId)!;
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var diff = await services.ProposalService.GetProposalDiffAsync(sessionId, id, ct);
+                var proposal = services.ProposalService.GetProposal(sessionId, id);
+
+                CliOutput.WriteJson(new
+                {
+                    proposal_id = id,
+                    description = proposal?.Proposal.Description,
+                    branch = proposal?.Proposal.BranchName,
+                    status = proposal?.Proposal.Status.ToString(),
+                    diff,
+                });
+            }
+            catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (FixWorktreeServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildProposalApprove(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var proposalId = new Option<string>("--proposal-id")
+        {
+            Description = "The proposal UUID to approve",
+            Required = true,
+        };
+
+        var cmd = new Command("approve", "Approve a proposed fix (draft -> approved). Linked reply drafts are auto-approved.")
+        {
+            prUrl, proposalId
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var id = parseResult.GetValue(proposalId)!;
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var proposal = services.ProposalService.ApproveProposal(sessionId, id);
+                CliOutput.WriteJson(new { id, proposal });
+            }
+            catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildProposalApply(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var proposalId = new Option<string>("--proposal-id")
+        {
+            Description = "The proposal UUID to apply",
+            Required = true,
+        };
+        var pushOpt = new Option<bool>("--push")
+        {
+            Description = "Push the changes to the remote after applying",
+        };
+
+        var cmd = new Command("apply", "Apply an approved proposal by cherry-picking changes into the PR branch.")
+        {
+            prUrl, proposalId, pushOpt
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var id = parseResult.GetValue(proposalId)!;
+            var push = parseResult.GetValue(pushOpt);
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var proposal = await services.ProposalService.ApplyProposalAsync(sessionId, id, push, ct);
+                CliOutput.WriteJson(new
+                {
+                    id,
+                    proposal,
+                    applied = true,
+                    pushed = push,
+                });
+            }
+            catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildProposalReject(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var proposalId = new Option<string>("--proposal-id")
+        {
+            Description = "The proposal UUID to reject",
+            Required = true,
+        };
+
+        var cmd = new Command("reject", "Reject a proposed fix (draft -> rejected).")
+        {
+            prUrl, proposalId
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var id = parseResult.GetValue(proposalId)!;
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var proposal = services.ProposalService.RejectProposal(sessionId, id);
+                CliOutput.WriteJson(new { id, proposal });
+            }
+            catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildProposalDelete(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var proposalId = new Option<string>("--proposal-id")
+        {
+            Description = "The proposal UUID to delete",
+            Required = true,
+        };
+
+        var cmd = new Command("delete", "Delete a proposed fix (only draft or rejected proposals).")
+        {
+            prUrl, proposalId
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var id = parseResult.GetValue(proposalId)!;
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                services.ProposalService.DeleteProposal(sessionId, id);
+                CliOutput.WriteJson(new { deleted = true, id });
+            }
+            catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
     }
 }

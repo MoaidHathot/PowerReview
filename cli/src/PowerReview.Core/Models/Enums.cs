@@ -106,6 +106,25 @@ public enum GitStrategy
 }
 
 /// <summary>
+/// Status of a proposed code fix in the review lifecycle.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ProposalStatus>))]
+public enum ProposalStatus
+{
+    /// <summary>Draft proposal, not yet approved.</summary>
+    Draft,
+
+    /// <summary>Approved by the user, ready to be applied.</summary>
+    Approved,
+
+    /// <summary>Successfully applied (merged into PR branch).</summary>
+    Applied,
+
+    /// <summary>Rejected by the user.</summary>
+    Rejected,
+}
+
+/// <summary>
 /// Supported PR hosting providers.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<ProviderType>))]

@@ -1,4 +1,5 @@
 using PowerReview.Cli.Mcp;
+using PowerReview.Core.Configuration;
 using PowerReview.Core.Models;
 using PowerReview.Core.Services;
 using PowerReview.Core.Store;
@@ -14,12 +15,16 @@ public class McpToolTests : IDisposable
     private readonly string _tempDir;
     private readonly SessionStore _store;
     private readonly SessionService _sessionService;
+    private readonly ProposalService _proposalService;
 
     public McpToolTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "powerreview-mcp-tests-" + Guid.NewGuid().ToString("N")[..8]);
         _store = new SessionStore(_tempDir);
         _sessionService = new SessionService(_store);
+        var config = new PowerReviewConfig();
+        var fixWorktreeService = new FixWorktreeService(_store, config);
+        _proposalService = new ProposalService(_store, _sessionService, fixWorktreeService);
     }
 
     public void Dispose()
@@ -283,5 +288,179 @@ public class McpToolTests : IDisposable
         Assert.Equal(2, json.RootElement.GetProperty("draft").GetInt32());
         Assert.Equal(1, json.RootElement.GetProperty("pending").GetInt32());
         Assert.Equal(3, json.RootElement.GetProperty("total").GetInt32());
+    }
+
+    // =========================================================================
+    // ProposalTools: CreateProposal
+    // =========================================================================
+
+    [Fact]
+    public void CreateProposal_SetsAuthorToAi()
+    {
+        CreateAndSaveTestSessionWithThreads();
+        var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
+        var sessionId = "azdo_testorg_testproject_testrepo_42";
+
+        var result = ProposalTools.CreateProposal(
+            _proposalService,
+            prUrl: prUrl,
+            threadId: 100,
+            branchName: "powerreview/fix/thread-100",
+            description: "Fixed null check",
+            filesChanged: "src/main.cs,src/utils.cs",
+            agentName: "CodeFixer");
+
+        var json = System.Text.Json.JsonDocument.Parse(result);
+        Assert.False(json.RootElement.TryGetProperty("error", out _), "Expected success but got error");
+        Assert.True(json.RootElement.TryGetProperty("id", out _));
+
+        // Verify the proposal was created with AI author
+        var session = _store.Load(sessionId)!;
+        var proposal = session.Proposals.Values.First();
+        Assert.Equal(DraftAuthor.Ai, proposal.Author);
+        Assert.Equal("CodeFixer", proposal.AuthorName);
+        Assert.Equal(100, proposal.ThreadId);
+        Assert.Equal("powerreview/fix/thread-100", proposal.BranchName);
+        Assert.Equal(2, proposal.FilesChanged.Count);
+    }
+
+    [Fact]
+    public void CreateProposal_WithLinkedReply_StoresReplyDraftId()
+    {
+        CreateAndSaveTestSessionWithThreads();
+        var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
+        var sessionId = "azdo_testorg_testproject_testrepo_42";
+
+        // Create a reply draft first
+        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            ThreadId = 100,
+            Body = "Fixed: null check added",
+            Author = DraftAuthor.Ai,
+        });
+
+        var result = ProposalTools.CreateProposal(
+            _proposalService,
+            prUrl: prUrl,
+            threadId: 100,
+            branchName: "powerreview/fix/thread-100",
+            description: "Added null check",
+            replyDraftId: replyId);
+
+        var json = System.Text.Json.JsonDocument.Parse(result);
+        Assert.False(json.RootElement.TryGetProperty("error", out _), "Expected success but got error");
+
+        var session = _store.Load(sessionId)!;
+        var proposal = session.Proposals.Values.First();
+        Assert.Equal(replyId, proposal.ReplyDraftId);
+    }
+
+    [Fact]
+    public void CreateProposal_MissingBranch_ReturnsError()
+    {
+        CreateAndSaveTestSessionWithThreads();
+        var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
+
+        var result = ProposalTools.CreateProposal(
+            _proposalService,
+            prUrl: prUrl,
+            threadId: 100,
+            branchName: "",
+            description: "Fix");
+
+        var json = System.Text.Json.JsonDocument.Parse(result);
+        Assert.True(json.RootElement.TryGetProperty("error", out _), "Expected error for empty branch");
+    }
+
+    // =========================================================================
+    // ProposalTools: ListProposals
+    // =========================================================================
+
+    [Fact]
+    public void ListProposals_ReturnsProposalsAndCounts()
+    {
+        CreateAndSaveTestSessionWithThreads();
+        var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
+        var sessionId = "azdo_testorg_testproject_testrepo_42";
+
+        // Create two proposals
+        _proposalService.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 100,
+            BranchName = "powerreview/fix/thread-100",
+            Description = "Fix 1",
+        });
+        _proposalService.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 200,
+            BranchName = "powerreview/fix/thread-200",
+            Description = "Fix 2",
+        });
+
+        var result = ProposalTools.ListProposals(_proposalService, prUrl);
+
+        var json = System.Text.Json.JsonDocument.Parse(result);
+        Assert.False(json.RootElement.TryGetProperty("error", out _), "Expected success but got error");
+        Assert.Equal(2, json.RootElement.GetProperty("counts").GetProperty("total").GetInt32());
+        Assert.Equal(2, json.RootElement.GetProperty("counts").GetProperty("draft").GetInt32());
+    }
+
+    // =========================================================================
+    // Helper to create sessions with threads
+    // =========================================================================
+
+    private ReviewSession CreateAndSaveTestSessionWithThreads()
+    {
+        var now = DateTime.UtcNow.ToString("o");
+        var session = new ReviewSession
+        {
+            Id = "azdo_testorg_testproject_testrepo_42",
+            Provider = new ProviderInfo
+            {
+                Type = ProviderType.AzDo,
+                Organization = "testorg",
+                Project = "testproject",
+                Repository = "testrepo",
+            },
+            PullRequest = new PullRequestInfo
+            {
+                Id = 42,
+                Url = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42",
+                Title = "Test PR",
+                Description = "This is a test PR description.",
+                SourceBranch = "feature/test",
+                TargetBranch = "main",
+            },
+            Files = [
+                new ChangedFile { Path = "src/main.cs", ChangeType = ChangeType.Edit },
+                new ChangedFile { Path = "src/utils.cs", ChangeType = ChangeType.Add },
+            ],
+            Threads = new ThreadsInfo
+            {
+                SyncedAt = now,
+                Items = [
+                    new CommentThread
+                    {
+                        Id = 100,
+                        FilePath = "src/main.cs",
+                        LineStart = 10,
+                        Status = ThreadStatus.Active,
+                        Comments = [new Comment { Id = 1, ThreadId = 100, Body = "Fix this" }],
+                    },
+                    new CommentThread
+                    {
+                        Id = 200,
+                        FilePath = "src/utils.cs",
+                        LineStart = 20,
+                        Status = ThreadStatus.Active,
+                        Comments = [new Comment { Id = 2, ThreadId = 200, Body = "Refactor this" }],
+                    },
+                ],
+            },
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        _store.Save(session);
+        return session;
     }
 }

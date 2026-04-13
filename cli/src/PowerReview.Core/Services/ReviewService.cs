@@ -188,6 +188,16 @@ public sealed class ReviewService
             session.Review = existing.Review;
         }
 
+        // Preserve proposals and fix worktree from existing session
+        if (existing?.Proposals?.Count > 0)
+        {
+            session.Proposals = existing.Proposals;
+        }
+        if (existing?.FixWorktree != null)
+        {
+            session.FixWorktree = existing.FixWorktree;
+        }
+
         // Step 11: Save session
         _store.Save(session);
 

@@ -395,25 +395,37 @@ Configure your AI tool's MCP settings: >json
   }
 <
 
-MCP tools (15 total):
+MCP tools (22 total):
 
   Read-only:
     GetReviewSession, ListChangedFiles, GetFileDiff,
-    ListCommentThreads, GetDraftCounts
+    ListCommentThreads, GetDraftCounts, GetPullRequestDescription
 
   Sync & iteration:
     SyncThreads, CheckIteration, GetIterationDiff
 
-  Write:
-    CreateComment, ReplyToThread, EditDraftComment, DeleteDraftComment
+  Write (drafts):
+    CreateComment, ReplyToThread, EditDraftComment, DeleteDraftComment,
+    UpdateThreadStatus
 
   File access:
     GetWorkingDirectory, ReadFile, ListRepositoryFiles
 
+  Fix worktree:
+    PrepareFixWorktree, GetFixWorktreePath, CreateFixBranch
+
+  Proposals:
+    CreateProposal, ListProposals, GetProposalDiff
+
 AI-created comments are tagged with author=ai and start as drafts
 that require user approval before submission.
 
+Proposals represent code fixes on temporary branches. The user must
+approve and apply them before changes are merged into the PR branch.
+Approve/apply/reject are user-only operations (not exposed as MCP tools).
+
 See `skills/reviewing-prs/references/TOOLS.md` for complete API docs.
+See `skills/responding-to-comments/SKILL.md` for the comment response workflow.
 
 ==============================================================================
 9. TELESCOPE & FZF-LUA                              *power-review-pickers*
@@ -467,9 +479,9 @@ The data directory is resolved in this order:
 
 SCHEMA OVERVIEW ~
                                                 *power-review-state-schema*
-The CLI outputs v4 JSON format with a nested structure (pull_request,
-provider, git, review groupings). The full schema is documented in
-`doc/session-schema.md`.
+The CLI outputs v5 JSON format with a nested structure (pull_request,
+provider, git, review, proposals groupings). The full schema is documented
+in `doc/session-schema.md`.
 
 The Neovim plugin adapter converts v4 to a flat Lua shape:
   - `pull_request.id` -> `pr_id`
@@ -497,6 +509,8 @@ The CLI re-saves the session to disk after every state-changing operation:
   - Opening, refreshing, or closing a session
   - Marking files as reviewed
   - Checking iterations
+  - Creating, approving, applying, rejecting, or deleting proposals
+  - Preparing or cleaning up fix worktrees
 
 ==============================================================================
 12. STATUSLINE                                      *power-review-statusline*

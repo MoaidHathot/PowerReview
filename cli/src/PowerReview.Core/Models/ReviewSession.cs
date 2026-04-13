@@ -4,11 +4,11 @@ namespace PowerReview.Core.Models;
 
 /// <summary>
 /// The complete review session persisted to disk.
-/// This is the v4 session format — the source of truth for all review state.
+/// This is the v5 session format — the source of truth for all review state.
 /// </summary>
 public sealed class ReviewSession
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     [JsonPropertyName("version")]
     public int Version { get; set; } = CurrentVersion;
@@ -46,6 +46,21 @@ public sealed class ReviewSession
     /// </summary>
     [JsonPropertyName("drafts")]
     public Dictionary<string, DraftComment> Drafts { get; set; } = new();
+
+    /// <summary>
+    /// Proposed code fixes keyed by UUID. Each proposal represents an AI-suggested
+    /// code change on a temporary branch, linked to a comment thread.
+    /// </summary>
+    [JsonPropertyName("proposals")]
+    public Dictionary<string, ProposedFix> Proposals { get; set; } = new();
+
+    /// <summary>
+    /// Information about the fix worktree used by AI agents to make code changes.
+    /// One worktree per PR, reused across all fixes.
+    /// Null if no fix worktree has been created.
+    /// </summary>
+    [JsonPropertyName("fix_worktree")]
+    public FixWorktreeInfo? FixWorktree { get; set; }
 
     [JsonPropertyName("vote")]
     public VoteValue? Vote { get; set; }

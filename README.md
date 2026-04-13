@@ -17,7 +17,9 @@ No business logic lives in Lua. The CLI can be used standalone or through the MC
 
 - **Draft comment workflow** -- `draft -> pending -> submitted` pipeline with human approval gate
 - **LLM safety guards** -- AI agents can only modify comments in `draft` status; `pending` and `submitted` are immutable to AI
-- **MCP server** -- 13 tools exposed via stdio for AI agents (Claude, Copilot, etc.) to review PRs autonomously
+- **MCP server** -- 22 tools exposed via stdio for AI agents (Claude, Copilot, etc.) to review PRs and respond to comments autonomously
+- **Proposed code fixes** -- AI agents can create code changes on temporary branches in response to PR comments; user reviews diffs and approves before merging
+- **Fix worktree** -- isolated git worktree for AI agents to make code changes without affecting the user's working directory
 - **Iteration tracking** -- detects when the PR author pushes new commits; smart reset preserves review status for unchanged files
 - **Review progress** -- mark files as reviewed, track progress per-file with visual indicators
 - **Rich diff views** -- native vim diff or codediff.nvim for side-by-side diffs with character-level highlighting
@@ -481,6 +483,8 @@ powerreview mark-all-reviewed --pr-url <url>
 powerreview check-iteration --pr-url <url>
 powerreview iteration-diff --pr-url <url> --file <path>
 powerreview resolve-thread --pr-url <url> --thread-id <n> --status <status>
+powerreview fix-worktree prepare|cleanup|path|create-branch ...
+powerreview proposal create|list|diff|approve|apply|reject|delete ...
 powerreview mcp
 ```
 
@@ -524,6 +528,12 @@ Configure your AI tool's MCP settings (e.g. `.mcp.json`, Claude Desktop config, 
 | `GetWorkingDirectory` | `prUrl` | Get filesystem path to the PR working directory |
 | `ReadFile` | `prUrl`, `filePath`, `offset?`, `limit?` | Read any file in the repository |
 | `ListRepositoryFiles` | `prUrl`, `directory?`, `pattern?`, `recursive?` | List/discover files in the repository |
+| `PrepareFixWorktree` | `prUrl` | Create an isolated worktree for AI code changes |
+| `GetFixWorktreePath` | `prUrl` | Get the fix worktree filesystem path |
+| `CreateFixBranch` | `prUrl`, `threadId` | Create a fix branch for a comment thread |
+| `CreateProposal` | `prUrl`, `threadId`, `branchName`, `description`, ... | Register a proposed code fix |
+| `ListProposals` | `prUrl` | List all proposals and their statuses |
+| `GetProposalDiff` | `prUrl`, `proposalId` | Get the code diff for a proposed fix |
 
 File access tools (`ReadFile`, `ListRepositoryFiles`, `GetWorkingDirectory`) let AI agents read any file in the repo for context -- not just files changed in the PR. All paths are security-validated to prevent access outside the repository root.
 
@@ -637,11 +647,12 @@ PowerReview/
       PowerReview.Core/           -- Core library (models, services, providers, auth, git, store)
       PowerReview.Cli/            -- Console app (.NET global tool)
         Commands/                 -- System.CommandLine CLI commands
-        Mcp/                      -- MCP server (stdio, 15 tools)
+        Mcp/                      -- MCP server (stdio, 22 tools)
     tests/
       PowerReview.Core.Tests/     -- xUnit tests
   skills/
     reviewing-prs/                -- AI agent instructions and MCP tool reference for PR review
+    responding-to-comments/       -- AI agent instructions for responding to PR comments with code fixes
 ```
 
 ## Health Check
@@ -662,6 +673,9 @@ Run `:checkhealth power-review` to verify your setup. It checks:
 - [ ] Additional diff providers (diffview.nvim)
 - [ ] PR description editing
 - [ ] CI/pipeline status integration
+- [ ] Neovim UI for proposals (proposal panel, approve/reject/apply keymaps)
+- [x] Proposed code fixes (AI agents respond to PR comments with code changes)
+- [x] Fix worktree (isolated worktree for AI code changes)
 - [x] fzf-lua picker support
 - [x] Thread resolution/status management
 - [x] File-level comments (not line-specific)

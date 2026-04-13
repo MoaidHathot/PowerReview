@@ -14,6 +14,8 @@ internal sealed class ServiceFactory
     private readonly Lazy<SessionStore> _store;
     private readonly Lazy<SessionService> _sessionService;
     private readonly Lazy<ReviewService> _reviewService;
+    private readonly Lazy<FixWorktreeService> _fixWorktreeService;
+    private readonly Lazy<ProposalService> _proposalService;
 
     internal ServiceFactory()
     {
@@ -25,10 +27,19 @@ internal sealed class ServiceFactory
             _sessionService.Value,
             _config.Value,
             new AuthResolver(_config.Value.Auth)));
+        _fixWorktreeService = new Lazy<FixWorktreeService>(() => new FixWorktreeService(
+            _store.Value,
+            _config.Value));
+        _proposalService = new Lazy<ProposalService>(() => new ProposalService(
+            _store.Value,
+            _sessionService.Value,
+            _fixWorktreeService.Value));
     }
 
     internal PowerReviewConfig Config => _config.Value;
     internal SessionStore Store => _store.Value;
     internal SessionService SessionService => _sessionService.Value;
     internal ReviewService ReviewService => _reviewService.Value;
+    internal FixWorktreeService FixWorktreeService => _fixWorktreeService.Value;
+    internal ProposalService ProposalService => _proposalService.Value;
 }

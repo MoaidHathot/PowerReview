@@ -1,4 +1,4 @@
-# PowerReview Session File Schema (v4)
+# PowerReview Session File Schema (v5)
 
 This document defines the JSON schema for PowerReview session state files as stored by the CLI tool.
 External tools that create or consume these files **must** conform to this specification.
@@ -40,11 +40,11 @@ Writes are atomic: data is written to a `.tmp` file first, then renamed to the f
 
 ## Top-Level Object: `ReviewSession`
 
-The v4 format uses a nested structure with logical groupings.
+The v5 format uses a nested structure with logical groupings.
 
 | Field          | Type                             | Required | Description                                           |
 |----------------|----------------------------------|----------|-------------------------------------------------------|
-| `version`      | `number`                         | yes      | Schema version. Must be `4`.                          |
+| `version`      | `number`                         | yes      | Schema version. Must be `5`.                          |
 | `id`           | `string`                         | yes      | Session identifier.                                   |
 | `provider`     | `ProviderInfo`                   | yes      | Provider metadata.                                    |
 | `pull_request` | `PullRequestInfo`                | yes      | PR metadata.                                          |
@@ -54,6 +54,8 @@ The v4 format uses a nested structure with logical groupings.
 | `files`        | `ChangedFile[]`                  | yes      | List of files changed in the PR.                      |
 | `threads`      | `ThreadsInfo`                    | yes      | Remote comment threads.                               |
 | `drafts`       | `object`                         | yes      | Local draft comments. Map of `{uuid: DraftComment}`.  |
+| `proposals`    | `object`                         | yes      | Proposed code fixes. Map of `{uuid: ProposedFix}`.    |
+| `fix_worktree` | `FixWorktreeInfo \| null`        | no       | Fix worktree info for AI code changes, or `null`.     |
 | `vote`         | `string \| null`                 | yes      | Review vote enum string, or `null`.                   |
 | `created_at`   | `string`                         | yes      | ISO 8601 UTC timestamp of session creation.           |
 | `updated_at`   | `string`                         | yes      | ISO 8601 UTC timestamp of last modification.          |
@@ -423,13 +425,88 @@ In the `drafts` map:
 
 ---
 
-## Full Example
+## `ProposedFix` Object
 
-A complete v4 session file:
+A proposed code fix created by an AI agent in response to a PR comment. Stored as values in the `proposals` map, keyed by UUID. Each proposal represents code changes on a temporary branch that must be approved before being applied (merged into the PR source branch).
+
+Proposals follow a lifecycle: `draft` -> `approved` -> `applied` (or `rejected`).
+
+| Field               | Type             | Required | Description                                                                  |
+|---------------------|------------------|----------|------------------------------------------------------------------------------|
+| `thread_id`         | `number`         | yes      | Remote thread ID this proposal responds to.                                  |
+| `description`       | `string`         | yes      | Human-readable description of what the fix does.                             |
+| `status`            | `string`         | yes      | Proposal lifecycle status. See Proposal Status Values.                       |
+| `author`            | `string`         | yes      | Who created the proposal. See Draft Author Values.                           |
+| `author_name`       | `string \| null` | no       | Display name of the agent (e.g. "CodeFixer").                                |
+| `branch_name`       | `string`         | yes      | Temporary branch holding the fix commits (e.g. `powerreview/fix/thread-42`). |
+| `files_changed`     | `string[]`       | yes      | List of file paths modified by this fix.                                     |
+| `reply_draft_id`    | `string \| null` | no       | UUID of a linked draft reply. Auto-approved when proposal is approved.       |
+| `created_at`        | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
+| `updated_at`        | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
+
+> **Note**: The proposal's UUID is the *key* in the `proposals` map, not a field in the object itself.
+
+### Proposal Status Values
+
+| Value         | Description                                                        |
+|---------------|--------------------------------------------------------------------|
+| `"draft"`     | AI-created, awaiting user review. Can be modified or deleted.      |
+| `"approved"`  | Approved by the user, ready to be applied (merged into PR branch). |
+| `"applied"`   | Successfully applied (cherry-picked into the PR source branch).    |
+| `"rejected"`  | Rejected by the user. Can be deleted.                              |
+
+### Example
+
+In the `proposals` map:
 
 ```json
 {
-  "version": 4,
+  "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e": {
+    "thread_id": 100,
+    "description": "Added null check for user input as requested",
+    "status": "draft",
+    "author": "ai",
+    "author_name": "CodeFixer",
+    "branch_name": "powerreview/fix/thread-100",
+    "files_changed": ["src/handlers/register.lua"],
+    "reply_draft_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "created_at": "2026-03-27T13:00:00Z",
+    "updated_at": "2026-03-27T13:00:00Z"
+  }
+}
+```
+
+---
+
+## `FixWorktreeInfo` Object
+
+Information about the isolated fix worktree used by AI agents to make code changes without affecting the user's working directory. One worktree per PR, reused across all fixes.
+
+| Field           | Type     | Required | Description                                              |
+|-----------------|----------|----------|----------------------------------------------------------|
+| `path`          | `string` | yes      | Filesystem path to the fix worktree directory.            |
+| `base_branch`   | `string` | yes      | The PR source branch this worktree was created from.      |
+| `created_at`    | `string` | yes      | ISO 8601 UTC timestamp of worktree creation.              |
+
+### Example
+
+```json
+{
+  "path": "/home/user/projects/my-repo/.power-review-fixes/42",
+  "base_branch": "feature/user-validation",
+  "created_at": "2026-03-27T13:00:00Z"
+}
+```
+
+---
+
+## Full Example
+
+A complete v5 session file:
+
+```json
+{
+  "version": 5,
   "id": "azdo_my-org_my-project_my-repo_42",
   "provider": {
     "type": "azdo",
@@ -593,7 +670,35 @@ A complete v4 session file:
       "parent_comment_id": 200,
       "created_at": "2026-03-27T12:30:00Z",
       "updated_at": "2026-03-27T12:45:00Z"
+    },
+    "d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a": {
+      "body": "Fixed: added null check for user input as requested.",
+      "status": "draft",
+      "author": "ai",
+      "author_name": "CodeFixer",
+      "thread_id": 100,
+      "created_at": "2026-03-27T13:00:00Z",
+      "updated_at": "2026-03-27T13:00:00Z"
     }
+  },
+  "proposals": {
+    "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e": {
+      "thread_id": 100,
+      "description": "Added null check for user input in registration handler",
+      "status": "draft",
+      "author": "ai",
+      "author_name": "CodeFixer",
+      "branch_name": "powerreview/fix/thread-100",
+      "files_changed": ["src/handlers/register.lua"],
+      "reply_draft_id": "d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a",
+      "created_at": "2026-03-27T13:00:00Z",
+      "updated_at": "2026-03-27T13:00:00Z"
+    }
+  },
+  "fix_worktree": {
+    "path": "/home/user/projects/my-repo/.power-review-fixes/42",
+    "base_branch": "feature/user-validation",
+    "created_at": "2026-03-27T12:55:00Z"
   },
   "vote": "no_vote",
   "created_at": "2026-03-27T10:00:00Z",
@@ -616,6 +721,13 @@ A complete v4 session file:
 - The `drafts` is a **map** keyed by UUID, not an array. Each draft's UUID is the key.
   - First draft: new standalone comment (status `"draft"`, no `thread_id`).
   - Second draft: reply to existing thread (status `"pending"`, `thread_id` and `parent_comment_id` set).
+  - Third draft: AI-authored reply linked to a proposal (`author` is `"ai"`, `author_name` identifies the agent).
+- The `proposals` map contains one proposed code fix by an AI agent. The proposal:
+  - Responds to thread 100 (`thread_id` = 100).
+  - Has committed changes on branch `powerreview/fix/thread-100`.
+  - Links to the third draft reply via `reply_draft_id` (when approved, the reply is auto-approved too).
+  - Is in `"draft"` status, awaiting user review and approval.
+- The `fix_worktree` records the isolated worktree where the AI agent made its code changes.
 
 ---
 
@@ -666,6 +778,13 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v4 format
 - Existing v3 sessions are migrated automatically: a default empty `ReviewState` is inserted with `reviewed_files: []`, `changed_since_review: []`, and null `reviewed_iteration_id` / `reviewed_source_commit`.
 - No other fields are changed. The migration is non-destructive.
 
+### v4 -> v5
+
+- Added the `proposals` object (type `Map<UUID, ProposedFix>`) for tracking AI-proposed code fixes.
+- Added the `fix_worktree` object (type `FixWorktreeInfo | null`) for the isolated worktree used by AI agents.
+- Existing v4 sessions are migrated automatically: `proposals` defaults to an empty map `{}`, `fix_worktree` defaults to `null`.
+- No other fields are changed. The migration is non-destructive.
+
 ---
 
 ## Refresh Semantics
@@ -677,6 +796,7 @@ When a session is refreshed (`dnx PowerReview -- open --pr-url ...` on existing 
 - **Threads** are fully replaced with fresh data from the provider.
 - **Review state** undergoes smart reset: if the iteration changed, files that were modified between iterations lose their "reviewed" mark; unchanged files retain it. `changed_since_review` is recomputed.
 - **Drafts** are preserved. They are never affected by refresh operations.
+- **Proposals** and **fix worktree** are preserved. They are never affected by refresh operations.
 
 When only threads are synced (`dnx PowerReview -- sync --pr-url ...`):
 

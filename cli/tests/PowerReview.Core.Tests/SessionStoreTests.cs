@@ -77,7 +77,7 @@ public class SessionStoreTests : IDisposable
 
         Assert.NotNull(loaded);
         Assert.Equal("test-session", loaded.Id);
-        Assert.Equal(4, loaded.Version);
+        Assert.Equal(5, loaded.Version);
         Assert.Equal(ProviderType.AzDo, loaded.Provider.Type);
         Assert.Equal("testorg", loaded.Provider.Organization);
         Assert.Equal(42, loaded.PullRequest.Id);
@@ -185,5 +185,42 @@ public class SessionStoreTests : IDisposable
         var id = ReviewSession.ComputeId(ProviderType.AzDo, "my org", "my project", "my repo", 1);
         Assert.DoesNotContain(" ", id);
         Assert.Matches("^[a-z0-9_-]+$", id);
+    }
+
+    // --- Migration ---
+
+    [Fact]
+    public void Load_MigratesV4ToV5_AddsProposalsAndFixWorktree()
+    {
+        // Create a v4-style session (manually set version to 4)
+        var now = DateTime.UtcNow.ToString("o");
+        var session = new ReviewSession
+        {
+            Id = "migration-test",
+            Version = 4,
+            Provider = new ProviderInfo { Type = ProviderType.AzDo, Organization = "org", Project = "proj", Repository = "repo" },
+            PullRequest = new PullRequestInfo { Id = 1, Title = "Test" },
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+
+        // Save as v4 (bypass normal save which sets version)
+        var json = System.Text.Json.JsonSerializer.Serialize(session, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            PropertyNameCaseInsensitive = true,
+        });
+        Directory.CreateDirectory(Path.GetDirectoryName(_store.GetSessionPath("migration-test"))!);
+        File.WriteAllText(_store.GetSessionPath("migration-test"), json);
+
+        // Load should trigger migration
+        var loaded = _store.Load("migration-test");
+
+        Assert.NotNull(loaded);
+        Assert.Equal(5, loaded.Version);
+        Assert.NotNull(loaded.Proposals);
+        Assert.Empty(loaded.Proposals);
+        Assert.Null(loaded.FixWorktree);
     }
 }

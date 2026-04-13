@@ -21,6 +21,15 @@ public static class SessionMigration
             session.Review ??= new ReviewState();
         }
 
+        // v4 -> v5: Add Proposals and FixWorktree for incoming comment response system.
+        // Both properties have default values (empty dictionary, null),
+        // so existing v4 sessions automatically get valid defaults when deserialized.
+        if (session.Version < 5)
+        {
+            session.Proposals ??= new Dictionary<string, ProposedFix>();
+            // FixWorktree is nullable, defaults to null — no action needed
+        }
+
         session.Version = ReviewSession.CurrentVersion;
         return session;
     }
