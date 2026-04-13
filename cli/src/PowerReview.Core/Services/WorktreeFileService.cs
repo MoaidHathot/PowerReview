@@ -12,6 +12,10 @@ public sealed class WorktreeFileService
     /// </summary>
     public static string? ResolveSecurePath(string rootPath, string relativePath)
     {
+        // Normalize backslashes to forward slashes so Windows-style paths
+        // are handled correctly on all platforms (Linux treats \ as literal).
+        relativePath = relativePath.Replace('\\', '/');
+
         // Normalize the root path to an absolute path with trailing separator
         var normalizedRoot = Path.GetFullPath(rootPath);
         if (!normalizedRoot.EndsWith(Path.DirectorySeparatorChar))
