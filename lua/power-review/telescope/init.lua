@@ -64,7 +64,7 @@ function M.changed_files(opts)
   -- Review progress for prompt title
   local progress = helpers.get_review_progress(session)
   local progress_suffix = ""
-  if progress.total > 0 and (progress.reviewed > 0 or progress.changed > 0) then
+  if progress.total > 0 then
     progress_suffix = string.format(" [%d/%d reviewed]", progress.reviewed, progress.total)
   end
 

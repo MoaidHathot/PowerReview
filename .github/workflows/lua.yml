@@ -1,0 +1,46 @@
+name: Lua CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  stylua:
+    name: StyLua Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check .
+
+  test:
+    name: Lua Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        neovim-version: ["v0.10.0", "stable", "nightly"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.neovim-version }}
+
+      - name: Install LuaJIT and LuaRocks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luajit luarocks
+          sudo luarocks install busted
+
+      - name: Run busted unit tests
+        run: busted
+
+      - name: Run Neovim integration tests
+        run: nvim --headless -l tests/nvim/run.lua

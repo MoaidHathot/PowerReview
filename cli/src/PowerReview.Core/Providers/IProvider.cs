@@ -68,6 +68,11 @@ public interface IProvider
     /// Update the status of an existing comment thread (e.g., resolve, reactivate).
     /// </summary>
     Task<CommentThread> UpdateThreadStatusAsync(int prId, int threadId, ThreadStatus status, CancellationToken ct = default);
+
+    /// <summary>
+    /// Update the pull request description.
+    /// </summary>
+    Task UpdatePullRequestDescriptionAsync(int prId, string description, CancellationToken ct = default);
 }
 
 /// <summary>

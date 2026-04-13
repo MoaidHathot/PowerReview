@@ -11,7 +11,7 @@ function M.check()
   if ver_err then
     vim.health.error(ver_err)
   else
-    vim.health.ok(string.format("Neovim %s (>= 0.10.0 required)", version.format_current()))
+    vim.health.ok(string.format("Neovim %s (>= 0.10.0 required)", version.format(vim.version())))
   end
 
   -- 2. CLI tool reachability

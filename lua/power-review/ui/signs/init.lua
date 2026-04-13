@@ -53,18 +53,14 @@ M.build_indicators = indicators_mod.build
 
 function M.attach(bufnr, file_path, session)
   attach_mod.attach(bufnr, file_path, session, indicators_mod.build, extmarks.set_indicators)
-  -- Keep reference in sync
-  M._attached_bufs = attach_mod.attached_bufs
 end
 
 function M.detach(bufnr)
   attach_mod.detach(bufnr, extmarks.ns)
-  M._attached_bufs = attach_mod.attached_bufs
 end
 
 function M.detach_all()
   attach_mod.detach_all(extmarks.ns)
-  M._attached_bufs = attach_mod.attached_bufs
 end
 
 function M.refresh()

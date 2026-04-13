@@ -23,6 +23,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="PowerReview.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="..\..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 

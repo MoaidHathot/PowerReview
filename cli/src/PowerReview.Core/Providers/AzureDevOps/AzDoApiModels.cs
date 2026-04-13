@@ -262,6 +262,56 @@ internal static class AzDoApiModels
         [JsonPropertyName("uniqueName")]
         public string? UniqueName { get; set; }
     }
+
+    // --- Work Items ---
+
+    /// <summary>
+    /// Response from GET _apis/git/pullRequests/{id}/workitems
+    /// </summary>
+    internal sealed class WorkItemRefResponse
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        [JsonPropertyName("url")]
+        public string? Url { get; set; }
+    }
+
+    /// <summary>
+    /// Response from GET _apis/wit/workitems?ids=...
+    /// </summary>
+    internal sealed class WorkItemDetailResponse
+    {
+        [JsonPropertyName("id")]
+        public int Id { get; set; }
+
+        [JsonPropertyName("fields")]
+        public WorkItemFields? Fields { get; set; }
+
+        [JsonPropertyName("_links")]
+        public WorkItemLinks? Links { get; set; }
+    }
+
+    internal sealed class WorkItemFields
+    {
+        [JsonPropertyName("System.Title")]
+        public string? Title { get; set; }
+
+        [JsonPropertyName("System.WorkItemType")]
+        public string? WorkItemType { get; set; }
+    }
+
+    internal sealed class WorkItemLinks
+    {
+        [JsonPropertyName("html")]
+        public WorkItemLinkRef? Html { get; set; }
+    }
+
+    internal sealed class WorkItemLinkRef
+    {
+        [JsonPropertyName("href")]
+        public string? Href { get; set; }
+    }
 }
 
 /// <summary>

@@ -441,6 +441,23 @@ function M.sync(pr_url, callback)
   end, { timeout = config.get().cli.timeouts.sync })
 end
 
+--- Refresh a session from the remote (lighter than re-open, no git worktree setup).
+---@param pr_url string
+---@param callback fun(err?: string, session?: PowerReview.ReviewSession)
+function M.refresh(pr_url, callback)
+  M.run_async({ "refresh", "--pr-url", pr_url }, function(err, result)
+    if err then
+      callback(err)
+      return
+    end
+    local session_file_path = result.session_file_path
+    local raw_session = result.session or result
+    local session = M.adapt_session(raw_session)
+    session._session_file_path = session_file_path
+    callback(nil, session)
+  end, { timeout = config.get().cli.timeouts.open })
+end
+
 --- Close a review session.
 ---@param pr_url string
 ---@param callback fun(err?: string)

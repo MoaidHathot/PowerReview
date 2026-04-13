@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PowerReview.Core\PowerReview.Core.csproj" />
+    <ProjectReference Include="..\..\src\PowerReview.Cli\PowerReview.Cli.csproj" />
   </ItemGroup>
 
 </Project>

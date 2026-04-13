@@ -26,6 +26,7 @@ internal static class CommandBuilder
         root.Subcommands.Add(BuildSubmit(services));
         root.Subcommands.Add(BuildVote(services));
         root.Subcommands.Add(BuildSync(services));
+        root.Subcommands.Add(BuildRefresh(services));
         root.Subcommands.Add(BuildClose(services));
         root.Subcommands.Add(BuildSessions(services));
         root.Subcommands.Add(BuildConfig(services));
@@ -36,6 +37,8 @@ internal static class CommandBuilder
         root.Subcommands.Add(BuildIterationDiff(services));
         root.Subcommands.Add(BuildWorkingDir(services));
         root.Subcommands.Add(BuildReadFile(services));
+        root.Subcommands.Add(BuildFileContent(services));
+        root.Subcommands.Add(BuildUpdateDescription(services));
 
         return root;
     }
@@ -318,6 +321,8 @@ internal static class CommandBuilder
         cmd.Subcommands.Add(BuildCommentApprove(services));
         cmd.Subcommands.Add(BuildCommentApproveAll(services));
         cmd.Subcommands.Add(BuildCommentUnapprove(services));
+        cmd.Subcommands.Add(BuildCommentUpdateRemote(services));
+        cmd.Subcommands.Add(BuildCommentDeleteRemote(services));
 
         return cmd;
     }
@@ -561,6 +566,90 @@ internal static class CommandBuilder
         return cmd;
     }
 
+    private static Command BuildCommentUpdateRemote(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var threadIdOpt = new Option<int>("--thread-id") { Description = "Remote thread ID", Required = true };
+        var commentIdOpt = new Option<int>("--comment-id") { Description = "Remote comment ID", Required = true };
+        var body = new Option<string?>("--body") { Description = "New comment body text" };
+        var bodyStdin = new Option<bool>("--body-stdin") { Description = "Read new body from stdin" };
+
+        var cmd = new Command("update-remote", "Update a published comment on the remote provider. Auth required.")
+        {
+            prUrl, threadIdOpt, commentIdOpt, body, bodyStdin
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var threadId = parseResult.GetValue(threadIdOpt);
+            var commentId = parseResult.GetValue(commentIdOpt);
+            var useStdin = parseResult.GetValue(bodyStdin);
+
+            var newBody = parseResult.GetValue(body);
+            if (useStdin)
+            {
+                newBody = Console.In.ReadToEnd().TrimEnd();
+            }
+
+            if (newBody == null)
+                return CliOutput.WriteUsageError("Provide --body or --body-stdin");
+
+            try
+            {
+                var result = await services.ReviewService.UpdateRemoteCommentAsync(url, threadId, commentId, newBody, ct);
+                CliOutput.WriteJson(new { updated = true, thread_id = threadId, comment_id = commentId, comment = result });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildCommentDeleteRemote(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var threadIdOpt = new Option<int>("--thread-id") { Description = "Remote thread ID", Required = true };
+        var commentIdOpt = new Option<int>("--comment-id") { Description = "Remote comment ID", Required = true };
+
+        var cmd = new Command("delete-remote", "Delete a published comment from the remote provider. Auth required.")
+        {
+            prUrl, threadIdOpt, commentIdOpt
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var threadId = parseResult.GetValue(threadIdOpt);
+            var commentId = parseResult.GetValue(commentIdOpt);
+
+            try
+            {
+                await services.ReviewService.DeleteRemoteCommentAsync(url, threadId, commentId, ct);
+                CliOutput.WriteJson(new { deleted = true, thread_id = threadId, comment_id = commentId });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
     // --- reply ---
 
     private static Command BuildReply(ServiceFactory services)
@@ -720,6 +809,39 @@ internal static class CommandBuilder
                     thread_count = result.ThreadCount,
                     iteration_check = result.IterationCheck,
                 });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- refresh ---
+
+    private static Command BuildRefresh(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("refresh", "Refresh the session from the remote provider. Re-fetches PR metadata, files, and threads. Auth required.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var session = await services.ReviewService.RefreshAsync(url, ct);
+                var sessionFilePath = services.Store.GetSessionPath(session.Id);
+                CliOutput.WriteJson(new { session_file_path = sessionFilePath, session });
             }
             catch (ReviewServiceException ex)
             {
@@ -1134,6 +1256,98 @@ internal static class CommandBuilder
                 });
             }
             catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- file-content ---
+
+    private static Command BuildFileContent(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var file = new Option<string>("--file")
+        {
+            Description = "Relative file path within the repository",
+            Required = true,
+        };
+        var branch = new Option<string>("--branch")
+        {
+            Description = "Branch to read from (e.g. 'main', 'feature/xyz'). Uses the target branch by default.",
+            Required = true,
+        };
+
+        var cmd = new Command("file-content", "Read the content of a file at a specific branch from the remote provider. Auth required.")
+        {
+            prUrl, file, branch
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var filePath = parseResult.GetValue(file)!;
+            var branchName = parseResult.GetValue(branch)!;
+
+            try
+            {
+                var content = await services.ReviewService.GetFileContentAsync(url, filePath, branchName, ct);
+                CliOutput.WriteJson(new { file = filePath, branch = branchName, content });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // --- update-description ---
+
+    private static Command BuildUpdateDescription(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var body = new Option<string?>("--body") { Description = "New PR description body text" };
+        var bodyStdin = new Option<bool>("--body-stdin") { Description = "Read description body from stdin" };
+
+        var cmd = new Command("update-description", "Update the PR description on the remote provider. Auth required.")
+        {
+            prUrl, body, bodyStdin
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var useStdin = parseResult.GetValue(bodyStdin);
+
+            var newBody = parseResult.GetValue(body);
+            if (useStdin)
+            {
+                newBody = Console.In.ReadToEnd().TrimEnd();
+            }
+
+            if (newBody == null)
+                return CliOutput.WriteUsageError("Provide --body or --body-stdin");
+
+            try
+            {
+                await services.ReviewService.UpdateDescriptionAsync(url, newBody, ct);
+                CliOutput.WriteJson(new { updated = true });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
             {
                 return CliOutput.WriteError(ex.Message);
             }

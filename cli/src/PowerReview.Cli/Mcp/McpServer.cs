@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -40,7 +41,7 @@ internal static class McpServer
                 options.ServerInfo = new()
                 {
                     Name = "PowerReview",
-                    Version = "0.1.0",
+                    Version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0",
                 };
             })
             .WithStdioServerTransport()

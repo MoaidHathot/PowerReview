@@ -79,14 +79,20 @@ function M.get()
     table.insert(parts, string.format("#%d", session.reviewed_iteration_id))
   end
 
-  -- Review progress (if any files have been reviewed)
-  if progress.total > 0 and (progress.reviewed > 0 or progress.changed > 0) then
+  -- Review progress (if any files have been reviewed or changed)
+  if progress.total > 0 then
+    local reviewed = progress.reviewed or 0
+    local unreviewed = progress.total - reviewed
     local prog_parts = {}
-    table.insert(prog_parts, string.format("%d/%d", progress.reviewed, progress.total))
+    table.insert(prog_parts, string.format("%d/%d", reviewed, progress.total))
     if progress.changed > 0 then
       table.insert(prog_parts, string.format("%d", progress.changed))
     end
-    table.insert(parts, "[" .. table.concat(prog_parts, " ") .. "]")
+    local bracket = "[" .. table.concat(prog_parts, " ") .. "]"
+    if unreviewed > 0 then
+      bracket = bracket .. string.format(" %d unreviewed", unreviewed)
+    end
+    table.insert(parts, bracket)
   end
 
   -- Draft counts (only if there are any)

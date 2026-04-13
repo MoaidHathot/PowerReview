@@ -36,7 +36,6 @@ function M.setup_keymaps()
 
   local ui = require("power-review.ui")
   local review = require("power-review.review")
-  local store = require("power-review.store")
 
   local function map(mode, lhs, rhs, desc)
     if lhs and lhs ~= false then
@@ -46,53 +45,13 @@ function M.setup_keymaps()
 
   -- Open review: prompt for URL or pick from saved sessions
   map("n", keymaps.open_review, function()
-    local function prompt_for_url()
-      vim.ui.input({ prompt = "PR URL: " }, function(url)
-        if url and url ~= "" then
-          review.start_review(url, function(err, session)
-            if err then
-              vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-            else
-              vim.notify("[PowerReview] Review started: " .. session.pr_title, vim.log.levels.INFO)
-            end
-          end)
-        end
-      end)
-    end
-
-    local sessions = store.list()
-    if #sessions == 0 then
-      prompt_for_url()
-    else
-      -- Add a "New review..." option at the top of the session list
-      local choices = { { id = "__new__", label = " Enter a new PR URL..." } }
-      for _, s in ipairs(sessions) do
-        table.insert(choices, s)
+    review.open_or_resume(nil, function(err, session)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      elseif session then
+        vim.notify("[PowerReview] Review started: " .. session.pr_title, vim.log.levels.INFO)
       end
-
-      vim.ui.select(choices, {
-        prompt = "Select review session or start new:",
-        format_item = function(item)
-          if item.id == "__new__" then
-            return item.label
-          end
-          return string.format("[%s] PR #%d: %s (%d drafts)", item.provider_type, item.pr_id, item.pr_title, item.draft_count)
-        end,
-      }, function(selected)
-        if not selected then
-          return
-        end
-        if selected.id == "__new__" then
-          prompt_for_url()
-          return
-        end
-        review.resume_session(selected.id, function(err)
-          if err then
-            vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-          end
-        end)
-      end)
-    end
+    end)
   end, "Open/resume review")
 
   -- List saved sessions
@@ -173,7 +132,7 @@ function M.setup_keymaps()
 
   -- Close review session
   map("n", keymaps.close_review, function()
-    M.api.close_review()
+    vim.cmd("PowerReview close")
   end, "Close review session")
 
   -- Delete a saved review session
@@ -208,79 +167,22 @@ function M.setup_keymaps()
 
   -- Mark current file as reviewed / toggle reviewed
   map("n", keymaps.mark_reviewed, function()
-    if not M.get_current_session() then
-      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
-      return
-    end
-    -- Try to resolve file path from current buffer
-    local signs_mod = require("power-review.ui.signs")
-    local bufnr = vim.api.nvim_get_current_buf()
-    local info = signs_mod._attached_bufs[bufnr]
-    local file_path = info and info.file_path
-    if not file_path then
-      file_path = signs_mod._resolve_review_file_path(bufnr, M.get_current_session())
-    end
-    if not file_path then
-      vim.notify("[PowerReview] Cannot determine file path for this buffer", vim.log.levels.WARN)
-      return
-    end
-    review.toggle_reviewed(file_path, function(err)
-      if err then
-        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-      end
-    end)
+    vim.cmd("PowerReview mark_reviewed")
   end, "Toggle file reviewed status")
 
   -- Mark all files as reviewed
   map("n", keymaps.mark_all_reviewed, function()
-    if not M.get_current_session() then
-      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
-      return
-    end
-    review.mark_all_reviewed(function(err)
-      if err then
-        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-      else
-        vim.notify("[PowerReview] All files marked as reviewed", vim.log.levels.INFO)
-      end
-    end)
+    vim.cmd("PowerReview mark_all_reviewed")
   end, "Mark all files reviewed")
 
   -- Check for new iterations
   map("n", keymaps.check_iteration, function()
-    if not M.get_current_session() then
-      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
-      return
-    end
-    review.check_iteration(function(err)
-      if err then
-        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-      end
-    end)
+    vim.cmd("PowerReview check_iteration")
   end, "Check for new iterations")
 
   -- Open iteration diff for current file
   map("n", keymaps.iteration_diff, function()
-    if not M.get_current_session() then
-      vim.notify("[PowerReview] No active review session", vim.log.levels.WARN)
-      return
-    end
-    local signs_mod = require("power-review.ui.signs")
-    local bufnr = vim.api.nvim_get_current_buf()
-    local info = signs_mod._attached_bufs[bufnr]
-    local file_path = info and info.file_path
-    if not file_path then
-      file_path = signs_mod._resolve_review_file_path(bufnr, M.get_current_session())
-    end
-    if not file_path then
-      vim.notify("[PowerReview] Cannot determine file path for this buffer", vim.log.levels.WARN)
-      return
-    end
-    review.iteration_diff(file_path, function(err)
-      if err then
-        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-      end
-    end)
+    vim.cmd("PowerReview iteration_diff")
   end, "Iteration diff for current file")
 
   -- Navigate to next/prev unreviewed file

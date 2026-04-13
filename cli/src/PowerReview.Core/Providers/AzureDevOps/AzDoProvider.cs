@@ -103,6 +103,18 @@ public sealed class AzDoProvider : IProvider
         response.EnsureSuccessStatusCode();
     }
 
+    /// <summary>
+    /// Make a GET request to an org-level URL (not scoped to repository).
+    /// Used for wit/workitems and connectionData endpoints.
+    /// </summary>
+    private async Task<T> GetOrgLevelAsync<T>(string fullPath, CancellationToken ct = default)
+    {
+        var url = $"https://dev.azure.com/{Uri.EscapeDataString(_org)}{fullPath}";
+        var response = await _http.GetAsync(url, ct);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<T>(JsonOptions, ct))!;
+    }
+
     // =========================================================================
     // Get Pull Request
     // =========================================================================
@@ -110,7 +122,57 @@ public sealed class AzDoProvider : IProvider
     public async Task<PullRequest> GetPullRequestAsync(int prId, CancellationToken ct = default)
     {
         var data = await GetAsync<AzDoApiModels.PullRequestResponse>($"/pullrequests/{prId}", ct: ct);
-        return MapPullRequest(data);
+        var pr = MapPullRequest(data);
+
+        // Fetch linked work items (non-critical, separate API call)
+        try
+        {
+            var workItemRefs = await GetAsync<AzDoApiModels.ListResponse<AzDoApiModels.WorkItemRefResponse>>(
+                $"/pullrequests/{prId}/workitems", ct: ct);
+
+            if (workItemRefs.Value is { Count: > 0 })
+            {
+                var ids = workItemRefs.Value
+                    .Where(r => r.Id != null)
+                    .Select(r => r.Id!)
+                    .ToList();
+
+                if (ids.Count > 0)
+                {
+                    // Fetch work item details (titles) from the wit API
+                    // This uses the org-level API, not the repo-level one
+                    try
+                    {
+                        var idsParam = string.Join(",", ids);
+                        var witResponse = await GetOrgLevelAsync<AzDoApiModels.ListResponse<AzDoApiModels.WorkItemDetailResponse>>(
+                            $"/_apis/wit/workitems?ids={idsParam}&fields=System.Title,System.WorkItemType&api-version={_apiVersion}", ct);
+
+                        pr.WorkItems = witResponse.Value?.Select(wi => new WorkItem
+                        {
+                            Id = wi.Id,
+                            Title = wi.Fields?.Title ?? "",
+                            Url = wi.Links?.Html?.Href ?? "",
+                        }).ToList() ?? [];
+                    }
+                    catch
+                    {
+                        // Fall back to IDs only if title fetch fails
+                        pr.WorkItems = ids.Select(id => new WorkItem
+                        {
+                            Id = int.TryParse(id, out var parsed) ? parsed : 0,
+                            Title = "",
+                            Url = "",
+                        }).Where(w => w.Id > 0).ToList();
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Work item fetch is non-critical; leave as empty list
+        }
+
+        return pr;
     }
 
     private static PullRequest MapPullRequest(AzDoApiModels.PullRequestResponse data)
@@ -447,6 +509,15 @@ public sealed class AzDoProvider : IProvider
         var response = await PatchAsync<AzDoApiModels.ThreadResponse>(
             $"/pullrequests/{prId}/threads/{threadId}", body, ct);
         return MapThread(response);
+    }
+
+    // =========================================================================
+    // Update Pull Request Description
+    // =========================================================================
+
+    public async Task UpdatePullRequestDescriptionAsync(int prId, string description, CancellationToken ct = default)
+    {
+        await PatchAsync<object>($"/pullrequests/{prId}", new { description }, ct);
     }
 
     // =========================================================================

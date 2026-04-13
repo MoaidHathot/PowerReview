@@ -8,6 +8,7 @@ local log = require("power-review.utils.log")
 local cli = require("power-review.cli")
 local config = require("power-review.config")
 local watcher = require("power-review.watcher")
+local progress = require("power-review.progress")
 
 --- Detect the git repository root from the current working directory.
 --- Returns the repo root path, or nil if not inside a git repo.
@@ -25,6 +26,62 @@ local function find_git_root()
   return root
 end
 
+--- Prompt for a URL, or offer a session picker if sessions exist, then open/resume.
+--- Shared by the :PowerReview open command and the open_review keymap.
+---@param url? string Optional PR URL (skips picker/prompt if provided)
+---@param callback fun(err?: string, session?: PowerReview.ReviewSession)
+function M.open_or_resume(url, callback)
+  -- If a URL was provided directly, start immediately
+  if url and url ~= "" then
+    M.start_review(url, callback)
+    return
+  end
+
+  local store = require("power-review.store")
+
+  local function prompt_for_url()
+    vim.ui.input({ prompt = "PR URL: " }, function(input_url)
+      if input_url and input_url ~= "" then
+        M.start_review(input_url, callback)
+      end
+    end)
+  end
+
+  store.list_async(function(sessions)
+    if #sessions == 0 then
+      prompt_for_url()
+      return
+    end
+
+    local choices = { { id = "__new__", label = " Enter a new PR URL..." } }
+    for _, s in ipairs(sessions) do
+      table.insert(choices, s)
+    end
+
+    vim.ui.select(choices, {
+      prompt = "Select review session or start new:",
+      format_item = function(item)
+        if item.id == "__new__" then
+          return item.label
+        end
+        return string.format(
+          "[%s] PR #%d: %s (%d drafts)",
+          item.provider_type, item.pr_id, item.pr_title, item.draft_count
+        )
+      end,
+    }, function(selected)
+      if not selected then
+        return
+      end
+      if selected.id == "__new__" then
+        prompt_for_url()
+        return
+      end
+      M.resume_session(selected.id, callback)
+    end)
+  end)
+end
+
 --- Start a new review from a PR URL.
 --- Delegates to `powerreview open --pr-url <url>` which handles auth, API, git, and session.
 ---@param pr_url string The PR URL
@@ -33,9 +90,11 @@ function M.start_review(pr_url, callback)
   log.info("Starting review for: %s", pr_url)
 
   local repo_path = find_git_root()
+  local handle = progress.start("Opening review...")
 
   cli.open(pr_url, repo_path, function(err, session)
     if err then
+      progress.fail(handle, "Failed to open review")
       callback("CLI: " .. err)
       return
     end
@@ -53,6 +112,7 @@ function M.start_review(pr_url, callback)
     -- Refresh UI
     require("power-review.ui").refresh_neotree()
 
+    progress.done(handle, string.format("Review opened: PR #%d", session.pr_id))
     log.info("Review session started: %s (PR #%d: %s) - %d remote threads",
       session.id, session.pr_id, session.pr_title, #(session.threads or {}))
     callback(nil, session)
@@ -143,7 +203,7 @@ function M.close_review(callback)
   end)
 end
 
---- Refresh the current session (re-fetch from CLI which re-fetches from remote).
+--- Refresh the current session (re-fetch from remote without re-opening).
 ---@param callback fun(err?: string)
 function M.refresh_session(callback)
   local pr_mod = require("power-review")
@@ -154,17 +214,11 @@ function M.refresh_session(callback)
     return
   end
 
-  -- Re-open refreshes everything
-  local repo_path = nil
-  if session.worktree_path then
-    -- Use the original repo, not the worktree
-    repo_path = vim.fn.fnamemodify(session.worktree_path, ":h:h")
-  else
-    repo_path = vim.fn.getcwd()
-  end
+  local handle = progress.start("Refreshing session...")
 
-  cli.open(session.pr_url, repo_path, function(err, refreshed)
+  cli.refresh(session.pr_url, function(err, refreshed)
     if err then
+      progress.fail(handle, "Refresh failed")
       callback("Refresh failed: " .. err)
       return
     end
@@ -179,6 +233,7 @@ function M.refresh_session(callback)
       comments_panel.refresh(refreshed)
     end
 
+    progress.done(handle, "Session refreshed")
     log.info("Session refreshed: %d files, %d remote threads",
       #refreshed.files, #(refreshed.threads or {}))
     callback(nil)
@@ -260,8 +315,11 @@ function M.sync_threads(callback)
     return
   end
 
+  local handle = progress.start("Syncing threads...")
+
   cli.sync(session.pr_url, function(err, result)
     if err then
+      progress.fail(handle, "Sync failed")
       callback("Failed to sync threads: " .. err)
       return
     end
@@ -296,6 +354,7 @@ function M.sync_threads(callback)
     end
 
     log.info("Synced %d remote thread(s)", thread_count)
+    progress.done(handle, string.format("Synced %d thread(s)", thread_count))
     require("power-review.notifications").sync_complete(thread_count)
     callback(nil, thread_count)
   end)
@@ -364,14 +423,12 @@ function M.get_threads_for_file(session, file_path)
   return filtered
 end
 
---- Get file diff content.
---- The actual diff is handled by the diff UI (codediff.nvim or native),
---- which works directly on the git worktree files.
+--- Get file diff content from the CLI.
 ---@param session PowerReview.ReviewSession
 ---@param file_path string
----@return string|nil diff_content, string|nil error
+---@return table|nil diff_info, string|nil error
 function M.get_file_diff(session, file_path)
-  return nil, "Use the diff view (codediff.nvim) for file diffs"
+  return cli.get_file_diff(session.pr_url, file_path)
 end
 
 -- ===== Iteration tracking =====

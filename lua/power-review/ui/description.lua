@@ -185,6 +185,9 @@ local function build_content(session)
   add(sep, HL.SEPARATOR)
   add("")
 
+  -- Track where the description body starts (1-indexed line number)
+  local description_start_line = #lines + 1
+
   -- Description body
   local desc = session.pr_description or ""
   if desc == "" then
@@ -196,7 +199,7 @@ local function build_content(session)
     end
   end
 
-  return lines, highlights
+  return lines, highlights, description_start_line
 end
 
 -- ============================================================================
@@ -220,6 +223,8 @@ function M.close()
     vim.api.nvim_buf_delete(M._buf, { force = true })
   end
   M._buf = nil
+  M._editing = false
+  M._desc_start_line = nil
 end
 
 --- Toggle the description float.
@@ -246,7 +251,7 @@ function M.open(session)
   -- Close any existing instance
   M.close()
 
-  local content_lines, hl_ranges = build_content(session)
+  local content_lines, hl_ranges, desc_start_line = build_content(session)
 
   -- Create buffer
   local buf = vim.api.nvim_create_buf(false, true)
@@ -304,13 +309,73 @@ function M.open(session)
   vim.keymap.set("n", "q", function() M.close() end, map_opts)
   vim.keymap.set("n", "<Esc>", function() M.close() end, map_opts)
 
-  -- Auto-close when leaving the window
+  -- Edit description keymap
+  vim.keymap.set("n", "e", function()
+    if M._editing then
+      return
+    end
+    M._editing = true
+    M._desc_start_line = desc_start_line
+
+    -- Make the buffer editable
+    vim.bo[buf].modifiable = true
+    vim.bo[buf].readonly = false
+    vim.bo[buf].buftype = "acwrite"
+
+    -- Update title to indicate edit mode
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_set_config(win, {
+        title = " PR Description [EDITING] ",
+        title_pos = "center",
+      })
+    end
+
+    -- Jump cursor to description body
+    vim.api.nvim_win_set_cursor(win, { desc_start_line, 0 })
+
+    -- Handle :w to save
+    vim.api.nvim_create_autocmd("BufWriteCmd", {
+      buffer = buf,
+      callback = function()
+        local all_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        -- Extract only the description body (after the separator)
+        local body_lines = {}
+        for i = desc_start_line, #all_lines do
+          table.insert(body_lines, all_lines[i])
+        end
+        local new_body = table.concat(body_lines, "\n")
+
+        -- Submit to CLI
+        local cli = require("power-review.cli")
+        cli.run_async(
+          { "update-description", "--pr-url", session.pr_url, "--body-stdin" },
+          function(err)
+            if err then
+              vim.notify("[PowerReview] Failed to update description: " .. err, vim.log.levels.ERROR)
+            else
+              vim.notify("[PowerReview] Description updated", vim.log.levels.INFO)
+              -- Update the session's description in memory
+              session.pr_description = new_body
+              vim.bo[buf].modified = false
+            end
+          end,
+          { stdin = new_body }
+        )
+      end,
+    })
+
+    vim.notify("[PowerReview] Editing description. :w to save, q to cancel.", vim.log.levels.INFO)
+  end, map_opts)
+
+  -- Auto-close when leaving the window (only if not editing)
   vim.api.nvim_create_autocmd("WinLeave", {
     buffer = buf,
     once = true,
     callback = function()
       vim.schedule(function()
-        M.close()
+        if not M._editing then
+          M.close()
+        end
       end)
     end,
   })

@@ -57,7 +57,9 @@ function M.detach_all(ns)
   for bufnr, _ in pairs(M.attached_bufs) do
     M.detach(bufnr, ns)
   end
-  M.attached_bufs = {}
+  -- Table is already empty after detach loop (M.detach sets each key to nil).
+  -- Do NOT reassign M.attached_bufs = {} here — that would break external
+  -- references that hold a pointer to the original table.
 end
 
 --- Refresh signs on all attached buffers.
@@ -151,19 +153,34 @@ function M.resolve_review_file_path(bufnr, session)
   return nil
 end
 
+--- Cached set of normalized file paths for O(1) lookup.
+--- Built lazily when _is_review_file is called.
+---@type table<string, boolean>|nil
+M._file_set = nil
+
+--- Session ID the file set was built for.
+---@type string|nil
+M._file_set_session_id = nil
+
 --- Check if a relative file path is in the session's changed files.
+--- Uses a cached set for O(1) lookup instead of linear scan.
 ---@param session PowerReview.ReviewSession
 ---@param rel_path string
 ---@return boolean
 function M._is_review_file(session, rel_path)
   rel_path = rel_path:gsub("\\", "/")
-  for _, file in ipairs(session.files) do
-    local fp = file.path:gsub("\\", "/")
-    if fp == rel_path then
-      return true
+
+  -- Rebuild the set if the session changed
+  if M._file_set_session_id ~= session.id or not M._file_set then
+    M._file_set = {}
+    for _, file in ipairs(session.files) do
+      local fp = file.path:gsub("\\", "/")
+      M._file_set[fp] = true
     end
+    M._file_set_session_id = session.id
   end
-  return false
+
+  return M._file_set[rel_path] == true
 end
 
 --- Setup autocommands to auto-attach signs when diff buffers are opened.

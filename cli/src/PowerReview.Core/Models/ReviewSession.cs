@@ -4,7 +4,7 @@ namespace PowerReview.Core.Models;
 
 /// <summary>
 /// The complete review session persisted to disk.
-/// This is the v3 session format — the source of truth for all review state.
+/// This is the v4 session format — the source of truth for all review state.
 /// </summary>
 public sealed class ReviewSession
 {

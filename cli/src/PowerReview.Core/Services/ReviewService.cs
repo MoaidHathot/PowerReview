@@ -395,6 +395,86 @@ public sealed class ReviewService
     }
 
     /// <summary>
+    /// Update a published comment on the remote provider.
+    /// </summary>
+    public async Task<Comment> UpdateRemoteCommentAsync(string prUrl, int threadId, int commentId, string newBody, CancellationToken ct = default)
+    {
+        var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
+        var result = await provider.UpdateCommentAsync(session.PullRequest.Id, threadId, commentId, newBody, ct);
+
+        // Sync the updated thread back to session cache
+        using var _ = _store.AcquireLock(session.Id);
+        session = _store.Load(session.Id)
+            ?? throw new ReviewServiceException($"Session disappeared during remote comment update: {session.Id}");
+
+        var existingThread = session.Threads.Items.FirstOrDefault(t => t.Id == threadId);
+        if (existingThread != null)
+        {
+            var existingComment = existingThread.Comments.FirstOrDefault(c => c.Id == commentId);
+            if (existingComment != null)
+            {
+                existingComment.Body = newBody;
+            }
+        }
+        session.UpdatedAt = Timestamp();
+        _store.Save(session);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Delete a published comment from the remote provider.
+    /// </summary>
+    public async Task DeleteRemoteCommentAsync(string prUrl, int threadId, int commentId, CancellationToken ct = default)
+    {
+        var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
+        await provider.DeleteCommentAsync(session.PullRequest.Id, threadId, commentId, ct);
+
+        // Mark the comment as deleted in session cache
+        using var _ = _store.AcquireLock(session.Id);
+        session = _store.Load(session.Id)
+            ?? throw new ReviewServiceException($"Session disappeared during remote comment deletion: {session.Id}");
+
+        var existingThread = session.Threads.Items.FirstOrDefault(t => t.Id == threadId);
+        if (existingThread != null)
+        {
+            var existingComment = existingThread.Comments.FirstOrDefault(c => c.Id == commentId);
+            if (existingComment != null)
+            {
+                existingComment.IsDeleted = true;
+            }
+        }
+        session.UpdatedAt = Timestamp();
+        _store.Save(session);
+    }
+
+    /// <summary>
+    /// Get the content of a file at a specific branch from the remote provider.
+    /// </summary>
+    public async Task<string> GetFileContentAsync(string prUrl, string filePath, string branch, CancellationToken ct = default)
+    {
+        var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
+        return await provider.GetFileContentAsync(filePath, branch, ct);
+    }
+
+    /// <summary>
+    /// Update the PR description on the remote provider.
+    /// </summary>
+    public async Task UpdateDescriptionAsync(string prUrl, string newDescription, CancellationToken ct = default)
+    {
+        var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
+        await provider.UpdatePullRequestDescriptionAsync(session.PullRequest.Id, newDescription, ct);
+
+        // Update local session cache
+        using var _ = _store.AcquireLock(session.Id);
+        session = _store.Load(session.Id)
+            ?? throw new ReviewServiceException($"Session disappeared during description update: {session.Id}");
+        session.PullRequest.Description = newDescription;
+        session.UpdatedAt = Timestamp();
+        _store.Save(session);
+    }
+
+    /// <summary>
     /// Close a review session. Optionally cleans up git worktree.
     /// The session file is preserved on disk for future resume.
     /// </summary>

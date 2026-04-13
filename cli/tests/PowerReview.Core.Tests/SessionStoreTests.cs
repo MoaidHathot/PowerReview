@@ -77,7 +77,7 @@ public class SessionStoreTests : IDisposable
 
         Assert.NotNull(loaded);
         Assert.Equal("test-session", loaded.Id);
-        Assert.Equal(3, loaded.Version);
+        Assert.Equal(4, loaded.Version);
         Assert.Equal(ProviderType.AzDo, loaded.Provider.Type);
         Assert.Equal("testorg", loaded.Provider.Organization);
         Assert.Equal(42, loaded.PullRequest.Id);

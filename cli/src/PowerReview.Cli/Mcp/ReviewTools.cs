@@ -29,6 +29,46 @@ public sealed class ReviewTools
     }
 
     [McpServerTool, Description(
+        "Get the full pull request description, title, metadata, reviewers, labels, and work items. " +
+        "Returns the complete PR context useful for understanding what the PR is about.")]
+    public static string GetPullRequestDescription(
+        ReviewService reviewService,
+        [Description("The pull request URL")] string prUrl)
+    {
+        var result = reviewService.GetSession(prUrl);
+        if (result == null)
+            return ToolHelpers.ToJson(new { error = "No session found for this PR." });
+
+        var pr = result.Session.PullRequest;
+        return ToolHelpers.ToJson(new
+        {
+            title = pr.Title,
+            description = pr.Description,
+            author = new { name = pr.Author.Name, id = pr.Author.Id },
+            source_branch = pr.SourceBranch,
+            target_branch = pr.TargetBranch,
+            status = pr.Status.ToString(),
+            is_draft = pr.IsDraft,
+            merge_status = pr.MergeStatus?.ToString(),
+            created_at = pr.CreatedAt,
+            closed_at = pr.ClosedAt,
+            reviewers = pr.Reviewers.Select(r => new
+            {
+                name = r.Name,
+                vote = r.Vote,
+                is_required = r.IsRequired,
+            }),
+            labels = pr.Labels,
+            work_items = pr.WorkItems.Select(w => new
+            {
+                id = w.Id,
+                title = w.Title,
+                url = w.Url,
+            }),
+        });
+    }
+
+    [McpServerTool, Description(
         "List all files changed in the pull request, including their change type " +
         "(add, edit, delete, rename) and paths.")]
     public static string ListChangedFiles(
