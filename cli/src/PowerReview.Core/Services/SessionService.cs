@@ -222,6 +222,41 @@ public sealed class SessionService
     }
 
     /// <summary>
+    /// Delete all drafts matching the given author filter.
+    /// Only drafts in "Draft" status can be deleted.
+    /// If authorFilter is null, deletes all deletable drafts regardless of author.
+    /// </summary>
+    /// <returns>The number of drafts that were deleted.</returns>
+    public int DeleteAllDrafts(string sessionId, DraftAuthor? authorFilter = null)
+    {
+        using var lck = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+        var toDelete = new List<string>();
+
+        foreach (var (id, draft) in session.Drafts)
+        {
+            if (draft.Status != DraftStatus.Draft)
+                continue;
+
+            if (authorFilter.HasValue && draft.Author != authorFilter.Value)
+                continue;
+
+            toDelete.Add(id);
+        }
+
+        foreach (var id in toDelete)
+        {
+            session.Drafts.Remove(id);
+        }
+
+        if (toDelete.Count > 0)
+            _store.Save(session);
+
+        return toDelete.Count;
+    }
+
+    /// <summary>
     /// Get a specific draft by ID.
     /// </summary>
     public (string Id, DraftComment Draft)? GetDraft(string sessionId, string draftId)

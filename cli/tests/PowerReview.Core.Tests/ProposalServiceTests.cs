@@ -742,4 +742,134 @@ public class ProposalServiceTests : IDisposable
         _service.DeleteProposal(sessionId, proposalId);
         Assert.Empty(_store.Load(sessionId)!.Proposals);
     }
+
+    // --- ApproveAllProposals ---
+
+    [Fact]
+    public void ApproveAllProposals_ApprovesAllDraftProposals()
+    {
+        var sessionId = CreateAndSaveSession();
+        _service.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 42, BranchName = "powerreview/fix/thread-42", Description = "Fix 1",
+        });
+        _service.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 55, BranchName = "powerreview/fix/thread-55", Description = "Fix 2",
+        });
+
+        var count = _service.ApproveAllProposals(sessionId);
+
+        Assert.Equal(2, count);
+        var loaded = _store.Load(sessionId)!;
+        Assert.All(loaded.Proposals.Values, p => Assert.Equal(ProposalStatus.Approved, p.Status));
+    }
+
+    [Fact]
+    public void ApproveAllProposals_SkipsNonDraftProposals()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (id1, _) = _service.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 42, BranchName = "powerreview/fix/thread-42", Description = "Fix 1",
+        });
+        _service.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 55, BranchName = "powerreview/fix/thread-55", Description = "Fix 2",
+        });
+
+        // Approve one first
+        _service.ApproveProposal(sessionId, id1);
+
+        var count = _service.ApproveAllProposals(sessionId);
+
+        Assert.Equal(1, count); // Only the second was Draft
+    }
+
+    [Fact]
+    public void ApproveAllProposals_NoProposals_ReturnsZero()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var count = _service.ApproveAllProposals(sessionId);
+
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public void ApproveAllProposals_AutoApprovesLinkedReplyDrafts()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        // Create reply draft
+        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            ThreadId = 42, Body = "Fixed", Author = DraftAuthor.Ai,
+        });
+
+        // Create proposal linked to reply
+        _service.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 42, BranchName = "powerreview/fix/thread-42",
+            Description = "Fix", ReplyDraftId = replyId,
+        });
+
+        _service.ApproveAllProposals(sessionId);
+
+        var loaded = _store.Load(sessionId)!;
+        Assert.Equal(DraftStatus.Pending, loaded.Drafts[replyId].Status);
+    }
+
+    // --- RejectAllProposals ---
+
+    [Fact]
+    public void RejectAllProposals_RejectsAllDraftProposals()
+    {
+        var sessionId = CreateAndSaveSession();
+        _service.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 42, BranchName = "powerreview/fix/thread-42", Description = "Fix 1",
+        });
+        _service.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 55, BranchName = "powerreview/fix/thread-55", Description = "Fix 2",
+        });
+
+        var count = _service.RejectAllProposals(sessionId);
+
+        Assert.Equal(2, count);
+        var loaded = _store.Load(sessionId)!;
+        Assert.All(loaded.Proposals.Values, p => Assert.Equal(ProposalStatus.Rejected, p.Status));
+    }
+
+    [Fact]
+    public void RejectAllProposals_SkipsApprovedProposals()
+    {
+        var sessionId = CreateAndSaveSession();
+        var (id1, _) = _service.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 42, BranchName = "powerreview/fix/thread-42", Description = "Fix 1",
+        });
+        _service.CreateProposal(sessionId, new CreateProposalRequest
+        {
+            ThreadId = 55, BranchName = "powerreview/fix/thread-55", Description = "Fix 2",
+        });
+        _service.ApproveProposal(sessionId, id1);
+
+        var count = _service.RejectAllProposals(sessionId);
+
+        Assert.Equal(1, count);
+        var loaded = _store.Load(sessionId)!;
+        Assert.Equal(ProposalStatus.Approved, loaded.Proposals[id1].Status);
+    }
+
+    [Fact]
+    public void RejectAllProposals_NoProposals_ReturnsZero()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var count = _service.RejectAllProposals(sessionId);
+
+        Assert.Equal(0, count);
+    }
 }

@@ -26,7 +26,8 @@ internal sealed class ServiceFactory
             _store.Value,
             _sessionService.Value,
             _config.Value,
-            new AuthResolver(_config.Value.Auth)));
+            new AuthResolver(_config.Value.Auth),
+            _fixWorktreeService.Value));
         _fixWorktreeService = new Lazy<FixWorktreeService>(() => new FixWorktreeService(
             _store.Value,
             _config.Value));

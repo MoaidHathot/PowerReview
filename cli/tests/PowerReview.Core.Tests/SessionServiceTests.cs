@@ -818,4 +818,72 @@ public class SessionServiceTests : IDisposable
         _service.DeleteDraft(sessionId, draftId);
         Assert.Empty(_store.Load(sessionId)!.Drafts);
     }
+
+    // --- DeleteAllDrafts ---
+
+    [Fact]
+    public void DeleteAllDrafts_DeletesAllDraftStatus()
+    {
+        var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
+        _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            FilePath = "src/main.cs", Body = "Comment 1", Author = DraftAuthor.Ai,
+        });
+        _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            FilePath = "src/main.cs", Body = "Comment 2", Author = DraftAuthor.User,
+        });
+
+        var count = _service.DeleteAllDrafts(sessionId);
+
+        Assert.Equal(2, count);
+        Assert.Empty(_store.Load(sessionId)!.Drafts);
+    }
+
+    [Fact]
+    public void DeleteAllDrafts_FilterByAiAuthor_OnlyDeletesAiDrafts()
+    {
+        var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
+        _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            FilePath = "src/main.cs", Body = "AI comment", Author = DraftAuthor.Ai,
+        });
+        _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            FilePath = "src/main.cs", Body = "User comment", Author = DraftAuthor.User,
+        });
+
+        var count = _service.DeleteAllDrafts(sessionId, DraftAuthor.Ai);
+
+        Assert.Equal(1, count);
+        var remaining = _store.Load(sessionId)!.Drafts;
+        Assert.Single(remaining);
+        Assert.Equal(DraftAuthor.User, remaining.Values.First().Author);
+    }
+
+    [Fact]
+    public void DeleteAllDrafts_SkipsPendingDrafts()
+    {
+        var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            FilePath = "src/main.cs", Body = "Comment", Author = DraftAuthor.Ai,
+        });
+        _service.ApproveDraft(sessionId, draftId);
+
+        var count = _service.DeleteAllDrafts(sessionId);
+
+        Assert.Equal(0, count); // Pending status is not deletable
+        Assert.Single(_store.Load(sessionId)!.Drafts);
+    }
+
+    [Fact]
+    public void DeleteAllDrafts_NoDrafts_ReturnsZero()
+    {
+        var sessionId = CreateAndSaveSession();
+
+        var count = _service.DeleteAllDrafts(sessionId);
+
+        Assert.Equal(0, count);
+    }
 }

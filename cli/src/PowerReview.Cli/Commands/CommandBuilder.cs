@@ -311,7 +311,7 @@ internal static class CommandBuilder
         return cmd;
     }
 
-    // --- comment (subcommands: create, edit, delete, approve, approve-all, unapprove) ---
+    // --- comment (subcommands: create, edit, delete, delete-all, approve, approve-all, unapprove) ---
 
     private static Command BuildComment(ServiceFactory services)
     {
@@ -320,6 +320,7 @@ internal static class CommandBuilder
         cmd.Subcommands.Add(BuildCommentCreate(services));
         cmd.Subcommands.Add(BuildCommentEdit(services));
         cmd.Subcommands.Add(BuildCommentDelete(services));
+        cmd.Subcommands.Add(BuildCommentDeleteAll(services));
         cmd.Subcommands.Add(BuildCommentApprove(services));
         cmd.Subcommands.Add(BuildCommentApproveAll(services));
         cmd.Subcommands.Add(BuildCommentUnapprove(services));
@@ -526,6 +527,48 @@ internal static class CommandBuilder
                 var sessionId = ResolveSessionId(services, url);
                 var count = services.SessionService.ApproveAllDrafts(sessionId);
                 CliOutput.WriteJson(new { approved = count });
+            }
+            catch (SessionServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildCommentDeleteAll(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var authorOpt = new Option<string?>("--author")
+        {
+            Description = "Filter by author: 'ai' or 'user'. Omit to delete all.",
+        };
+
+        var cmd = new Command("delete-all", "Delete all draft comments in 'draft' status. Optionally filter by author.")
+        {
+            prUrl, authorOpt
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var authorStr = parseResult.GetValue(authorOpt);
+
+            DraftAuthor? authorFilter = authorStr?.ToLowerInvariant() switch
+            {
+                "ai" => DraftAuthor.Ai,
+                "user" => DraftAuthor.User,
+                null => null,
+                _ => null,
+            };
+
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var count = services.SessionService.DeleteAllDrafts(sessionId, authorFilter);
+                CliOutput.WriteJson(new { deleted = count, author_filter = authorStr });
             }
             catch (SessionServiceException ex)
             {
@@ -1574,7 +1617,9 @@ internal static class CommandBuilder
         cmd.Subcommands.Add(BuildProposalList(services));
         cmd.Subcommands.Add(BuildProposalDiff(services));
         cmd.Subcommands.Add(BuildProposalApprove(services));
+        cmd.Subcommands.Add(BuildProposalApproveAll(services));
         cmd.Subcommands.Add(BuildProposalApply(services));
+        cmd.Subcommands.Add(BuildProposalApplyAll(services));
         cmd.Subcommands.Add(BuildProposalReject(services));
         cmd.Subcommands.Add(BuildProposalDelete(services));
 
@@ -1795,6 +1840,77 @@ internal static class CommandBuilder
                 CliOutput.WriteJson(new { id, proposal });
             }
             catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildProposalApproveAll(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("approve-all", "Approve all draft proposals at once. Linked reply drafts are auto-approved.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var count = services.ProposalService.ApproveAllProposals(sessionId);
+                CliOutput.WriteJson(new { approved = count });
+            }
+            catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildProposalApplyAll(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var pushOpt = new Option<bool>("--push")
+        {
+            Description = "Push the changes to the remote after applying all proposals",
+        };
+
+        var cmd = new Command("apply-all", "Apply all approved proposals by cherry-picking changes into the PR branch.")
+        {
+            prUrl, pushOpt
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var push = parseResult.GetValue(pushOpt);
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var result = await services.ProposalService.ApplyAllProposalsAsync(sessionId, push, ct);
+                CliOutput.WriteJson(new
+                {
+                    applied = result.Applied.Count,
+                    failed = result.Failed.Count,
+                    applied_ids = result.Applied,
+                    failures = result.Failed,
+                    pushed = push,
+                });
+            }
+            catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
             {
                 return CliOutput.WriteError(ex.Message);
             }

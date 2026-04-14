@@ -17,17 +17,20 @@ public sealed class ReviewService
     private readonly SessionService _sessionService;
     private readonly PowerReviewConfig _config;
     private readonly AuthResolver _authResolver;
+    private readonly FixWorktreeService? _fixWorktreeService;
 
     public ReviewService(
         SessionStore store,
         SessionService sessionService,
         PowerReviewConfig config,
-        AuthResolver authResolver)
+        AuthResolver authResolver,
+        FixWorktreeService? fixWorktreeService = null)
     {
         _store = store;
         _sessionService = sessionService;
         _config = config;
         _authResolver = authResolver;
+        _fixWorktreeService = fixWorktreeService;
     }
 
     /// <summary>
@@ -525,6 +528,19 @@ public sealed class ReviewService
             {
                 session.Git.WorktreePath = null;
                 _store.Save(session);
+            }
+        }
+
+        // Fix worktree cleanup (best-effort)
+        if (session?.FixWorktree != null && _fixWorktreeService != null)
+        {
+            try
+            {
+                await _fixWorktreeService.CleanupAsync(sessionId, ct);
+            }
+            catch
+            {
+                // Fix worktree cleanup is best-effort
             }
         }
         // Session file is preserved on disk — not deleted

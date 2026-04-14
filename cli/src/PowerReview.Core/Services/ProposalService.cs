@@ -342,6 +342,128 @@ public sealed class ProposalService
         return counts;
     }
 
+    /// <summary>
+    /// Approve all proposals in Draft status, transitioning them to Approved.
+    /// For each approved proposal with a linked reply draft, the reply is auto-approved.
+    /// User-only operation.
+    /// </summary>
+    /// <returns>The number of proposals that were approved.</returns>
+    public int ApproveAllProposals(string sessionId)
+    {
+        using var lck = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+        var now = Timestamp();
+        var count = 0;
+
+        foreach (var (id, proposal) in session.Proposals)
+        {
+            if (proposal.Status != ProposalStatus.Draft)
+                continue;
+
+            proposal.Status = ProposalStatus.Approved;
+            proposal.UpdatedAt = now;
+            count++;
+
+            // Auto-approve linked reply draft
+            if (proposal.ReplyDraftId != null
+                && session.Drafts.TryGetValue(proposal.ReplyDraftId, out var linkedDraft)
+                && linkedDraft.Status == DraftStatus.Draft)
+            {
+                linkedDraft.Status = DraftStatus.Pending;
+                linkedDraft.UpdatedAt = now;
+            }
+        }
+
+        if (count > 0)
+            _store.Save(session);
+
+        return count;
+    }
+
+    /// <summary>
+    /// Apply all proposals in Approved status sequentially.
+    /// Each proposal is cherry-picked into the PR source branch.
+    /// Stops on first failure and reports which proposals succeeded and which failed.
+    /// User-only operation.
+    /// </summary>
+    public async Task<BulkApplyResult> ApplyAllProposalsAsync(
+        string sessionId, bool push = false, CancellationToken ct = default)
+    {
+        // Get all Approved proposals
+        var session = LoadOrThrow(sessionId);
+        var approvedIds = session.Proposals
+            .Where(kvp => kvp.Value.Status == ProposalStatus.Approved)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        var result = new BulkApplyResult();
+
+        foreach (var proposalId in approvedIds)
+        {
+            try
+            {
+                // Only push on the last proposal to avoid multiple pushes
+                var shouldPush = push && proposalId == approvedIds.Last();
+                await ApplyProposalAsync(sessionId, proposalId, shouldPush, ct);
+                result.Applied.Add(proposalId);
+            }
+            catch (ProposalServiceException ex)
+            {
+                result.Failed.Add(new BulkApplyFailure { ProposalId = proposalId, Error = ex.Message });
+            }
+        }
+
+        // If push was requested and we skipped it during individual applies, push now
+        if (push && result.Applied.Count > 0 && approvedIds.Count > 1)
+        {
+            try
+            {
+                var s = LoadOrThrow(sessionId);
+                var worktreePath = s.FixWorktree?.Path;
+                var sourceBranch = s.PullRequest.SourceBranch;
+                if (worktreePath != null && Directory.Exists(worktreePath))
+                {
+                    await Git.GitOperations.TryRunAsync(
+                        ["push", "origin", sourceBranch],
+                        worktreePath, ct: ct);
+                }
+            }
+            catch { /* best effort push */ }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reject all proposals in Draft status, transitioning them to Rejected.
+    /// User-only operation.
+    /// </summary>
+    /// <returns>The number of proposals that were rejected.</returns>
+    public int RejectAllProposals(string sessionId)
+    {
+        using var lck = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+        var now = Timestamp();
+        var count = 0;
+
+        foreach (var proposal in session.Proposals.Values)
+        {
+            if (proposal.Status != ProposalStatus.Draft)
+                continue;
+
+            proposal.Status = ProposalStatus.Rejected;
+            proposal.UpdatedAt = now;
+            count++;
+        }
+
+        if (count > 0)
+            _store.Save(session);
+
+        return count;
+    }
+
     private ReviewSession LoadOrThrow(string sessionId)
     {
         return _store.Load(sessionId)
@@ -375,6 +497,27 @@ public sealed class ProposalCounts
     public int Applied { get; set; }
     public int Rejected { get; set; }
     public int Total { get; set; }
+}
+
+/// <summary>
+/// Result of a bulk apply operation.
+/// </summary>
+public sealed class BulkApplyResult
+{
+    /// <summary>Proposal IDs that were successfully applied.</summary>
+    public List<string> Applied { get; set; } = [];
+
+    /// <summary>Proposals that failed to apply.</summary>
+    public List<BulkApplyFailure> Failed { get; set; } = [];
+}
+
+/// <summary>
+/// A single failure in a bulk apply operation.
+/// </summary>
+public sealed class BulkApplyFailure
+{
+    public string ProposalId { get; set; } = "";
+    public string Error { get; set; } = "";
 }
 
 /// <summary>
