@@ -14,15 +14,21 @@ function M.toggle_editor_visibility(float_module)
 
   if float_module._editor_hidden then
     -- Show: restore the float window
-    pcall(function() float_module._editor:show() end)
+    pcall(function()
+      float_module._editor:show()
+    end)
     float_module._editor_hidden = false
     -- Also restore preview if it was open
     if float_module._preview then
-      pcall(function() float_module._preview:show() end)
+      pcall(function()
+        float_module._preview:show()
+      end)
     end
     -- Also restore thread context if it was open
     if float_module._thread_context then
-      pcall(function() float_module._thread_context:show() end)
+      pcall(function()
+        float_module._thread_context:show()
+      end)
     end
     -- Focus the editor
     if float_module._editor.winid and vim.api.nvim_win_is_valid(float_module._editor.winid) then
@@ -33,15 +39,21 @@ function M.toggle_editor_visibility(float_module)
     log.debug("Editor shown")
   else
     -- Hide: hide the float window
-    pcall(function() float_module._editor:hide() end)
+    pcall(function()
+      float_module._editor:hide()
+    end)
     float_module._editor_hidden = true
     -- Also hide preview
     if float_module._preview then
-      pcall(function() float_module._preview:hide() end)
+      pcall(function()
+        float_module._preview:hide()
+      end)
     end
     -- Also hide thread context
     if float_module._thread_context then
-      pcall(function() float_module._thread_context:hide() end)
+      pcall(function()
+        float_module._thread_context:hide()
+      end)
     end
     -- Set a temporary global keymap to bring it back
     vim.keymap.set("n", "<C-h>", function()
@@ -72,7 +84,9 @@ function M.toggle_editor_split(float_module)
     float_module._editor_split_winid = nil
 
     -- Re-show the nui popup (it still owns the buffer)
-    pcall(function() float_module._editor:show() end)
+    pcall(function()
+      float_module._editor:show()
+    end)
     float_module._editor_hidden = false
 
     -- Focus the float
@@ -89,12 +103,16 @@ function M.toggle_editor_split(float_module)
     end
 
     -- Hide the float (don't destroy -- we want to be able to go back)
-    pcall(function() float_module._editor:hide() end)
+    pcall(function()
+      float_module._editor:hide()
+    end)
     float_module._editor_hidden = true
 
     -- Also hide preview
     if float_module._preview then
-      pcall(function() float_module._preview:hide() end)
+      pcall(function()
+        float_module._preview:hide()
+      end)
     end
 
     -- Create a vertical split on the right and show the editor buffer there

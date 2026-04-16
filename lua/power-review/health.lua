@@ -35,13 +35,10 @@ function M.check()
     vim.health.ok(string.format("CLI tool reachable: %s (%s)", cli_cmd, ver_out ~= "" and ver_out or "ok"))
   else
     local stderr = (cli_result.stderr or ""):gsub("%s+$", "")
-    vim.health.error(
-      string.format("CLI tool not reachable: %s", cli_cmd),
-      {
-        "Install the CLI: dotnet tool install -g PowerReview",
-        stderr ~= "" and ("Error: " .. stderr) or nil,
-      }
-    )
+    vim.health.error(string.format("CLI tool not reachable: %s", cli_cmd), {
+      "Install the CLI: dotnet tool install -g PowerReview",
+      stderr ~= "" and ("Error: " .. stderr) or nil,
+    })
   end
 
   -- 3. .NET SDK
@@ -50,10 +47,7 @@ function M.check()
     local dotnet_ver = (dotnet_result.stdout or ""):gsub("%s+$", "")
     vim.health.ok(string.format(".NET SDK: %s", dotnet_ver))
   else
-    vim.health.warn(
-      ".NET SDK not found",
-      { "Install .NET 10 SDK from https://dotnet.microsoft.com/download" }
-    )
+    vim.health.warn(".NET SDK not found", { "Install .NET 10 SDK from https://dotnet.microsoft.com/download" })
   end
 
   -- 4. Authentication
@@ -69,13 +63,10 @@ function M.check()
     if az_result.code == 0 then
       vim.health.ok("Azure DevOps: az CLI authenticated")
     else
-      vim.health.info(
-        "Azure DevOps: no authentication configured",
-        {
-          "Set AZDO_PAT environment variable, or",
-          "Login with: az login",
-        }
-      )
+      vim.health.info("Azure DevOps: no authentication configured", {
+        "Set AZDO_PAT environment variable, or",
+        "Login with: az login",
+      })
     end
   end
 
@@ -137,14 +128,16 @@ function M.check()
   if session then
     local helpers = require("power-review.session_helpers")
     local counts = helpers.get_draft_counts(session)
-    vim.health.ok(string.format(
-      "Active session: PR #%d - %s (%d files, %d drafts, %d threads)",
-      session.pr_id or 0,
-      session.pr_title or "?",
-      #(session.files or {}),
-      counts.total,
-      #(session.threads or {})
-    ))
+    vim.health.ok(
+      string.format(
+        "Active session: PR #%d - %s (%d files, %d drafts, %d threads)",
+        session.pr_id or 0,
+        session.pr_title or "?",
+        #(session.files or {}),
+        counts.total,
+        #(session.threads or {})
+      )
+    )
   else
     vim.health.info("No active review session")
   end

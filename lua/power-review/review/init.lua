@@ -66,7 +66,10 @@ function M.open_or_resume(url, callback)
         end
         return string.format(
           "[%s] PR #%d: %s (%d drafts)",
-          item.provider_type, item.pr_id, item.pr_title, item.draft_count
+          item.provider_type,
+          item.pr_id,
+          item.pr_title,
+          item.draft_count
         )
       end,
     }, function(selected)
@@ -113,8 +116,13 @@ function M.start_review(pr_url, callback)
     require("power-review.ui").refresh_neotree()
 
     progress.done(handle, string.format("Review opened: PR #%d", session.pr_id))
-    log.info("Review session started: %s (PR #%d: %s) - %d remote threads",
-      session.id, session.pr_id, session.pr_title, #(session.threads or {}))
+    log.info(
+      "Review session started: %s (PR #%d: %s) - %d remote threads",
+      session.id,
+      session.pr_id,
+      session.pr_title,
+      #(session.threads or {})
+    )
     callback(nil, session)
   end)
 end
@@ -234,8 +242,7 @@ function M.refresh_session(callback)
     end
 
     progress.done(handle, "Session refreshed")
-    log.info("Session refreshed: %d files, %d remote threads",
-      #refreshed.files, #(refreshed.threads or {}))
+    log.info("Session refreshed: %d files, %d remote threads", #refreshed.files, #(refreshed.threads or {}))
     callback(nil)
   end)
 end
@@ -347,7 +354,8 @@ function M.sync_threads(callback)
         "New iteration detected (#%s -> #%s). %d file(s) have new changes.",
         tostring(ic.old_iteration_id or "?"),
         tostring(ic.new_iteration_id or "?"),
-        changed_count)
+        changed_count
+      )
       vim.notify(msg, vim.log.levels.INFO, { title = "PowerReview" })
       -- Refresh file panels to show updated review indicators
       require("power-review.ui").refresh_neotree()
@@ -560,7 +568,8 @@ function M.check_iteration(callback)
         "New iteration detected (#%s -> #%s). %d file(s) have new changes.",
         tostring(result.old_iteration_id or "?"),
         tostring(result.new_iteration_id or "?"),
-        changed_count)
+        changed_count
+      )
       vim.notify(msg, vim.log.levels.INFO, { title = "PowerReview" })
     else
       vim.notify("No new iterations detected.", vim.log.levels.INFO, { title = "PowerReview" })

@@ -67,7 +67,7 @@ function M.apply(bufnr)
         table.insert(code_blocks, {
           lang = lang:lower(),
           start_line = block_start, -- 1-indexed, first line of code content
-          end_line = block_end,     -- 1-indexed, last line of code content
+          end_line = block_end, -- 1-indexed, last line of code content
           indent = fence_indent,
         })
       elseif not block_end then
@@ -161,8 +161,12 @@ function M.apply(bufnr)
 
                 local start_line_len = #(lines[buf_start_row + 1] or "")
                 local end_line_len = #(lines[buf_end_row + 1] or "")
-                if adj_start_col > start_line_len then adj_start_col = start_line_len end
-                if adj_end_col > end_line_len then adj_end_col = end_line_len end
+                if adj_start_col > start_line_len then
+                  adj_start_col = start_line_len
+                end
+                if adj_end_col > end_line_len then
+                  adj_end_col = end_line_len
+                end
 
                 pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_code, buf_start_row, adj_start_col, {
                   end_row = buf_end_row,

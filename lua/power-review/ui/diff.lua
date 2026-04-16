@@ -490,7 +490,9 @@ function M.open_iteration_diff(session, file_path, old_commit, new_commit, callb
   log.debug("Opened iteration diff for %s (%s..%s)", file_path, old_commit:sub(1, 8), new_commit:sub(1, 8))
 
   if type(callback) == "function" then
-    vim.schedule(function() callback(nil) end)
+    vim.schedule(function()
+      callback(nil)
+    end)
   end
   return true
 end

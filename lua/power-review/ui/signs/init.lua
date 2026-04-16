@@ -172,7 +172,9 @@ function M.setup_autocommands()
     end
   end
 
-  attach_mod.setup_autocommands(try_auto_attach, attach_visible, function() M.refresh() end)
+  attach_mod.setup_autocommands(try_auto_attach, attach_visible, function()
+    M.refresh()
+  end)
 end
 
 -- ============================================================================

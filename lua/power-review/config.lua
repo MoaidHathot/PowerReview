@@ -22,11 +22,11 @@ local function defaults()
 
       -- Timeout values for CLI operations (milliseconds).
       timeouts = {
-        default = 30000,  -- Default for most operations
-        open = 60000,     -- Opening a review (fetches PR data, sets up git)
-        submit = 60000,   -- Submitting all pending drafts to remote
-        vote = 30000,     -- Setting review vote
-        sync = 30000,     -- Syncing threads from remote
+        default = 30000, -- Default for most operations
+        open = 60000, -- Opening a review (fetches PR data, sets up git)
+        submit = 60000, -- Submitting all pending drafts to remote
+        vote = 30000, -- Setting review vote
+        sync = 30000, -- Syncing threads from remote
       },
     },
 
@@ -68,18 +68,18 @@ local function defaults()
       colors = {
         -- Colors for sign-related highlights (undercurl).
         -- Set to nil/false to use the default highlight group links instead.
-        comment_undercurl = "#61afef",     -- Undercurl color for remote comment signs
-        draft_undercurl = "#98c379",       -- Undercurl color for draft comment signs
+        comment_undercurl = "#61afef", -- Undercurl color for remote comment signs
+        draft_undercurl = "#98c379", -- Undercurl color for draft comment signs
         -- Colors for flash highlights
-        flash_bg = "#3e4452",              -- Background color for flash highlights
-        flash_border = "#e5c07b",          -- Undercurl/border color for flash column highlights
+        flash_bg = "#3e4452", -- Background color for flash highlights
+        flash_border = "#e5c07b", -- Undercurl/border color for flash column highlights
         -- Colors for subtle diff backgrounds
-        diff_added = "#264a35",            -- Background for added lines in diff
-        diff_changed = "#2a3040",          -- Background for changed lines in diff
-        diff_deleted = "#4a2626",          -- Background for deleted lines in diff
-        diff_text = "#364060",             -- Background for changed text within a line
+        diff_added = "#264a35", -- Background for added lines in diff
+        diff_changed = "#2a3040", -- Background for changed lines in diff
+        diff_deleted = "#4a2626", -- Background for deleted lines in diff
+        diff_text = "#364060", -- Background for changed text within a line
         -- Statusline icon color
-        statusline_fg = "#61afef",         -- Foreground color for the statusline component
+        statusline_fg = "#61afef", -- Foreground color for the statusline component
       },
       -- Neo-tree source configuration (passed to neo-tree setup by the user)
       -- This is the recommended config to add to neo-tree's power_review source:
@@ -134,16 +134,16 @@ local function defaults()
 
     -- Session file watcher (for real-time refresh when AI creates drafts)
     watcher = {
-      enabled = true,       -- Watch the session file for changes
-      debounce_ms = 200,    -- Debounce delay before reloading session on file change
+      enabled = true, -- Watch the session file for changes
+      debounce_ms = 200, -- Debounce delay before reloading session on file change
     },
 
     -- Notifications
     notifications = {
-      enabled = true,        -- Master toggle for all notifications
-      ai_activity = true,    -- Notify when AI creates/edits/deletes drafts
-      sync_complete = true,  -- Notify when thread sync completes
-      watcher = true,        -- Notify when session file changes externally (e.g. AI agent via MCP)
+      enabled = true, -- Master toggle for all notifications
+      ai_activity = true, -- Notify when AI creates/edits/deletes drafts
+      sync_complete = true, -- Notify when thread sync completes
+      watcher = true, -- Notify when session file changes externally (e.g. AI agent via MCP)
     },
 
     -- Keymaps

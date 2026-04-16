@@ -105,61 +105,65 @@ function M.changed_files(opts)
 
     -- Run git diff async
     local git_cmd = { "git", "diff", target .. ".." .. source, "--", file.path }
-    vim.system(git_cmd, { cwd = diff_cwd, text = true }, vim.schedule_wrap(function(result)
-      if not vim.api.nvim_buf_is_valid(tmpbuf) then
-        return
-      end
-
-      local diff_lines = {}
-      if result.code == 0 and result.stdout and result.stdout ~= "" then
-        for line in (result.stdout .. "\n"):gmatch("([^\n]*)\n") do
-          table.insert(diff_lines, line)
+    vim.system(
+      git_cmd,
+      { cwd = diff_cwd, text = true },
+      vim.schedule_wrap(function(result)
+        if not vim.api.nvim_buf_is_valid(tmpbuf) then
+          return
         end
-        while #diff_lines > 0 and diff_lines[#diff_lines] == "" do
-          table.remove(diff_lines)
+
+        local diff_lines = {}
+        if result.code == 0 and result.stdout and result.stdout ~= "" then
+          for line in (result.stdout .. "\n"):gmatch("([^\n]*)\n") do
+            table.insert(diff_lines, line)
+          end
+          while #diff_lines > 0 and diff_lines[#diff_lines] == "" do
+            table.remove(diff_lines)
+          end
         end
-      end
 
-      if #diff_lines == 0 then
-        if file.change_type == "add" then
-          diff_lines = { "(New file -- no diff available)" }
-        elseif file.change_type == "delete" then
-          diff_lines = { "(Deleted file)" }
-        else
-          diff_lines = { "(No differences found)" }
+        if #diff_lines == 0 then
+          if file.change_type == "add" then
+            diff_lines = { "(New file -- no diff available)" }
+          elseif file.change_type == "delete" then
+            diff_lines = { "(Deleted file)" }
+          else
+            diff_lines = { "(No differences found)" }
+          end
         end
-      end
 
-      -- File metadata header
-      local header = {}
-      table.insert(header, string.format("File: %s  [%s]", file.path, file.change_type:upper()))
-      if file.original_path then
-        table.insert(header, "Renamed from: " .. file.original_path)
-      end
-      if file.additions and file.deletions then
-        table.insert(header, string.format("Stats: +%d / -%d", file.additions, file.deletions))
-      end
+        -- File metadata header
+        local header = {}
+        table.insert(header, string.format("File: %s  [%s]", file.path, file.change_type:upper()))
+        if file.original_path then
+          table.insert(header, "Renamed from: " .. file.original_path)
+        end
+        if file.additions and file.deletions then
+          table.insert(header, string.format("Stats: +%d / -%d", file.additions, file.deletions))
+        end
 
-      local helpers = require("power-review.session_helpers")
-      local drafts = helpers.get_drafts_for_file(session, file.path)
-      if #drafts > 0 then
-        table.insert(header, string.format("Drafts: %d comment(s)", #drafts))
-      end
+        local helpers = require("power-review.session_helpers")
+        local drafts = helpers.get_drafts_for_file(session, file.path)
+        if #drafts > 0 then
+          table.insert(header, string.format("Drafts: %d comment(s)", #drafts))
+        end
 
-      table.insert(header, string.rep("-", 60))
-      table.insert(header, "")
+        table.insert(header, string.rep("-", 60))
+        table.insert(header, "")
 
-      local all_lines = {}
-      vim.list_extend(all_lines, header)
-      vim.list_extend(all_lines, diff_lines)
+        local all_lines = {}
+        vim.list_extend(all_lines, header)
+        vim.list_extend(all_lines, diff_lines)
 
-      if vim.api.nvim_buf_is_valid(tmpbuf) then
-        vim.api.nvim_buf_set_lines(tmpbuf, 0, -1, false, all_lines)
-        vim.api.nvim_set_option_value("filetype", "diff", { buf = tmpbuf })
-        pcall(vim.treesitter.stop, tmpbuf)
-      end
-      self.win:update_preview_scrollbar()
-    end))
+        if vim.api.nvim_buf_is_valid(tmpbuf) then
+          vim.api.nvim_buf_set_lines(tmpbuf, 0, -1, false, all_lines)
+          vim.api.nvim_set_option_value("filetype", "diff", { buf = tmpbuf })
+          pcall(vim.treesitter.stop, tmpbuf)
+        end
+        self.win:update_preview_scrollbar()
+      end)
+    )
   end
 
   function DiffPreviewer:gen_winopts()
@@ -177,39 +181,42 @@ function M.changed_files(opts)
     progress_suffix = string.format(" [%d/%d reviewed]", progress.reviewed, progress.total)
   end
 
-  fzf_lua.fzf_exec(entries, vim.tbl_deep_extend("force", {
-    prompt = string.format("Changed Files (PR #%d)%s> ", session.pr_id, progress_suffix),
-    previewer = DiffPreviewer,
-    actions = {
-      ["default"] = function(selected)
-        if selected and selected[1] then
-          local file = entry_map[selected[1]]
-          if file then
-            local ui = require("power-review.ui")
-            ui.open_file_diff(session, file.path)
+  fzf_lua.fzf_exec(
+    entries,
+    vim.tbl_deep_extend("force", {
+      prompt = string.format("Changed Files (PR #%d)%s> ", session.pr_id, progress_suffix),
+      previewer = DiffPreviewer,
+      actions = {
+        ["default"] = function(selected)
+          if selected and selected[1] then
+            local file = entry_map[selected[1]]
+            if file then
+              local ui = require("power-review.ui")
+              ui.open_file_diff(session, file.path)
+            end
           end
-        end
-      end,
-      ["ctrl-v"] = function(selected)
-        if selected and selected[1] then
-          local file = entry_map[selected[1]]
-          if file then
-            local review_mod = require("power-review.review")
-            review_mod.toggle_reviewed(file.path, function(err)
-              if err then
-                vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-              else
-                -- Reopen the picker with updated state
-                vim.schedule(function()
-                  M.changed_files(opts)
-                end)
-              end
-            end)
+        end,
+        ["ctrl-v"] = function(selected)
+          if selected and selected[1] then
+            local file = entry_map[selected[1]]
+            if file then
+              local review_mod = require("power-review.review")
+              review_mod.toggle_reviewed(file.path, function(err)
+                if err then
+                  vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+                else
+                  -- Reopen the picker with updated state
+                  vim.schedule(function()
+                    M.changed_files(opts)
+                  end)
+                end
+              end)
+            end
           end
-        end
-      end,
-    },
-  }, opts))
+        end,
+      },
+    }, opts)
+  )
 end
 
 -- ============================================================================
@@ -292,25 +299,28 @@ function M.comments(opts)
     return vim.tbl_extend("force", self.winopts, new_winopts)
   end
 
-  fzf_lua.fzf_exec(entries, vim.tbl_deep_extend("force", {
-    prompt = string.format("Comments (PR #%d)> ", session.pr_id),
-    previewer = CommentPreviewer,
-    actions = {
-      ["default"] = function(selected)
-        if selected and selected[1] then
-          local item = entry_map[selected[1]]
-          if item then
-            local ui = require("power-review.ui")
-            ui.open_file_diff(session, item.file_path, function()
-              vim.schedule(function()
-                pcall(vim.api.nvim_win_set_cursor, 0, { item.line_start, 0 })
+  fzf_lua.fzf_exec(
+    entries,
+    vim.tbl_deep_extend("force", {
+      prompt = string.format("Comments (PR #%d)> ", session.pr_id),
+      previewer = CommentPreviewer,
+      actions = {
+        ["default"] = function(selected)
+          if selected and selected[1] then
+            local item = entry_map[selected[1]]
+            if item then
+              local ui = require("power-review.ui")
+              ui.open_file_diff(session, item.file_path, function()
+                vim.schedule(function()
+                  pcall(vim.api.nvim_win_set_cursor, 0, { item.line_start, 0 })
+                end)
               end)
-            end)
+            end
           end
-        end
-      end,
-    },
-  }, opts))
+        end,
+      },
+    }, opts)
+  )
 end
 
 -- ============================================================================
@@ -345,14 +355,8 @@ function M.sessions(opts)
   for _, s in ipairs(summaries) do
     local active_marker = (active_id and s.id == active_id) and " *" or ""
     local draft_label = s.draft_count > 0 and string.format(" [%d drafts]", s.draft_count) or ""
-    local display = string.format(
-      "[%s]%s PR #%d: %s%s",
-      s.provider_type:upper(),
-      active_marker,
-      s.pr_id,
-      s.pr_title,
-      draft_label
-    )
+    local display =
+      string.format("[%s]%s PR #%d: %s%s", s.provider_type:upper(), active_marker, s.pr_id, s.pr_title, draft_label)
     table.insert(entries, display)
     entry_map[display] = s
   end
@@ -408,27 +412,30 @@ function M.sessions(opts)
     return vim.tbl_extend("force", self.winopts, new_winopts)
   end
 
-  fzf_lua.fzf_exec(entries, vim.tbl_deep_extend("force", {
-    prompt = "Review Sessions> ",
-    previewer = SessionPreviewer,
-    actions = {
-      ["default"] = function(selected)
-        if selected and selected[1] then
-          local s = entry_map[selected[1]]
-          if s then
-            local review_mod = require("power-review.review")
-            review_mod.resume_session(s.id, function(err, resumed)
-              if err then
-                vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-              else
-                vim.notify("[PowerReview] Resumed: " .. resumed.pr_title, vim.log.levels.INFO)
-              end
-            end)
+  fzf_lua.fzf_exec(
+    entries,
+    vim.tbl_deep_extend("force", {
+      prompt = "Review Sessions> ",
+      previewer = SessionPreviewer,
+      actions = {
+        ["default"] = function(selected)
+          if selected and selected[1] then
+            local s = entry_map[selected[1]]
+            if s then
+              local review_mod = require("power-review.review")
+              review_mod.resume_session(s.id, function(err, resumed)
+                if err then
+                  vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+                else
+                  vim.notify("[PowerReview] Resumed: " .. resumed.pr_title, vim.log.levels.INFO)
+                end
+              end)
+            end
           end
-        end
-      end,
-    },
-  }, opts))
+        end,
+      },
+    }, opts)
+  )
 end
 
 return M

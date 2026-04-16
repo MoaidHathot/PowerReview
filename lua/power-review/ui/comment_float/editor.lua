@@ -41,7 +41,8 @@ function M.open(opts, float_module)
     subtitle = string.format(" %s (file-level) ", opts.file_path)
   elseif opts.line_end and opts.line_end ~= opts.line then
     if opts.col_start and opts.col_end then
-      subtitle = string.format(" %s:%d:%d-%d:%d ", opts.file_path, opts.line, opts.col_start, opts.line_end, opts.col_end)
+      subtitle =
+        string.format(" %s:%d:%d-%d:%d ", opts.file_path, opts.line, opts.col_start, opts.line_end, opts.col_end)
     else
       subtitle = string.format(" %s:%d-%d ", opts.file_path, opts.line, opts.line_end)
     end
@@ -70,9 +71,8 @@ function M.open(opts, float_module)
       text = {
         top = title .. subtitle,
         top_align = "left",
-        bottom = is_reply
-          and " <C-s>:save  <C-t>:thread  <C-p>:preview  <C-h>:hide  <C-l>:split  <Esc>:cancel "
-          or  " <C-s>:save  <C-p>:preview  <C-h>:hide  <C-l>:split  <Esc>:cancel ",
+        bottom = is_reply and " <C-s>:save  <C-t>:thread  <C-p>:preview  <C-h>:hide  <C-l>:split  <Esc>:cancel "
+          or " <C-s>:save  <C-p>:preview  <C-h>:hide  <C-l>:split  <Esc>:cancel ",
         bottom_align = "center",
       },
     },
@@ -200,14 +200,22 @@ function M.open(opts, float_module)
     vim.cmd("stopinsert")
     save()
   end, buf_kopts)
-  vim.keymap.set("n", "<C-h>", function() layout.toggle_editor_visibility(float_module) end, buf_kopts)
-  vim.keymap.set("i", "<C-h>", function() layout.toggle_editor_visibility(float_module) end, buf_kopts)
-  vim.keymap.set("n", "<C-l>", function() layout.toggle_editor_split(float_module) end, buf_kopts)
+  vim.keymap.set("n", "<C-h>", function()
+    layout.toggle_editor_visibility(float_module)
+  end, buf_kopts)
+  vim.keymap.set("i", "<C-h>", function()
+    layout.toggle_editor_visibility(float_module)
+  end, buf_kopts)
+  vim.keymap.set("n", "<C-l>", function()
+    layout.toggle_editor_split(float_module)
+  end, buf_kopts)
   vim.keymap.set("i", "<C-l>", function()
     vim.cmd("stopinsert")
     layout.toggle_editor_split(float_module)
   end, buf_kopts)
-  vim.keymap.set("n", "q", function() float_module.close_editor() end, buf_kopts)
+  vim.keymap.set("n", "q", function()
+    float_module.close_editor()
+  end, buf_kopts)
 
   -- Live markdown preview: create after editor is fully mounted
   vim.schedule(function()

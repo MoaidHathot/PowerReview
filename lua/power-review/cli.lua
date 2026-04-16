@@ -42,11 +42,13 @@ function M.run(args, opts)
 
   log.debug("CLI: %s", table.concat(cmd, " "))
 
-  local result = vim.system(cmd, {
-    text = true,
-    stdin = opts.stdin,
-    timeout = timeout,
-  }):wait()
+  local result = vim
+    .system(cmd, {
+      text = true,
+      stdin = opts.stdin,
+      timeout = timeout,
+    })
+    :wait()
 
   -- Check for process errors
   if result.code ~= 0 then
@@ -564,9 +566,12 @@ end
 function M.update_thread_status(pr_url, thread_id, status, callback)
   M.run_async({
     "thread-status",
-    "--pr-url", pr_url,
-    "--thread-id", tostring(thread_id),
-    "--status", status,
+    "--pr-url",
+    pr_url,
+    "--thread-id",
+    tostring(thread_id),
+    "--status",
+    status,
   }, function(err, result)
     if err then
       callback(err)

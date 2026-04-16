@@ -219,9 +219,11 @@ function M._quickfix_fallback(session)
       table.insert(qf_items, {
         filename = thread.file_path,
         lnum = thread.line_start or 1,
-        text = string.format("[THREAD] %s: %s",
+        text = string.format(
+          "[THREAD] %s: %s",
           first and first.author or "unknown",
-          first and first.body:sub(1, 80) or ""),
+          first and first.body:sub(1, 80) or ""
+        ),
       })
     end
   end

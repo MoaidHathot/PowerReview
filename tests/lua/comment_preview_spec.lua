@@ -88,8 +88,7 @@ describe("status_icons", function()
   it("has entries for all standard statuses", function()
     local expected = { "active", "fixed", "wontfix", "closed", "bydesign", "pending", "draft", "submitted" }
     for _, status in ipairs(expected) do
-      assert.is_string(preview.status_icons[status],
-        string.format("Missing icon for status '%s'", status))
+      assert.is_string(preview.status_icons[status], string.format("Missing icon for status '%s'", status))
     end
   end)
 end)
@@ -385,7 +384,9 @@ describe("build_items", function()
       },
       threads = {},
     }
-    local mock_get_all_threads = function(_) return {} end
+    local mock_get_all_threads = function(_)
+      return {}
+    end
 
     local items = preview.build_items(session, mock_get_all_threads)
     assert.equal(1, #items)

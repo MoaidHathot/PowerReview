@@ -531,7 +531,8 @@ function M.api.get_review_session()
     file_count = #(session.files or {}),
     vote = session.vote,
     vote_label = vote_label,
-  }, nil
+  },
+    nil
 end
 
 --- Set the review vote
@@ -557,13 +558,14 @@ end
 --- Close the current review session.
 ---@param callback? fun(err?: string)
 function M.api.close_review(callback)
-  callback = callback or function(err)
-    if err then
-      vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
-    else
-      vim.notify("[PowerReview] Review closed", vim.log.levels.INFO)
+  callback = callback
+    or function(err)
+      if err then
+        vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
+      else
+        vim.notify("[PowerReview] Review closed", vim.log.levels.INFO)
+      end
     end
-  end
   local review = require("power-review.review")
   review.close_review(callback)
 end
@@ -578,12 +580,7 @@ function M.api.reply_to_thread(opts)
   end
 
   local cli = require("power-review.cli")
-  local result, err = cli.reply_to_thread(
-    session.pr_url,
-    opts.thread_id,
-    opts.body,
-    opts.author or "user"
-  )
+  local result, err = cli.reply_to_thread(session.pr_url, opts.thread_id, opts.body, opts.author or "user")
 
   if not result then
     return nil, err

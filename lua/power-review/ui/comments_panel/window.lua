@@ -5,7 +5,9 @@ local log = require("power-review.utils.log")
 
 --- Reference to the parent module's _split field (set via M.set_split_ref).
 ---@type fun(): table|nil
-M._get_split = function() return nil end
+M._get_split = function()
+  return nil
+end
 
 --- Set the getter function for the current split reference.
 ---@param getter fun(): table|nil

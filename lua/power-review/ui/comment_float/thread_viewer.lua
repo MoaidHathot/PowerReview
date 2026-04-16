@@ -30,7 +30,8 @@ function M.build_thread_content(threads, drafts, file_path, line)
     -- Thread status header line
     local thread_status = thread.status or "active"
     local status_icon = status_icons[thread_status:lower()] or ""
-    local status_line = string.format("── Thread #%s  %s %s ──", tostring(thread.id or "?"), status_icon, thread_status)
+    local status_line =
+      string.format("── Thread #%s  %s %s ──", tostring(thread.id or "?"), status_icon, thread_status)
     table.insert(lines, status_line)
     local status_hl = thread_status:lower() == "active" and "DiagnosticInfo" or "Comment"
     table.insert(hls, {
@@ -64,7 +65,9 @@ function M.build_thread_content(threads, drafts, file_path, line)
   -- Local drafts
   for _, draft in ipairs(drafts) do
     local status_badge = string.format("[%s]", draft.status:upper())
-    local author_label = draft.author == "ai" and (draft.author_name and " (AI: " .. draft.author_name .. ")" or " (AI)") or ""
+    local author_label = draft.author == "ai"
+        and (draft.author_name and " (AI: " .. draft.author_name .. ")" or " (AI)")
+      or ""
     local header = string.format("%s%s %s", status_badge, author_label, draft.created_at or "")
     table.insert(lines, header)
 
@@ -279,7 +282,8 @@ function M.open(opts, float_module)
         prompt = "Select draft to edit:",
         format_item = function(d)
           local preview = d.body:gsub("\n", " "):sub(1, 60)
-          local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)") or ""
+          local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)")
+            or ""
           return string.format("[%s]%s %s", d.status:upper(), author_label, preview)
         end,
       }, function(selected)
@@ -361,7 +365,8 @@ function M.open(opts, float_module)
         prompt = "Select draft to approve:",
         format_item = function(d)
           local preview = d.body:gsub("\n", " "):sub(1, 60)
-          local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)") or ""
+          local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)")
+            or ""
           return string.format("[%s]%s %s", d.status:upper(), author_label, preview)
         end,
       }, function(selected)

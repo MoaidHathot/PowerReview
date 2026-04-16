@@ -146,8 +146,7 @@ function M._on_change(pr_url)
       notifications.ai_drafts_changed(old_ai_count, new_ai_count)
     end
 
-    log.debug("Watcher: session reloaded (%d drafts, %d threads)",
-      #(updated.drafts or {}), #(updated.threads or {}))
+    log.debug("Watcher: session reloaded (%d drafts, %d threads)", #(updated.drafts or {}), #(updated.threads or {}))
   end)
 end
 

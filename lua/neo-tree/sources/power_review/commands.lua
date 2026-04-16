@@ -123,11 +123,16 @@ M.show_file_details = function(state)
     table.insert(lines, "Author: " .. (e.pr_author or ""))
     table.insert(lines, "Branch: " .. (e.source_branch or "") .. " -> " .. (e.target_branch or ""))
     if e.draft_counts then
-      table.insert(lines, string.format(
-        "Drafts: %d total (%d draft, %d pending, %d submitted)",
-        e.draft_counts.total, e.draft_counts.draft,
-        e.draft_counts.pending, e.draft_counts.submitted
-      ))
+      table.insert(
+        lines,
+        string.format(
+          "Drafts: %d total (%d draft, %d pending, %d submitted)",
+          e.draft_counts.total,
+          e.draft_counts.draft,
+          e.draft_counts.pending,
+          e.draft_counts.submitted
+        )
+      )
     end
   elseif node.type == "pr_file" then
     local e = node.extra

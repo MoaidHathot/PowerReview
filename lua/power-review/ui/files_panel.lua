@@ -112,19 +112,22 @@ local function build_nodes(session)
         local file_drafts = helpers.get_drafts_for_file(session, file.path)
         local file_threads = helpers.get_threads_for_file(session, file.path)
         local review_status, review_icon = helpers.get_file_review_status(session, file.path)
-        table.insert(children, NuiTree.Node({
-          text = vim.fn.fnamemodify(file.path, ":t"),
-          type = "file",
-          file_path = file.path,
-          original_path = file.original_path,
-          change_type = file.change_type,
-          additions = file.additions,
-          deletions = file.deletions,
-          draft_count = #file_drafts,
-          thread_count = #file_threads,
-          review_status = review_status,
-          review_icon = review_icon,
-        }))
+        table.insert(
+          children,
+          NuiTree.Node({
+            text = vim.fn.fnamemodify(file.path, ":t"),
+            type = "file",
+            file_path = file.path,
+            original_path = file.original_path,
+            change_type = file.change_type,
+            additions = file.additions,
+            deletions = file.deletions,
+            draft_count = #file_drafts,
+            thread_count = #file_threads,
+            review_status = review_status,
+            review_icon = review_icon,
+          })
+        )
       end
     else
       -- Directory with children
@@ -133,27 +136,33 @@ local function build_nodes(session)
         local file_drafts = helpers.get_drafts_for_file(session, file.path)
         local file_threads = helpers.get_threads_for_file(session, file.path)
         local review_status, review_icon = helpers.get_file_review_status(session, file.path)
-        table.insert(file_nodes, NuiTree.Node({
-          text = vim.fn.fnamemodify(file.path, ":t"),
-          type = "file",
-          file_path = file.path,
-          original_path = file.original_path,
-          change_type = file.change_type,
-          additions = file.additions,
-          deletions = file.deletions,
-          draft_count = #file_drafts,
-          thread_count = #file_threads,
-          review_status = review_status,
-          review_icon = review_icon,
-        }))
+        table.insert(
+          file_nodes,
+          NuiTree.Node({
+            text = vim.fn.fnamemodify(file.path, ":t"),
+            type = "file",
+            file_path = file.path,
+            original_path = file.original_path,
+            change_type = file.change_type,
+            additions = file.additions,
+            deletions = file.deletions,
+            draft_count = #file_drafts,
+            thread_count = #file_threads,
+            review_status = review_status,
+            review_icon = review_icon,
+          })
+        )
       end
 
-      table.insert(children, NuiTree.Node({
-        text = dir .. "/",
-        type = "directory",
-        dir_path = dir,
-        file_count = #files_in_dir,
-      }, file_nodes))
+      table.insert(
+        children,
+        NuiTree.Node({
+          text = dir .. "/",
+          type = "directory",
+          dir_path = dir,
+          file_count = #files_in_dir,
+        }, file_nodes)
+      )
     end
   end
 

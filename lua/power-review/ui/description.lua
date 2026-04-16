@@ -74,10 +74,18 @@ end
 ---@param vote number
 ---@return string
 local function vote_icon(vote)
-  if vote == 10 then return "+" end
-  if vote == 5 then return "~" end
-  if vote == -5 then return "?" end
-  if vote == -10 then return "x" end
+  if vote == 10 then
+    return "+"
+  end
+  if vote == 5 then
+    return "~"
+  end
+  if vote == -5 then
+    return "?"
+  end
+  if vote == -10 then
+    return "x"
+  end
   return " "
 end
 
@@ -306,8 +314,12 @@ function M.open(session)
 
   -- Keymaps
   local map_opts = { buffer = buf, noremap = true, silent = true }
-  vim.keymap.set("n", "q", function() M.close() end, map_opts)
-  vim.keymap.set("n", "<Esc>", function() M.close() end, map_opts)
+  vim.keymap.set("n", "q", function()
+    M.close()
+  end, map_opts)
+  vim.keymap.set("n", "<Esc>", function()
+    M.close()
+  end, map_opts)
 
   -- Edit description keymap
   vim.keymap.set("n", "e", function()
@@ -347,20 +359,16 @@ function M.open(session)
 
         -- Submit to CLI
         local cli = require("power-review.cli")
-        cli.run_async(
-          { "update-description", "--pr-url", session.pr_url, "--body-stdin" },
-          function(err)
-            if err then
-              vim.notify("[PowerReview] Failed to update description: " .. err, vim.log.levels.ERROR)
-            else
-              vim.notify("[PowerReview] Description updated", vim.log.levels.INFO)
-              -- Update the session's description in memory
-              session.pr_description = new_body
-              vim.bo[buf].modified = false
-            end
-          end,
-          { stdin = new_body }
-        )
+        cli.run_async({ "update-description", "--pr-url", session.pr_url, "--body-stdin" }, function(err)
+          if err then
+            vim.notify("[PowerReview] Failed to update description: " .. err, vim.log.levels.ERROR)
+          else
+            vim.notify("[PowerReview] Description updated", vim.log.levels.INFO)
+            -- Update the session's description in memory
+            session.pr_description = new_body
+            vim.bo[buf].modified = false
+          end
+        end, { stdin = new_body })
       end,
     })
 

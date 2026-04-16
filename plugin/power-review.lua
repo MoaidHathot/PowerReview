@@ -102,10 +102,7 @@ local function handle_submit()
 
     local function progress_cb(status, pending_count)
       vim.schedule(function()
-        vim.notify(
-          string.format("[PowerReview] %s %d comment(s)...", status, pending_count),
-          vim.log.levels.INFO
-        )
+        vim.notify(string.format("[PowerReview] %s %d comment(s)...", status, pending_count), vim.log.levels.INFO)
       end)
     end
 
@@ -277,10 +274,7 @@ local commands = {
       end
       for _, s in ipairs(sessions) do
         vim.notify(
-          string.format(
-            "  [%s] PR #%d: %s (%d drafts) - %s",
-            s.provider_type, s.pr_id, s.pr_title, s.draft_count, s.id
-          ),
+          string.format("  [%s] PR #%d: %s (%d drafts) - %s", s.provider_type, s.pr_id, s.pr_title, s.draft_count, s.id),
           vim.log.levels.INFO
         )
       end
@@ -415,10 +409,7 @@ local commands = {
         if err then
           vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
         else
-          vim.notify(
-            string.format("[PowerReview] Synced %d remote thread(s)", thread_count or 0),
-            vim.log.levels.INFO
-          )
+          vim.notify(string.format("[PowerReview] Synced %d remote thread(s)", thread_count or 0), vim.log.levels.INFO)
         end
       end)
     end,

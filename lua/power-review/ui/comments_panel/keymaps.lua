@@ -54,7 +54,9 @@ local function resolve_draft_from_section(section, action_name, session, callbac
 
     vim.ui.select(items, {
       prompt = "Select reply draft to " .. action_name .. ":",
-      format_item = function(item) return item.label end,
+      format_item = function(item)
+        return item.label
+      end,
     }, function(choice)
       if choice then
         callback(choice.id)

@@ -21,17 +21,25 @@ function M.highlight(opts)
   local colors = ui_cfg.colors or {}
   local duration = opts.duration_ms or (ui_cfg.flash or {}).duration or 2000
 
-  if not vim.api.nvim_buf_is_valid(bufnr) then return end
-  if not vim.api.nvim_win_is_valid(winid) then return end
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  if not vim.api.nvim_win_is_valid(winid) then
+    return
+  end
 
   -- Ensure flash highlight groups exist
   vim.api.nvim_set_hl(0, hl.groups.flash, {
-    default = true, bg = colors.flash_bg or "#3e4452", bold = true,
+    default = true,
+    bg = colors.flash_bg or "#3e4452",
+    bold = true,
   })
   vim.api.nvim_set_hl(0, hl.groups.flash_col, {
-    default = true, undercurl = true,
+    default = true,
+    undercurl = true,
     sp = colors.flash_border or "#e5c07b",
-    bg = colors.flash_bg or "#3e4452", bold = true,
+    bg = colors.flash_bg or "#3e4452",
+    bold = true,
   })
 
   vim.api.nvim_buf_clear_namespace(bufnr, M.ns, 0, -1)

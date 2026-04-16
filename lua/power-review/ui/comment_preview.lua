@@ -18,8 +18,14 @@ end
 
 --- Status icons for threads and drafts.
 M.status_icons = {
-  active = "", fixed = "", wontfix = "", closed = "",
-  bydesign = "󰗡", pending = "", draft = "", submitted = "",
+  active = "",
+  fixed = "",
+  wontfix = "",
+  closed = "",
+  bydesign = "󰗡",
+  pending = "",
+  draft = "",
+  submitted = "",
 }
 
 --- Build rich preview lines + highlights for a comment item.
@@ -134,7 +140,6 @@ function M.build(item, session)
         add("")
       end
     end
-
   else
     -- Draft comment
     local s_icon = M.status_icons[item.status] or "?"
@@ -242,9 +247,12 @@ function M.format_display(item)
 
   return string.format(
     "%s%s %s%s %s%s %s",
-    kind_label, icon,
-    item.file_path, range,
-    author_display, reply_badge,
+    kind_label,
+    icon,
+    item.file_path,
+    range,
+    author_display,
+    reply_badge,
     preview
   )
 end

@@ -76,8 +76,13 @@ function M.build(session, file_path)
     return false
   end)
 
-  log.debug("build_indicators(%s): %d drafts + %d remote threads -> %d indicators",
-    file_path, #drafts, #threads, #indicators)
+  log.debug(
+    "build_indicators(%s): %d drafts + %d remote threads -> %d indicators",
+    file_path,
+    #drafts,
+    #threads,
+    #indicators
+  )
 
   return indicators
 end

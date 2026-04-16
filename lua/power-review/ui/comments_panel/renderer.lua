@@ -229,8 +229,13 @@ function M.build_sections(session, panel_width, collapsed)
     type = "header",
     lines = {
       string.format(" PowerReview: %s", session.pr_title or "PR #" .. session.pr_id),
-      string.format("  %d threads   %d drafts   %d pending   %d submitted",
-        remote_count, counts.total, counts.pending, counts.submitted),
+      string.format(
+        "  %d threads   %d drafts   %d pending   %d submitted",
+        remote_count,
+        counts.total,
+        counts.pending,
+        counts.submitted
+      ),
       header_sep,
     },
     highlights = {
@@ -325,7 +330,8 @@ function M.build_sections(session, panel_width, collapsed)
       for _, thread in ipairs(file_data.threads) do
         local lines = {}
         local hls = {}
-        local loc = M.location_label(thread.line_start, thread.line_end, thread.col_start, thread.col_end, thread.file_path)
+        local loc =
+          M.location_label(thread.line_start, thread.line_end, thread.col_start, thread.col_end, thread.file_path)
         local status_icon_str, status_hl = M.thread_status_icon(thread.status or "active")
         local comment_count = thread.comments and #thread.comments or 0
         local reply_draft_count = reply_drafts_by_thread[thread.id] and #reply_drafts_by_thread[thread.id] or 0
@@ -345,10 +351,14 @@ function M.build_sections(session, panel_width, collapsed)
           count_badge = "  (" .. table.concat(parts, ", ") .. ")"
         end
 
-        local header = string.format("%s%s %s [%s]%s", t_expander, status_icon_str, loc, thread.status or "active", count_badge)
+        local header =
+          string.format("%s%s %s [%s]%s", t_expander, status_icon_str, loc, thread.status or "active", count_badge)
         table.insert(lines, header)
         table.insert(hls, { line = #lines, col_start = 0, col_end = #t_expander, hl_group = HL.EXPANDER })
-        table.insert(hls, { line = #lines, col_start = #t_expander, col_end = #t_expander + #status_icon_str, hl_group = status_hl })
+        table.insert(
+          hls,
+          { line = #lines, col_start = #t_expander, col_end = #t_expander + #status_icon_str, hl_group = status_hl }
+        )
 
         if not is_thread_collapsed then
           -- Code context snippet
@@ -359,7 +369,12 @@ function M.build_sections(session, panel_width, collapsed)
               -- Adjust highlight line numbers
             end
             for _, ch in ipairs(ctx_hls) do
-              table.insert(hls, { line = #lines - #ctx_lines + ch.line, col_start = ch.col_start, col_end = ch.col_end, hl_group = ch.hl_group })
+              table.insert(hls, {
+                line = #lines - #ctx_lines + ch.line,
+                col_start = ch.col_start,
+                col_end = ch.col_end,
+                hl_group = ch.hl_group,
+              })
             end
           end
 
@@ -368,10 +383,21 @@ function M.build_sections(session, panel_width, collapsed)
               local indent = ci == 1 and "    " or "      "
               local reply_marker = ci > 1 and " " or ""
 
-              local author_line = string.format("%s%s%s  %s", indent, reply_marker, comment.author, M.format_time(comment.created_at))
+              local author_line =
+                string.format("%s%s%s  %s", indent, reply_marker, comment.author, M.format_time(comment.created_at))
               table.insert(lines, author_line)
-              table.insert(hls, { line = #lines, col_start = 0, col_end = #indent + #reply_marker + #comment.author, hl_group = HL.REMOTE_AUTHOR })
-              table.insert(hls, { line = #lines, col_start = #author_line - #M.format_time(comment.created_at), col_end = #author_line, hl_group = HL.TIMESTAMP })
+              table.insert(hls, {
+                line = #lines,
+                col_start = 0,
+                col_end = #indent + #reply_marker + #comment.author,
+                hl_group = HL.REMOTE_AUTHOR,
+              })
+              table.insert(hls, {
+                line = #lines,
+                col_start = #author_line - #M.format_time(comment.created_at),
+                col_end = #author_line,
+                hl_group = HL.TIMESTAMP,
+              })
 
               local body_lines = M.wrap_body(comment.body, body_width and (body_width - #indent - 2) or nil)
               for _, bl in ipairs(body_lines) do
@@ -441,7 +467,10 @@ function M.build_sections(session, panel_width, collapsed)
         table.insert(lines, header)
         table.insert(hls, { line = 1, col_start = 2, col_end = 2 + #s_icon, hl_group = s_hl })
         if draft.author == "ai" then
-          table.insert(hls, { line = 1, col_start = 2 + #s_icon, col_end = 2 + #s_icon + #ai_label, hl_group = HL.AI_BADGE })
+          table.insert(
+            hls,
+            { line = 1, col_start = 2 + #s_icon, col_end = 2 + #s_icon + #ai_label, hl_group = HL.AI_BADGE }
+          )
         end
 
         -- Code context snippet
@@ -452,7 +481,10 @@ function M.build_sections(session, panel_width, collapsed)
             table.insert(lines, cl)
           end
           for _, ch in ipairs(d_ctx_hls) do
-            table.insert(hls, { line = base_line + ch.line, col_start = ch.col_start, col_end = ch.col_end, hl_group = ch.hl_group })
+            table.insert(
+              hls,
+              { line = base_line + ch.line, col_start = ch.col_start, col_end = ch.col_end, hl_group = ch.hl_group }
+            )
           end
         end
 

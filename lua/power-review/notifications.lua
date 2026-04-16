@@ -83,10 +83,7 @@ end
 ---@param thread_count number
 function M.sync_complete(thread_count)
   if category_enabled("sync_complete") then
-    vim.notify(
-      string.format("[PowerReview] Synced %d thread(s)", thread_count),
-      vim.log.levels.INFO
-    )
+    vim.notify(string.format("[PowerReview] Synced %d thread(s)", thread_count), vim.log.levels.INFO)
   end
 end
 

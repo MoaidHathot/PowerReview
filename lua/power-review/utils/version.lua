@@ -35,11 +35,7 @@ end
 function M.check()
   local v = vim.version()
   if not M.meets_minimum(v) then
-    return string.format(
-      "[PowerReview] Requires Neovim >= %s, but found %s",
-      M.format(M.MIN_VERSION),
-      M.format(v)
-    )
+    return string.format("[PowerReview] Requires Neovim >= %s, but found %s", M.format(M.MIN_VERSION), M.format(v))
   end
   return nil
 end

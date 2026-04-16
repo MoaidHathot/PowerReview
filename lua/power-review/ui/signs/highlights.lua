@@ -37,10 +37,14 @@ function M.setup()
 
   -- Column-level span highlights (underline to mark the exact code the comment targets)
   vim.api.nvim_set_hl(0, M.groups.col_highlight, {
-    default = true, undercurl = true, sp = colors.comment_undercurl or "#61afef",
+    default = true,
+    undercurl = true,
+    sp = colors.comment_undercurl or "#61afef",
   })
   vim.api.nvim_set_hl(0, M.groups.col_highlight_draft, {
-    default = true, undercurl = true, sp = colors.draft_undercurl or "#98c379",
+    default = true,
+    undercurl = true,
+    sp = colors.draft_undercurl or "#98c379",
   })
 
   -- Virtual text sub-highlights

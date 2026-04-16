@@ -98,43 +98,52 @@ local function build_nodes(summaries, active_id)
     local draft_label = s.draft_count > 0 and string.format(" [%d drafts]", s.draft_count) or ""
 
     -- Main display line
-    local display = string.format(
-      "[%s]%s PR #%d: %s%s",
-      s.provider_type:upper(),
-      active_marker,
-      s.pr_id,
-      s.pr_title,
-      draft_label
-    )
+    local display =
+      string.format("[%s]%s PR #%d: %s%s", s.provider_type:upper(), active_marker, s.pr_id, s.pr_title, draft_label)
 
     -- Detail child nodes
     local children = {}
-    table.insert(children, NuiTree.Node({
-      text = string.format("Repo: %s/%s/%s", s.org, s.project, s.repo),
-      node_type = "detail",
-    }))
-    if s.pr_url and s.pr_url ~= "" then
-      table.insert(children, NuiTree.Node({
-        text = string.format("URL: %s", s.pr_url),
+    table.insert(
+      children,
+      NuiTree.Node({
+        text = string.format("Repo: %s/%s/%s", s.org, s.project, s.repo),
         node_type = "detail",
-      }))
+      })
+    )
+    if s.pr_url and s.pr_url ~= "" then
+      table.insert(
+        children,
+        NuiTree.Node({
+          text = string.format("URL: %s", s.pr_url),
+          node_type = "detail",
+        })
+      )
     end
-    table.insert(children, NuiTree.Node({
-      text = string.format("Updated: %s", format_timestamp(s.updated_at)),
-      node_type = "detail",
-    }))
-    table.insert(children, NuiTree.Node({
-      text = string.format("Created: %s", format_timestamp(s.created_at)),
-      node_type = "detail",
-    }))
+    table.insert(
+      children,
+      NuiTree.Node({
+        text = string.format("Updated: %s", format_timestamp(s.updated_at)),
+        node_type = "detail",
+      })
+    )
+    table.insert(
+      children,
+      NuiTree.Node({
+        text = string.format("Created: %s", format_timestamp(s.created_at)),
+        node_type = "detail",
+      })
+    )
 
-    table.insert(session_nodes, NuiTree.Node({
-      text = display,
-      node_type = "session",
-      session_id = s.id,
-      session_summary = s,
-      is_active = is_active,
-    }, children))
+    table.insert(
+      session_nodes,
+      NuiTree.Node({
+        text = display,
+        node_type = "session",
+        session_id = s.id,
+        session_summary = s,
+        is_active = is_active,
+      }, children)
+    )
   end
 
   return { header, unpack(session_nodes) }
@@ -328,12 +337,16 @@ end
 ---@param tree table NuiTree
 function M._setup_keymaps(split, tree)
   -- Close
-  split:map("n", "q", function() M.close() end, { noremap = true })
+  split:map("n", "q", function()
+    M.close()
+  end, { noremap = true })
 
   -- Toggle expand/collapse or resume session
   split:map("n", "<CR>", function()
     local node = tree:get_node()
-    if not node then return end
+    if not node then
+      return
+    end
 
     if node:has_children() then
       -- If it's a session node, resume it
@@ -453,7 +466,9 @@ end
 ---@return table|nil NuiTree.Node with node_type == "session"
 function M._get_session_node(tree)
   local node = tree:get_node()
-  if not node then return nil end
+  if not node then
+    return nil
+  end
 
   -- If on a detail child, walk up to the session parent
   if node.node_type == "detail" then
@@ -517,7 +532,9 @@ function M._select_fallback()
       )
     end,
   }, function(selected)
-    if not selected then return end
+    if not selected then
+      return
+    end
 
     -- Sub-action picker
     local actions = {
@@ -527,9 +544,13 @@ function M._select_fallback()
 
     vim.ui.select(actions, {
       prompt = "Action:",
-      format_item = function(a) return a.label end,
+      format_item = function(a)
+        return a.label
+      end,
     }, function(act)
-      if not act then return end
+      if not act then
+        return
+      end
 
       if act.action == "resume" then
         M._resume_session(selected.id)

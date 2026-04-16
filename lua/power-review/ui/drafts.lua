@@ -90,8 +90,12 @@ local function build_nodes(session)
   local filter_label = M._filter == "ai" and " [AI only]" or ""
   local summary_text = string.format(
     "Drafts: %d total (%d draft, %d pending, %d submitted) | AI: %d%s",
-    all_counts.total, all_counts.draft, all_counts.pending, all_counts.submitted,
-    ai_count, filter_label
+    all_counts.total,
+    all_counts.draft,
+    all_counts.pending,
+    all_counts.submitted,
+    ai_count,
+    filter_label
   )
 
   -- Group filtered drafts by status
@@ -116,24 +120,30 @@ local function build_nodes(session)
       elseif d.file_path then
         loc_label = loc_label .. " (file-level)"
       end
-      table.insert(draft_children, NuiTree.Node({
-        text = string.format("[DRAFT]%s %s %s", author_label, loc_label, preview),
-        node_type = "draft_item",
-        draft_id = d.id,
-        draft_status = d.status,
-        draft_author = d.author,
-        file_path = d.file_path,
-        line_start = d.line_start,
-        line_end = d.line_end,
-        preview = preview,
-        body = d.body,
-      }))
+      table.insert(
+        draft_children,
+        NuiTree.Node({
+          text = string.format("[DRAFT]%s %s %s", author_label, loc_label, preview),
+          node_type = "draft_item",
+          draft_id = d.id,
+          draft_status = d.status,
+          draft_author = d.author,
+          file_path = d.file_path,
+          line_start = d.line_start,
+          line_end = d.line_end,
+          preview = preview,
+          body = d.body,
+        })
+      )
     end
-    table.insert(root_children, NuiTree.Node({
-      text = string.format(" Drafts (%d) - ready to approve", #by_status.draft),
-      node_type = "status_group",
-      group_status = "draft",
-    }, draft_children))
+    table.insert(
+      root_children,
+      NuiTree.Node({
+        text = string.format(" Drafts (%d) - ready to approve", #by_status.draft),
+        node_type = "status_group",
+        group_status = "draft",
+      }, draft_children)
+    )
   end
 
   -- Pending section
@@ -148,24 +158,30 @@ local function build_nodes(session)
       elseif d.file_path then
         loc_label = loc_label .. " (file-level)"
       end
-      table.insert(pending_children, NuiTree.Node({
-        text = string.format("[PENDING]%s %s %s", author_label, loc_label, preview),
-        node_type = "draft_item",
-        draft_id = d.id,
-        draft_status = d.status,
-        draft_author = d.author,
-        file_path = d.file_path,
-        line_start = d.line_start,
-        line_end = d.line_end,
-        preview = preview,
-        body = d.body,
-      }))
+      table.insert(
+        pending_children,
+        NuiTree.Node({
+          text = string.format("[PENDING]%s %s %s", author_label, loc_label, preview),
+          node_type = "draft_item",
+          draft_id = d.id,
+          draft_status = d.status,
+          draft_author = d.author,
+          file_path = d.file_path,
+          line_start = d.line_start,
+          line_end = d.line_end,
+          preview = preview,
+          body = d.body,
+        })
+      )
     end
-    table.insert(root_children, NuiTree.Node({
-      text = string.format(" Pending (%d) - ready to submit", #by_status.pending),
-      node_type = "status_group",
-      group_status = "pending",
-    }, pending_children))
+    table.insert(
+      root_children,
+      NuiTree.Node({
+        text = string.format(" Pending (%d) - ready to submit", #by_status.pending),
+        node_type = "status_group",
+        group_status = "pending",
+      }, pending_children)
+    )
   end
 
   -- Submitted section
@@ -179,23 +195,29 @@ local function build_nodes(session)
       elseif d.file_path then
         loc_label = loc_label .. " (file-level)"
       end
-      table.insert(submitted_children, NuiTree.Node({
-        text = string.format("[SUBMITTED] %s %s", loc_label, preview),
-        node_type = "draft_item",
-        draft_id = d.id,
-        draft_status = d.status,
-        draft_author = d.author,
-        file_path = d.file_path,
-        line_start = d.line_start,
-        preview = preview,
-        body = d.body,
-      }))
+      table.insert(
+        submitted_children,
+        NuiTree.Node({
+          text = string.format("[SUBMITTED] %s %s", loc_label, preview),
+          node_type = "draft_item",
+          draft_id = d.id,
+          draft_status = d.status,
+          draft_author = d.author,
+          file_path = d.file_path,
+          line_start = d.line_start,
+          preview = preview,
+          body = d.body,
+        })
+      )
     end
-    table.insert(root_children, NuiTree.Node({
-      text = string.format(" Submitted (%d)", #by_status.submitted),
-      node_type = "status_group",
-      group_status = "submitted",
-    }, submitted_children))
+    table.insert(
+      root_children,
+      NuiTree.Node({
+        text = string.format(" Submitted (%d)", #by_status.submitted),
+        node_type = "status_group",
+        group_status = "submitted",
+      }, submitted_children)
+    )
   end
 
   if #root_children == 0 then
@@ -402,12 +424,16 @@ function M._setup_keymaps(split, tree, session)
   local pr = require("power-review")
 
   -- Close
-  split:map("n", "q", function() M.close() end, { noremap = true })
+  split:map("n", "q", function()
+    M.close()
+  end, { noremap = true })
 
   -- Toggle expand/collapse or navigate to file
   split:map("n", "<CR>", function()
     local node = tree:get_node()
-    if not node then return end
+    if not node then
+      return
+    end
 
     if node:has_children() then
       if node:is_expanded() then
@@ -595,14 +621,19 @@ function M._setup_keymaps(split, tree, session)
         string.format("File: %s:%d", draft.file_path, draft.line_start),
         draft.line_end and string.format("Range: %d-%d", draft.line_start, draft.line_end) or "",
         string.format("Status: %s", draft.status),
-        string.format("Author: %s", draft.author_name and (draft.author .. " (" .. draft.author_name .. ")") or draft.author),
+        string.format(
+          "Author: %s",
+          draft.author_name and (draft.author .. " (" .. draft.author_name .. ")") or draft.author
+        ),
         string.format("Created: %s", draft.created_at),
         string.format("Updated: %s", draft.updated_at),
         "",
         draft.body,
       }
       -- Filter empty strings
-      lines = vim.tbl_filter(function(l) return l ~= "" or true end, lines)
+      lines = vim.tbl_filter(function(l)
+        return l ~= "" or true
+      end, lines)
       log.info(table.concat(lines, "\n"))
     end
   end, { noremap = true })
@@ -655,7 +686,9 @@ function M._setup_keymaps(split, tree, session)
     end
 
     local current = pr.get_current_session()
-    if not current then return end
+    if not current then
+      return
+    end
 
     -- Find all drafts with status "draft" for this file
     local file_drafts = {}
@@ -685,8 +718,12 @@ function M._setup_keymaps(split, tree, session)
             log.warn("Failed to approve %s: %s", d.id, err_a or "unknown")
           end
         end
-        log.info("Approved %d draft(s) in %s%s", approved, target_file,
-          errors > 0 and string.format(" (%d failed)", errors) or "")
+        log.info(
+          "Approved %d draft(s) in %s%s",
+          approved,
+          target_file,
+          errors > 0 and string.format(" (%d failed)", errors) or ""
+        )
         local updated = pr.get_current_session()
         if updated then
           session = updated
@@ -700,7 +737,9 @@ function M._setup_keymaps(split, tree, session)
   -- Batch delete all AI drafts (X)
   split:map("n", "X", function()
     local current = pr.get_current_session()
-    if not current then return end
+    if not current then
+      return
+    end
     session = current
 
     -- Count AI drafts that can be deleted (only status = "draft")
@@ -805,7 +844,9 @@ function M._select_fallback(session)
       return string.format("[%s]%s %s %s", d.status:upper(), author_label, loc, preview)
     end,
   }, function(selected)
-    if not selected then return end
+    if not selected then
+      return
+    end
 
     -- Sub-action picker
     local actions = {}
@@ -820,9 +861,13 @@ function M._select_fallback(session)
 
     vim.ui.select(actions, {
       prompt = "Action:",
-      format_item = function(a) return a.label end,
+      format_item = function(a)
+        return a.label
+      end,
     }, function(act)
-      if not act then return end
+      if not act then
+        return
+      end
       local pr = require("power-review")
 
       if act.action == "approve" then
