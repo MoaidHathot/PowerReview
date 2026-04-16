@@ -10,6 +10,11 @@
 local plugin_root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h")
 local spec_dir = plugin_root .. "/tests/nvim"
 
+-- Add plugin root to runtimepath so require('power-review.*') resolves from lua/
+vim.opt.runtimepath:prepend(plugin_root)
+-- Source plugin files (sets vim.g.loaded_power_review, registers :PowerReview, etc.)
+vim.cmd("runtime! plugin/**/*.lua")
+
 -- Collect spec files
 local spec_files = vim.fn.glob(spec_dir .. "/*_spec.lua", false, true)
 table.sort(spec_files)
