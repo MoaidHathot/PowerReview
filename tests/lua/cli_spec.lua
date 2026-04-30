@@ -491,6 +491,9 @@ describe("CLI executable normalization", function()
 
     assert.is_nil(err)
     assert.same({}, result)
-    assert.same({ "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--", "sessions", "list" }, captured_cmd)
+    assert.same(
+      { "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--", "sessions", "list" },
+      captured_cmd
+    )
   end)
 end)

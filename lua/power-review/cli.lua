@@ -6,7 +6,8 @@ local M = {}
 local log = require("power-review.utils.log")
 local config = require("power-review.config")
 
-local DEFAULT_DNX_EXECUTABLE = { "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--" }
+local DEFAULT_DNX_EXECUTABLE =
+  { "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--" }
 
 --- The CLI executable. Can be a string (single command) or a table (command prefix).
 --- When a table, the first element is the executable and the rest are prepended args.
