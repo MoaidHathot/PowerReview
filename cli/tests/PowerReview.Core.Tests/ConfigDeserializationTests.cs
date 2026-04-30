@@ -191,4 +191,50 @@ public class ConfigDeserializationTests
 
         Assert.False(config.Git.AutoClone);
     }
+
+    [Fact]
+    public void Deserialize_AlwaysSeparateWorktree_True()
+    {
+        var json = """
+        {
+          "git": {
+            "always_separate_worktree": true
+          }
+        }
+        """;
+
+        var config = JsonSerializer.Deserialize<PowerReviewConfig>(json, JsonOptions)!;
+
+        Assert.True(config.Git.AlwaysSeparateWorktree);
+    }
+
+    [Fact]
+    public void Deserialize_AlwaysSeparateWorktree_FalseByDefault()
+    {
+        var json = """
+        {
+          "git": {}
+        }
+        """;
+
+        var config = JsonSerializer.Deserialize<PowerReviewConfig>(json, JsonOptions)!;
+
+        Assert.False(config.Git.AlwaysSeparateWorktree);
+    }
+
+    [Fact]
+    public void Deserialize_AbsoluteWorktreeDir_Bound()
+    {
+        var json = """
+        {
+          "git": {
+            "worktree_dir": "P:\\Work\\PowerReview\\Sessions"
+          }
+        }
+        """;
+
+        var config = JsonSerializer.Deserialize<PowerReviewConfig>(json, JsonOptions)!;
+
+        Assert.Equal("P:\\Work\\PowerReview\\Sessions", config.Git.WorktreeDir);
+    }
 }

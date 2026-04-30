@@ -230,6 +230,7 @@ The CLI reads from `$XDG_CONFIG_HOME/PowerReview/powerreview.json` (or `%APPDATA
   "git": {
     "strategy": "worktree",
     "worktree_dir": ".power-review-worktrees",
+    "always_separate_worktree": false,
     "cleanup_on_close": true
   },
   "providers": {
@@ -247,11 +248,46 @@ The CLI reads from `$XDG_CONFIG_HOME/PowerReview/powerreview.json` (or `%APPDATA
 | `auth.azdo.pat_env_var` | Environment variable name for AzDO PAT (default: `"AZDO_PAT"`) |
 | `auth.github.pat_env_var` | Environment variable name for GitHub token (default: `"GITHUB_TOKEN"`) |
 | `git.strategy` | `"worktree"` or `"checkout"` (default: `"worktree"`) |
-| `git.worktree_dir` | Directory name for worktrees, relative to repo root |
+| `git.worktree_dir` | Directory hosting review worktrees. **Relative** (default `".power-review-worktrees"`) joins with the repo root. **Absolute** (e.g. `"P:\\Work\\PowerReview\\Sessions"`) places worktrees outside the repo, namespaced by repo identity, so multiple repos can share one base directory and the repo itself stays clean. |
+| `git.always_separate_worktree` | If `true`, always create a separate linked worktree even when the main repo is already on the PR's source branch. Keeps your repo's branch state untouched by reviews (default: `false`). |
 | `git.cleanup_on_close` | Remove worktree when closing a review (default: `true`) |
 | `data_dir` | Override default data directory for session storage |
 
 Session data is stored at `{data_dir}/sessions/`. The default data directory is `$XDG_DATA_HOME/PowerReview` (or `%LOCALAPPDATA%\PowerReview` on Windows).
+
+### Recommended layout: keep your dev repo clean
+
+PR reviews inherently need a working tree on the PR's source branch, which means *something* on disk has to host that branch. If you don't want PowerReview to attach review branches to your everyday clone (changing what `git status` / `git branch` show, occupying branches you may want to use yourself, etc.), use this layout:
+
+```
+P:\Work\<project>\<repo>\               <- your normal dev clone, never used by PowerReview
+P:\Work\PowerReview\<repo>\             <- a separate clone, parked on `main`, used by PowerReview
+P:\Work\PowerReview\Sessions\           <- (optional) absolute base for review worktrees
+```
+
+Then in `powerreview.json`:
+
+```json
+{
+  "git": {
+    "strategy": "worktree",
+    "repo_base_path": "P:\\Work\\PowerReview\\<repo>",
+    "worktree_dir": "P:\\Work\\PowerReview\\Sessions",
+    "always_separate_worktree": true,
+    "cleanup_on_close": true,
+    "auto_clone": true
+  }
+}
+```
+
+What this gives you:
+
+- Your everyday clone is never touched by reviews -- no attached review branches, no `.power-review-*` directories appearing in it.
+- Review worktrees live under one external folder, namespaced by repo identity, so several repos can share the same `worktree_dir`.
+- `always_separate_worktree: true` prevents PowerReview from "reusing" the main checkout when it happens to already be on the PR's source branch, so the review clone stays predictable.
+- AI fix worktrees automatically follow: when `worktree_dir` is absolute, fix worktrees go under `{worktree_dir}/.fixes/<repoId>/<prId>` instead of being written into the repo.
+
+If you instead leave `worktree_dir` relative, worktrees are placed under the configured clone (the legacy default) -- which is fine as long as that clone is dedicated to PowerReview and not used for normal branch work.
 
 ## Authentication
 

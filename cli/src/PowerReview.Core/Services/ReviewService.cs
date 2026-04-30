@@ -511,7 +511,10 @@ public sealed class ReviewService
         if (_config.Git.CleanupOnClose && session.Git.WorktreePath != null && session.Git.Strategy == GitStrategy.Worktree)
         {
             var repoRoot = session.Git.RepoPath ?? ".";
-            var worktreeManager = new WorktreeManager(repoRoot, _config.Git.WorktreeDir);
+            var worktreeManager = new WorktreeManager(
+                repoRoot,
+                _config.Git.WorktreeDir,
+                _config.Git.AlwaysSeparateWorktree);
             try
             {
                 await worktreeManager.RemoveAsync(session.Git.WorktreePath, ct);
@@ -1011,7 +1014,10 @@ public sealed class ReviewService
 
         if (strategy == GitStrategy.Worktree)
         {
-            var worktreeManager = new WorktreeManager(resolvedRepoPath, _config.Git.WorktreeDir);
+            var worktreeManager = new WorktreeManager(
+                resolvedRepoPath,
+                _config.Git.WorktreeDir,
+                _config.Git.AlwaysSeparateWorktree);
             var result = await worktreeManager.CreateAsync(pr.SourceBranch, parsed.PrId, ct);
             worktreePath = result.ReusedMain ? null : result.WorktreePath;
 

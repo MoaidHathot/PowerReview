@@ -30,6 +30,12 @@ public sealed class GitConfig
     [JsonPropertyName("strategy")]
     public GitStrategy Strategy { get; set; } = GitStrategy.Worktree;
 
+    /// <summary>
+    /// Directory used to host review worktrees. Accepts either:
+    ///   - a relative path (joined with the repo root, default behavior), or
+    ///   - an absolute path (used as the external base; per-PR worktrees go
+    ///     under <c>{abs}/{repoId}/{prId}</c> so multiple repos can share it).
+    /// </summary>
     [JsonPropertyName("worktree_dir")]
     public string WorktreeDir { get; set; } = ".power-review-worktrees";
 
@@ -45,6 +51,15 @@ public sealed class GitConfig
     /// </summary>
     [JsonPropertyName("auto_clone")]
     public bool AutoClone { get; set; }
+
+    /// <summary>
+    /// If true, PowerReview always creates a separate linked worktree for a
+    /// review even when the main repo is already on the PR's source branch.
+    /// This keeps the main repo's branch state untouched by reviews.
+    /// Default: <c>false</c> (preserves legacy "reuse main repo" optimisation).
+    /// </summary>
+    [JsonPropertyName("always_separate_worktree")]
+    public bool AlwaysSeparateWorktree { get; set; }
 
     [JsonPropertyName("cleanup_on_close")]
     public bool CleanupOnClose { get; set; } = true;

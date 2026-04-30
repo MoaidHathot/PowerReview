@@ -5,18 +5,31 @@ namespace PowerReview.Core.Git;
 /// </summary>
 public sealed class WorktreeManager
 {
+    /// <summary>Default subdirectory name for review worktrees (relative to repo root).</summary>
+    public const string DefaultWorktreeDir = ".power-review-worktrees";
+
     private readonly string _repoRoot;
     private readonly string _worktreeDir;
+    private readonly bool _alwaysSeparate;
 
     /// <summary>
     /// Create a WorktreeManager.
     /// </summary>
     /// <param name="repoRoot">Path to the main git repository.</param>
-    /// <param name="worktreeDir">Subdirectory name for worktrees (default: ".power-review-worktrees").</param>
-    public WorktreeManager(string repoRoot, string worktreeDir = ".power-review-worktrees")
+    /// <param name="worktreeDir">
+    /// Either a relative path (joined with <paramref name="repoRoot"/>) or an
+    /// absolute path used as the external base directory.
+    /// </param>
+    /// <param name="alwaysSeparate">
+    /// If true, always create a separate linked worktree even when the main
+    /// repo is already on the target branch. The main repo's HEAD will be
+    /// detached as needed so the branch can be moved into the new worktree.
+    /// </param>
+    public WorktreeManager(string repoRoot, string worktreeDir = DefaultWorktreeDir, bool alwaysSeparate = false)
     {
         _repoRoot = repoRoot;
-        _worktreeDir = worktreeDir;
+        _worktreeDir = string.IsNullOrEmpty(worktreeDir) ? DefaultWorktreeDir : worktreeDir;
+        _alwaysSeparate = alwaysSeparate;
     }
 
     /// <summary>
@@ -27,28 +40,42 @@ public sealed class WorktreeManager
         /// <summary>Path to the worktree (or main repo if reused).</summary>
         public string WorktreePath { get; set; } = "";
 
-        /// <summary>True if the main repo was already on the target branch.</summary>
+        /// <summary>
+        /// True if the main repo was reused as the worktree (only possible
+        /// when <c>alwaysSeparate</c> is false).
+        /// </summary>
         public bool ReusedMain { get; set; }
     }
 
     /// <summary>
     /// Create a worktree for reviewing a PR branch.
-    /// If the main repo is already on the target branch, returns the main repo path.
+    /// If <c>alwaysSeparate</c> is false and the main repo is already on the
+    /// target branch, returns the main repo path. Otherwise always creates a
+    /// linked worktree (detaching the main repo's HEAD if needed so the
+    /// branch can be checked out elsewhere).
     /// If a worktree already exists at the expected path, returns it.
     /// </summary>
     public async Task<CreateResult> CreateAsync(string branch, int prId, CancellationToken ct = default)
     {
         // Check if the main worktree is already on the target branch
-        var currentBranch = await GitOperations.GetCurrentBranchAsync(_repoRoot, ct);
-        if (currentBranch == branch)
+        string? currentBranch = null;
+        try
+        {
+            currentBranch = await GitOperations.GetCurrentBranchAsync(_repoRoot, ct);
+        }
+        catch
+        {
+            // Detached HEAD or unreadable; treat as "not on branch"
+        }
+
+        var alreadyOnBranch = currentBranch == branch;
+
+        if (alreadyOnBranch && !_alwaysSeparate)
         {
             return new CreateResult { WorktreePath = _repoRoot, ReusedMain = true };
         }
 
-        var worktreePath = GetWorktreePath(prId);
-
-        // Normalize path separators
-        worktreePath = worktreePath.Replace('\\', '/');
+        var worktreePath = ResolveWorktreePath(prId);
 
         // Ensure parent directory exists
         var parentDir = Path.GetDirectoryName(worktreePath);
@@ -60,6 +87,18 @@ public sealed class WorktreeManager
         if (existing.Any(w => NormalizePath(w.Path) == NormalizePath(worktreePath)))
         {
             return new CreateResult { WorktreePath = worktreePath };
+        }
+
+        // If the main repo currently has the target branch checked out, git will
+        // refuse to add another worktree for the same branch. Detach the main
+        // repo's HEAD so the branch is free to move into the linked worktree.
+        if (alreadyOnBranch && _alwaysSeparate)
+        {
+            await GitOperations.TryRunAsync(
+                ["checkout", "--detach"],
+                _repoRoot,
+                timeoutMs: 15_000,
+                ct: ct);
         }
 
         // Try creating the worktree
@@ -172,9 +211,68 @@ public sealed class WorktreeManager
         return worktrees;
     }
 
-    private string GetWorktreePath(int prId)
+    /// <summary>
+    /// Resolve the on-disk path where the worktree for <paramref name="prId"/> will live.
+    /// Public for diagnostics and tests.
+    /// </summary>
+    public string ResolveWorktreePath(int prId)
     {
-        return Path.Combine(_repoRoot, _worktreeDir, prId.ToString());
+        var (path, _) = ResolveWorktreePath(_repoRoot, _worktreeDir, prId);
+        return path;
+    }
+
+    /// <summary>
+    /// Compute the worktree path for a given repo + worktree-dir setting + PR id.
+    /// </summary>
+    /// <returns>
+    /// A tuple of (path, isExternal). <c>isExternal</c> is true when
+    /// <paramref name="worktreeDir"/> is an absolute path (worktrees live
+    /// outside the repo, namespaced by repo identity).
+    /// </returns>
+    public static (string Path, bool IsExternal) ResolveWorktreePath(string repoRoot, string worktreeDir, int prId)
+    {
+        if (string.IsNullOrEmpty(worktreeDir))
+            worktreeDir = DefaultWorktreeDir;
+
+        if (Path.IsPathRooted(worktreeDir))
+        {
+            // External base directory: namespace by repo identity to avoid
+            // collisions when multiple repos share the same base.
+            var repoId = ComputeRepoId(repoRoot);
+            var external = Path.Combine(worktreeDir, repoId, prId.ToString());
+            return (external.Replace('\\', '/'), true);
+        }
+
+        var local = Path.Combine(repoRoot, worktreeDir, prId.ToString());
+        return (local.Replace('\\', '/'), false);
+    }
+
+    /// <summary>
+    /// Derive a stable, filesystem-safe identifier for a repo root path so
+    /// that an external worktree base directory can host worktrees from
+    /// multiple repos without collisions.
+    /// </summary>
+    public static string ComputeRepoId(string repoRoot)
+    {
+        if (string.IsNullOrEmpty(repoRoot))
+            return "_";
+
+        var full = Path.GetFullPath(repoRoot).Replace('\\', '/').TrimEnd('/');
+        var name = Path.GetFileName(full);
+        if (string.IsNullOrEmpty(name))
+            name = "repo";
+
+        // Short hash of the full path for uniqueness; keeps the human-readable
+        // repo name as a prefix so the directory layout is still browseable.
+        var hash = (uint)full.GetHashCode();
+        return $"{Sanitize(name)}-{hash:x8}";
+    }
+
+    private static string Sanitize(string s)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = s.Select(c => invalid.Contains(c) || c == ' ' ? '_' : c).ToArray();
+        return new string(chars);
     }
 
     private static string NormalizePath(string path)

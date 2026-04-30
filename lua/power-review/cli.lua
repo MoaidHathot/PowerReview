@@ -6,11 +6,32 @@ local M = {}
 local log = require("power-review.utils.log")
 local config = require("power-review.config")
 
+local DEFAULT_DNX_EXECUTABLE = { "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--" }
+
 --- The CLI executable. Can be a string (single command) or a table (command prefix).
 --- When a table, the first element is the executable and the rest are prepended args.
 --- Example: { "dotnet", "run", "--project", "/path/to/project", "--" }
 ---@type string|string[]
-M._executable = { "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--" }
+M._executable = vim.deepcopy(DEFAULT_DNX_EXECUTABLE)
+
+--- Normalize configured executable into a vim.system() argv vector.
+--- On Windows, a bare `PowerReview` package name is not directly spawnable, so route it through `dnx`.
+---@return string[]
+local function build_command_prefix()
+  if type(M._executable) == "table" then
+    return { unpack(M._executable) }
+  end
+
+  local executable = M._executable
+  if vim.fn.has("win32") == 1 and executable then
+    local normalized = executable:lower()
+    if normalized == "powerreview" then
+      return vim.deepcopy(DEFAULT_DNX_EXECUTABLE)
+    end
+  end
+
+  return { executable }
+end
 
 --- Configure the CLI bridge.
 ---@param opts? { executable?: string|string[] }
@@ -35,7 +56,7 @@ function M.run(args, opts)
   local cfg_timeouts = config.get().cli.timeouts or {}
   local timeout = opts.timeout or cfg_timeouts.default or 30000
 
-  local cmd = type(M._executable) == "table" and { unpack(M._executable) } or { M._executable }
+  local cmd = build_command_prefix()
   for _, arg in ipairs(args) do
     table.insert(cmd, arg)
   end
@@ -81,7 +102,7 @@ function M.run_async(args, callback, opts)
   local cfg_timeouts = config.get().cli.timeouts or {}
   local timeout = opts.timeout or cfg_timeouts.default or 30000
 
-  local cmd = type(M._executable) == "table" and { unpack(M._executable) } or { M._executable }
+  local cmd = build_command_prefix()
   for _, arg in ipairs(args) do
     table.insert(cmd, arg)
   end

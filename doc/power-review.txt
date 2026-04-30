@@ -154,7 +154,16 @@ CLI Configuration File ~
   `auth.azdo.pat_env_var`   Env var name for AzDO PAT (default: "AZDO_PAT")
   `auth.github.pat_env_var` Env var name for GitHub token (default: "GITHUB_TOKEN")
   `git.strategy`            "worktree" | "checkout" (default: "worktree")
-  `git.worktree_dir`        Relative directory name (default: ".power-review-worktrees")
+  `git.worktree_dir`        Directory hosting review worktrees. Relative
+                            paths (default: ".power-review-worktrees") are
+                            joined with the repo root. Absolute paths place
+                            worktrees outside the repo, namespaced by repo
+                            identity so multiple repos can share one base.
+  `git.always_separate_worktree`
+                            If true, always create a separate linked
+                            worktree even when the main repo is already on
+                            the PR's source branch. Keeps the main repo's
+                            branch state untouched (default: false).
   `git.cleanup_on_close`    Remove worktree on close (default: true)
   `data_dir`                Override default data directory for sessions
 

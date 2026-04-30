@@ -16,14 +16,30 @@ public sealed class FixWorktreeService
     private readonly PowerReviewConfig _config;
 
     /// <summary>
-    /// Subdirectory name for fix worktrees, kept separate from review worktrees.
+    /// Default subdirectory name for fix worktrees (relative to the repo
+    /// root). Used when <see cref="GitConfig.WorktreeDir"/> is a relative path.
     /// </summary>
-    private const string FixWorktreeDir = ".power-review-fixes";
+    private const string DefaultFixWorktreeDir = ".power-review-fixes";
 
     public FixWorktreeService(SessionStore store, PowerReviewConfig config)
     {
         _store = store;
         _config = config;
+    }
+
+    /// <summary>
+    /// Resolve the fix worktree directory honoring an absolute
+    /// <c>git.worktree_dir</c>. When configured externally, fix worktrees go
+    /// to <c>{abs}/.fixes</c>; otherwise the in-repo default is used.
+    /// </summary>
+    private string ResolveFixWorktreeDir()
+    {
+        var configured = _config.Git.WorktreeDir;
+        if (!string.IsNullOrEmpty(configured) && Path.IsPathRooted(configured))
+        {
+            return Path.Combine(configured, ".fixes");
+        }
+        return DefaultFixWorktreeDir;
     }
 
     /// <summary>
@@ -68,12 +84,13 @@ public sealed class FixWorktreeService
         var branchManager = new BranchManager(repoPath);
         await branchManager.FetchAsync(sourceBranch, "origin", ct);
 
-        // Create worktree path: {repo}/.power-review-fixes/{pr_id}
-        var worktreePath = Path.Combine(repoPath, FixWorktreeDir, session.PullRequest.Id.ToString());
-        worktreePath = worktreePath.Replace('\\', '/');
+        // Resolve the fix worktree path (honors absolute worktree_dir for external isolation)
+        var fixDir = ResolveFixWorktreeDir();
+        var (worktreePath, _) = WorktreeManager.ResolveWorktreePath(
+            repoPath, fixDir, session.PullRequest.Id);
 
         // Create the worktree
-        var worktreeManager = new WorktreeManager(repoPath, FixWorktreeDir);
+        var worktreeManager = new WorktreeManager(repoPath, fixDir);
         var result = await worktreeManager.CreateAsync(sourceBranch, session.PullRequest.Id, ct);
 
         // If reused main, we can't use the main repo for fixes — that defeats the purpose
@@ -209,7 +226,7 @@ public sealed class FixWorktreeService
         // Remove the worktree
         if (Directory.Exists(worktreePath))
         {
-            var worktreeManager = new WorktreeManager(repoPath, FixWorktreeDir);
+            var worktreeManager = new WorktreeManager(repoPath, ResolveFixWorktreeDir());
             try
             {
                 await worktreeManager.RemoveAsync(worktreePath, ct);

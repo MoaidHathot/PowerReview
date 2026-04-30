@@ -448,3 +448,49 @@ describe("_vote_string_to_number", function()
     assert.is_nil(cli._vote_string_to_number("maybe"))
   end)
 end)
+
+-- ============================================================================
+-- Executable normalization
+-- ============================================================================
+
+describe("CLI executable normalization", function()
+  local original_system = vim.system
+  local original_fn = vim.fn
+  local original_executable = cli._executable
+
+  after_each(function()
+    vim.system = original_system
+    vim.fn = original_fn
+    cli._executable = original_executable
+  end)
+
+  it("routes bare PowerReview through dnx on Windows", function()
+    local captured_cmd
+
+    vim.fn = {
+      has = function(feature)
+        if feature == "win32" then
+          return 1
+        end
+        return 0
+      end,
+    }
+
+    vim.system = function(cmd, _opts)
+      captured_cmd = cmd
+      return {
+        wait = function()
+          return { code = 0, stdout = "[]", stderr = "" }
+        end,
+      }
+    end
+
+    cli.configure({ executable = "PowerReview" })
+
+    local result, err = cli.list_sessions()
+
+    assert.is_nil(err)
+    assert.same({}, result)
+    assert.same({ "dnx", "--yes", "--add-source", "https://api.nuget.org/v3/index.json", "PowerReview", "--", "sessions", "list" }, captured_cmd)
+  end)
+end)
