@@ -96,13 +96,19 @@ function M.get()
   end
 
   -- Draft counts (only if there are any)
-  if counts.total > 0 then
+  if counts.total + counts.actions_total > 0 then
     local draft_parts = {}
     if counts.draft > 0 then
       table.insert(draft_parts, counts.draft .. " draft")
     end
     if counts.pending > 0 then
       table.insert(draft_parts, counts.pending .. " pending")
+    end
+    if counts.actions_draft > 0 then
+      table.insert(draft_parts, counts.actions_draft .. " action")
+    end
+    if counts.actions_pending > 0 then
+      table.insert(draft_parts, counts.actions_pending .. " action pending")
     end
     table.insert(parts, "[" .. table.concat(draft_parts, ", ") .. "]")
   end

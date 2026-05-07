@@ -135,6 +135,21 @@
 ---@field created_at string ISO timestamp
 ---@field updated_at string ISO timestamp
 
+---@class PowerReview.DraftAction
+---@field id string Local UUID
+---@field action_type "thread_status_change"|"comment_reaction"|"ThreadStatusChange"|"CommentReaction"
+---@field status PowerReview.DraftStatus
+---@field author PowerReview.DraftAuthor
+---@field author_name? string Display name of the agent or person
+---@field thread_id number Remote thread ID
+---@field comment_id? number Remote comment ID for reactions
+---@field from_thread_status? PowerReview.ThreadStatus
+---@field to_thread_status? PowerReview.ThreadStatus Target status for thread status changes
+---@field reaction? "like"|"Like" Reaction for comment reaction actions
+---@field note? string Rationale shown to the user
+---@field created_at string ISO timestamp
+---@field updated_at string ISO timestamp
+
 ---@class PowerReview.ReviewSession
 ---@field version number Schema version (adapted to flat shape from CLI v3)
 ---@field id string Session identifier (org_project_repo_prId)
@@ -169,6 +184,7 @@
 ---@field updated_at string ISO timestamp
 ---@field vote? PowerReview.ReviewVote
 ---@field drafts PowerReview.DraftComment[]
+---@field draft_actions PowerReview.DraftAction[]
 ---@field threads PowerReview.CommentThread[]
 ---@field files PowerReview.ChangedFile[]
 ---@field metadata? PowerReview.ReviewMetadata Derived metadata summaries for UI and AI agents

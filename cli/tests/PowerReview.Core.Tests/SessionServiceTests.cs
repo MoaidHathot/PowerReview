@@ -801,6 +801,89 @@ public class SessionServiceTests : IDisposable
         Assert.Empty(result);
     }
 
+    // --- Draft actions ---
+
+    [Fact]
+    public void CreateDraftThreadStatusChange_CreatesDraftAction()
+    {
+        var sessionId = CreateAndSaveSessionWithThread();
+
+        var (id, action) = _service.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
+        {
+            ThreadId = 42,
+            ToThreadStatus = ThreadStatus.WontFix,
+            Note = "agent was wrong",
+            Author = DraftAuthor.Ai,
+            AuthorName = "Agent",
+        });
+
+        Assert.NotEmpty(id);
+        Assert.Equal(DraftActionType.ThreadStatusChange, action.ActionType);
+        Assert.Equal(DraftStatus.Draft, action.Status);
+        Assert.Equal(ThreadStatus.Active, action.FromThreadStatus);
+        Assert.Equal(ThreadStatus.WontFix, action.ToThreadStatus);
+        Assert.Equal("agent was wrong", action.Note);
+        Assert.Equal(DraftAuthor.Ai, action.Author);
+
+        var loaded = _store.Load(sessionId)!;
+        Assert.True(loaded.DraftActions.ContainsKey(id));
+    }
+
+    [Fact]
+    public void CreateDraftCommentReaction_CreatesDraftAction()
+    {
+        var sessionId = CreateAndSaveSessionWithThread();
+        var session = _store.Load(sessionId)!;
+        session.Threads.Items[0].Comments = [new Comment { Id = 7, ThreadId = 42, Body = "You are wrong" }];
+        _store.Save(session);
+
+        var (_, action) = _service.CreateDraftCommentReaction(sessionId, new CreateDraftActionRequest
+        {
+            ThreadId = 42,
+            CommentId = 7,
+            Reaction = CommentReaction.Like,
+            Author = DraftAuthor.Ai,
+        });
+
+        Assert.Equal(DraftActionType.CommentReaction, action.ActionType);
+        Assert.Equal(7, action.CommentId);
+        Assert.Equal(CommentReaction.Like, action.Reaction);
+        Assert.Equal(DraftStatus.Draft, action.Status);
+    }
+
+    [Fact]
+    public void ApproveAndUnapproveDraftAction_TransitionsStatus()
+    {
+        var sessionId = CreateAndSaveSessionWithThread();
+        var (id, _) = _service.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
+        {
+            ThreadId = 42,
+            ToThreadStatus = ThreadStatus.Fixed,
+        });
+
+        var approved = _service.ApproveDraftAction(sessionId, id);
+        Assert.Equal(DraftStatus.Pending, approved.Status);
+
+        var unapproved = _service.UnapproveDraftAction(sessionId, id);
+        Assert.Equal(DraftStatus.Draft, unapproved.Status);
+    }
+
+    [Fact]
+    public void DeleteDraftAction_AuthorGuardPreventsAiDeletingUserAction()
+    {
+        var sessionId = CreateAndSaveSessionWithThread();
+        var (id, _) = _service.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
+        {
+            ThreadId = 42,
+            ToThreadStatus = ThreadStatus.Fixed,
+            Author = DraftAuthor.User,
+        });
+
+        var ex = Assert.Throws<SessionServiceException>(() =>
+            _service.DeleteDraftAction(sessionId, id, callerAuthor: DraftAuthor.Ai));
+        Assert.Contains("author mismatch", ex.Message);
+    }
+
     // --- MarkSubmitted ---
 
     [Fact]

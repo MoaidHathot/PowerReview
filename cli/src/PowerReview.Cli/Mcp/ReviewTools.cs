@@ -165,6 +165,7 @@ public sealed class ReviewTools
         {
             var sessionId = ToolHelpers.ResolveSessionId(prUrl);
             var counts = sessionService.GetDraftCounts(sessionId);
+            var actions = sessionService.GetDraftActions(sessionId).Values.ToList();
 
             return ToolHelpers.ToJson(new
             {
@@ -172,6 +173,10 @@ public sealed class ReviewTools
                 counts.Pending,
                 counts.Submitted,
                 counts.Total,
+                ActionsDraft = actions.Count(a => a.Status == DraftStatus.Draft),
+                ActionsPending = actions.Count(a => a.Status == DraftStatus.Pending),
+                ActionsSubmitted = actions.Count(a => a.Status == DraftStatus.Submitted),
+                ActionsTotal = actions.Count,
             });
         }
         catch (Exception ex)

@@ -10,7 +10,7 @@ All tools return JSON. Errors are returned as `{ "error": "message" }`.
 
 - Read-only tools (session, PR description, files, diff, threads, draft counts)
 - Sync and iteration tools (sync threads, check iteration, iteration diff)
-- Write tools (create comment, reply, edit, delete, update thread status)
+- Write tools (create comment/reply drafts, edit/delete drafts, create draft actions)
 - Working directory and file access tools (working directory, read file, list files)
 - Fix worktree tools (prepare worktree, get path, create branch)
 - Proposal tools (create proposal, list proposals, get proposal diff)
@@ -239,7 +239,7 @@ Thread statuses: `Active`, `Fixed`, `WontFix`, `Closed`, `ByDesign`, `Pending`.
 
 ## GetDraftCounts
 
-Get a summary of draft comment counts by status.
+Get a summary of draft comment and draft action counts by status.
 
 **Parameters:**
 
@@ -254,7 +254,11 @@ Get a summary of draft comment counts by status.
   "draft": 3,
   "pending": 1,
   "submitted": 2,
-  "total": 6
+  "total": 6,
+  "actions_draft": 1,
+  "actions_pending": 0,
+  "actions_submitted": 0,
+  "actions_total": 1
 }
 ```
 
@@ -445,40 +449,88 @@ Create a draft reply to an existing remote comment thread.
 
 ---
 
-## UpdateThreadStatus
+## DraftThreadStatusChange
 
-Update the status of a comment thread on the remote provider. Use this to resolve threads that have been addressed, or reactivate them.
+Create a local draft action to update a comment thread status after user approval. This does not update the remote provider directly. Use this when you want to propose resolving a thread as fixed/won't-fix/by-design, or reactivate a thread.
 
 **Parameters:**
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `prUrl` | string | Yes | The pull request URL |
-| `threadId` | int | Yes | The remote thread ID to update |
-| `status` | string | Yes | New thread status. One of: `active`, `fixed`, `wontfix`, `closed`, `bydesign`, `pending` |
+| `threadId` | int | Yes | The remote thread ID to update after approval |
+| `status` | string | Yes | Target thread status. One of: `active`, `fixed`, `wontfix`, `closed`, `bydesign`, `pending` |
+| `reason` | string | No | Rationale shown to the user before approval |
+| `agentName` | string | No | Name identifying this agent |
 
 **Returns:**
 
 ```json
 {
-  "thread_id": 100,
-  "status": "fixed",
-  "thread": {
-    "id": 100,
-    "file_path": "src/main.cs",
-    "line_start": 42,
-    "status": "Fixed",
-    "comments": [...]
-  }
+  "id": "550e8400-e29b-41d4-a716-446655440002",
+  "action": {
+    "action_type": "ThreadStatusChange",
+    "status": "Draft",
+    "author": "Ai",
+    "author_name": "SecurityReviewer",
+    "thread_id": 100,
+    "from_thread_status": "Active",
+    "to_thread_status": "Fixed",
+    "note": "The requested fix was implemented."
+  },
+  "note": "Draft action created. The user must approve it before submit applies it remotely."
 }
 ```
 
 Valid status values: `active`, `fixed` (also accepts `resolved`), `wontfix` (also accepts `wont-fix`), `closed`, `bydesign` (also accepts `by-design`), `pending`.
 
+The user approves the draft action and then runs submit; only then is the remote thread status updated.
+
 **Errors:**
 - `"Invalid thread status: '<value>'. Use: active, fixed, wontfix, closed, bydesign, pending"` -- unrecognized status
 - `"No session found for this PR."` -- no active session
-- Provider-specific errors (e.g., thread not found on AzDO)
+
+---
+
+## DraftCommentReaction
+
+Create a local draft action to react to a thread comment after user approval. This does not update the remote provider directly. Currently supported reaction: `like`.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `prUrl` | string | Yes | The pull request URL |
+| `threadId` | int | Yes | The remote thread ID containing the comment |
+| `commentId` | int | Yes | The remote comment ID to react to |
+| `reaction` | string | Yes | Reaction to apply after approval. Supported: `like` |
+| `reason` | string | No | Rationale shown to the user before approval |
+| `agentName` | string | No | Name identifying this agent |
+
+**Returns:**
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440003",
+  "action": {
+    "action_type": "CommentReaction",
+    "status": "Draft",
+    "author": "Ai",
+    "author_name": "SecurityReviewer",
+    "thread_id": 100,
+    "comment_id": 201,
+    "reaction": "Like",
+    "note": "Acknowledges the reviewer reply."
+  },
+  "note": "Draft action created. The user must approve it before submit applies it remotely."
+}
+```
+
+The user approves the draft action and then runs submit; only then is the remote reaction applied.
+
+**Errors:**
+- `"Invalid reaction: '<value>'. Use: like"` -- unsupported reaction
+- `"No session found for this PR."` -- no active session
 
 ---
 

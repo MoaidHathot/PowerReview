@@ -32,6 +32,25 @@ public enum DraftAuthor
 }
 
 /// <summary>
+/// Type of non-comment review action that can be drafted for user approval.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<DraftActionType>))]
+public enum DraftActionType
+{
+    ThreadStatusChange,
+    CommentReaction,
+}
+
+/// <summary>
+/// Supported reactions for pull request thread comments.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<CommentReaction>))]
+public enum CommentReaction
+{
+    Like,
+}
+
+/// <summary>
 /// Type of change made to a file in a pull request.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<ChangeType>))]

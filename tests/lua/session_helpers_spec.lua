@@ -50,6 +50,27 @@ local function make_session()
         created_at = "2025-01-04T00:00:00Z",
       },
     },
+    draft_actions = {
+      {
+        id = "a1",
+        action_type = "thread_status_change",
+        status = "draft",
+        author = "ai",
+        thread_id = 101,
+        from_thread_status = "active",
+        to_thread_status = "wontfix",
+        note = "agent was wrong",
+      },
+      {
+        id = "a2",
+        action_type = "comment_reaction",
+        status = "pending",
+        author = "ai",
+        thread_id = 101,
+        comment_id = 1,
+        reaction = "like",
+      },
+    },
     threads = {
       {
         id = 101,
@@ -162,6 +183,9 @@ describe("get_draft_counts", function()
     assert.equal(2, counts.draft)
     assert.equal(1, counts.pending)
     assert.equal(1, counts.submitted)
+    assert.equal(2, counts.actions_total)
+    assert.equal(1, counts.actions_draft)
+    assert.equal(1, counts.actions_pending)
   end)
 
   it("returns zero counts for empty drafts", function()
@@ -190,6 +214,26 @@ describe("get_draft_counts", function()
     assert.equal(2, counts.total)
     assert.equal(1, counts.draft)
     -- "unknown_status" is not a key in counts, so it's not incremented
+  end)
+end)
+
+describe("draft action helpers", function()
+  it("formats thread status actions", function()
+    local label = helpers.draft_action_label(make_session().draft_actions[1])
+    assert.matches("Thread #101", label)
+    assert.matches("wontfix", label)
+  end)
+
+  it("formats comment reaction actions", function()
+    local label = helpers.draft_action_label(make_session().draft_actions[2])
+    assert.matches("like", label)
+    assert.matches("comment #1", label)
+  end)
+
+  it("finds draft actions by ID", function()
+    local action = helpers.get_draft_action(make_session(), "a2")
+    assert.not_nil(action)
+    assert.equal("comment_reaction", action.action_type)
   end)
 end)
 

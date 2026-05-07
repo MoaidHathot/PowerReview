@@ -464,6 +464,31 @@ public sealed class AzDoProvider : IProvider
         await DeleteRequestAsync($"/pullrequests/{prId}/threads/{threadId}/comments/{commentId}", ct);
     }
 
+    public async Task SetCommentReactionAsync(int prId, int threadId, int commentId, CommentReaction reaction, CancellationToken ct = default)
+    {
+        if (reaction != CommentReaction.Like)
+            throw new NotSupportedException($"Unsupported comment reaction: {reaction}");
+
+        var currentUserId = await GetCurrentReviewerIdAsync(ct);
+        var comment = await GetAsync<AzDoApiModels.CommentResponse>(
+            $"/pullrequests/{prId}/threads/{threadId}/comments/{commentId}", ct: ct);
+
+        var usersLiked = comment.UsersLiked ?? [];
+        if (!usersLiked.Any(u => string.Equals(u.Id, currentUserId, StringComparison.OrdinalIgnoreCase)))
+        {
+            usersLiked.Add(new AzDoApiModels.IdentityRef { Id = currentUserId });
+        }
+
+        var body = new
+        {
+            content = comment.Content,
+            usersLiked,
+        };
+
+        await PatchAsync<AzDoApiModels.CommentResponse>(
+            $"/pullrequests/{prId}/threads/{threadId}/comments/{commentId}", body, ct);
+    }
+
     // =========================================================================
     // Set Vote
     // =========================================================================

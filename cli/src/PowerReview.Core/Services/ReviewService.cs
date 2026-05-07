@@ -197,17 +197,22 @@ public sealed class ReviewService
     {
         var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
 
-        // Get all pending drafts
+        // Get all pending drafts/actions
         var pendingDrafts = session.Drafts
+            .Where(kvp => kvp.Value.Status == DraftStatus.Pending)
+            .ToList();
+        var pendingActions = session.DraftActions
             .Where(kvp => kvp.Value.Status == DraftStatus.Pending)
             .ToList();
 
         var result = new SubmitResult
         {
-            Total = pendingDrafts.Count,
+            Total = pendingDrafts.Count + pendingActions.Count,
+            CommentsTotal = pendingDrafts.Count,
+            ActionsTotal = pendingActions.Count,
         };
 
-        if (pendingDrafts.Count == 0)
+        if (result.Total == 0)
             return result;
 
         // Submit each draft (sequentially to avoid race conditions on thread creation)
@@ -245,6 +250,7 @@ public sealed class ReviewService
                 // Mark as submitted
                 _sessionService.MarkSubmitted(session.Id, draftId);
                 result.Submitted++;
+                result.CommentsSubmitted++;
             }
             catch (Exception ex)
             {
@@ -258,7 +264,75 @@ public sealed class ReviewService
             }
         }
 
+        foreach (var (actionId, action) in pendingActions)
+        {
+            try
+            {
+                await SubmitDraftActionAsync(session, provider, actionId, action, ct);
+                result.Submitted++;
+                result.ActionsSubmitted++;
+            }
+            catch (Exception ex)
+            {
+                result.Failed++;
+                result.Errors.Add(new SubmitError
+                {
+                    DraftId = actionId,
+                    ActionId = actionId,
+                    Kind = "action",
+                    Error = ex.Message,
+                });
+            }
+        }
+
         return result;
+    }
+
+    private async Task SubmitDraftActionAsync(ReviewSession session, IProvider provider, string actionId, DraftAction action, CancellationToken ct)
+    {
+        switch (action.ActionType)
+        {
+            case DraftActionType.ThreadStatusChange:
+                if (!action.ToThreadStatus.HasValue)
+                    throw new ReviewServiceException($"Draft action {actionId} is missing target thread status.");
+                await provider.UpdateThreadStatusAsync(session.PullRequest.Id, action.ThreadId, action.ToThreadStatus.Value, ct);
+                MarkActionSubmitted(session.Id, actionId, action.ToThreadStatus.Value);
+                break;
+
+            case DraftActionType.CommentReaction:
+                if (!action.CommentId.HasValue)
+                    throw new ReviewServiceException($"Draft action {actionId} is missing comment ID.");
+                if (!action.Reaction.HasValue)
+                    throw new ReviewServiceException($"Draft action {actionId} is missing reaction.");
+                await provider.SetCommentReactionAsync(session.PullRequest.Id, action.ThreadId, action.CommentId.Value, action.Reaction.Value, ct);
+                MarkActionSubmitted(session.Id, actionId);
+                break;
+
+            default:
+                throw new ReviewServiceException($"Unsupported draft action type: {action.ActionType}");
+        }
+    }
+
+    private void MarkActionSubmitted(string sessionId, string actionId, ThreadStatus? updatedThreadStatus = null)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+        var session = _store.Load(sessionId)
+            ?? throw new ReviewServiceException($"Session disappeared during draft action submission: {sessionId}");
+
+        if (!session.DraftActions.TryGetValue(actionId, out var action))
+            throw new ReviewServiceException($"Draft action disappeared during submission: {actionId}");
+
+        action.Status = DraftStatus.Submitted;
+        action.UpdatedAt = Timestamp();
+
+        if (updatedThreadStatus.HasValue)
+        {
+            var thread = session.Threads.Items.FirstOrDefault(t => t.Id == action.ThreadId);
+            if (thread != null)
+                thread.Status = updatedThreadStatus.Value;
+        }
+
+        _store.Save(session);
     }
 
     /// <summary>

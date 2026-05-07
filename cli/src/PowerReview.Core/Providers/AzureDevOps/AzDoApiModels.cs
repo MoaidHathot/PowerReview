@@ -229,6 +229,9 @@ internal static class AzDoApiModels
 
         [JsonPropertyName("isDeleted")]
         public bool IsDeleted { get; set; }
+
+        [JsonPropertyName("usersLiked")]
+        public List<IdentityRef>? UsersLiked { get; set; }
     }
 
     // =========================================================================

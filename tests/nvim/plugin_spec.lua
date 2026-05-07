@@ -148,6 +148,7 @@ return {
         provider = { type = "github", organization = "o", project = "p", repository = "r" },
         vote = "Approve",
         drafts = { ["x"] = { body = "hi", created_at = "2025-01-01" } },
+        draft_actions = { ["a"] = { action_type = "thread_status_change", thread_id = 99, created_at = "2025-01-02" } },
       })
       assert_eq(session.pr_id, 99, "pr_id")
       assert_eq(session.pr_title, "Test PR", "pr_title")
@@ -155,6 +156,8 @@ return {
       assert_eq(session.vote, 10, "vote should be 10 for Approve")
       assert_eq(#session.drafts, 1, "draft count")
       assert_eq(session.drafts[1].id, "x", "draft id")
+      assert_eq(#session.draft_actions, 1, "draft action count")
+      assert_eq(session.draft_actions[1].id, "a", "draft action id")
     end,
   },
 

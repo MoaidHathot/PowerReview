@@ -3,6 +3,7 @@ using PowerReview.Core.Configuration;
 using PowerReview.Core.Models;
 using PowerReview.Core.Services;
 using PowerReview.Core.Store;
+using System.Reflection;
 
 namespace PowerReview.Core.Tests;
 
@@ -259,6 +260,68 @@ public class McpToolTests : IDisposable
         Assert.Equal(100, draft.ThreadId);
         Assert.Equal("src/main.cs", draft.FilePath);
         Assert.Equal(10, draft.LineStart);
+    }
+
+    [Fact]
+    public void DraftThreadStatusChange_CreatesAiAuthoredDraftAction()
+    {
+        CreateAndSaveTestSessionWithThreads();
+        var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
+        var sessionId = "azdo_testorg_testproject_testrepo_42";
+
+        var result = ThreadTools.DraftThreadStatusChange(
+            _sessionService,
+            prUrl: prUrl,
+            threadId: 100,
+            status: "wontfix",
+            reason: "agent agreed this was wrong",
+            agentName: "TestAgent");
+
+        var json = System.Text.Json.JsonDocument.Parse(result);
+        Assert.False(json.RootElement.TryGetProperty("error", out _), "Expected success but got error");
+        Assert.True(json.RootElement.TryGetProperty("id", out _));
+
+        var session = _store.Load(sessionId)!;
+        var action = session.DraftActions.Values.First();
+        Assert.Equal(DraftActionType.ThreadStatusChange, action.ActionType);
+        Assert.Equal(DraftAuthor.Ai, action.Author);
+        Assert.Equal("TestAgent", action.AuthorName);
+        Assert.Equal(100, action.ThreadId);
+        Assert.Equal(ThreadStatus.WontFix, action.ToThreadStatus);
+    }
+
+    [Fact]
+    public void DraftCommentReaction_CreatesAiAuthoredDraftAction()
+    {
+        CreateAndSaveTestSessionWithThreads();
+        var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
+        var sessionId = "azdo_testorg_testproject_testrepo_42";
+
+        var result = ThreadTools.DraftCommentReaction(
+            _sessionService,
+            prUrl: prUrl,
+            threadId: 100,
+            commentId: 1,
+            reaction: "like",
+            reason: "acknowledge correction",
+            agentName: "TestAgent");
+
+        var json = System.Text.Json.JsonDocument.Parse(result);
+        Assert.False(json.RootElement.TryGetProperty("error", out _), "Expected success but got error");
+
+        var session = _store.Load(sessionId)!;
+        var action = session.DraftActions.Values.First();
+        Assert.Equal(DraftActionType.CommentReaction, action.ActionType);
+        Assert.Equal(CommentReaction.Like, action.Reaction);
+        Assert.Equal(1, action.CommentId);
+        Assert.Equal(DraftAuthor.Ai, action.Author);
+    }
+
+    [Fact]
+    public void ThreadTools_DoesNotExposeDirectUpdateThreadStatusTool()
+    {
+        var method = typeof(ThreadTools).GetMethod("UpdateThreadStatus", BindingFlags.Public | BindingFlags.Static);
+        Assert.Null(method);
     }
 
     // =========================================================================

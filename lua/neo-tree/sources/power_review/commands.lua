@@ -126,11 +126,15 @@ M.show_file_details = function(state)
       table.insert(
         lines,
         string.format(
-          "Drafts: %d total (%d draft, %d pending, %d submitted)",
+          "Drafts: %d comments + %d actions (%d draft, %d pending, %d submitted; actions %d/%d/%d)",
           e.draft_counts.total,
+          e.draft_counts.actions_total or 0,
           e.draft_counts.draft,
           e.draft_counts.pending,
-          e.draft_counts.submitted
+          e.draft_counts.submitted,
+          e.draft_counts.actions_draft or 0,
+          e.draft_counts.actions_pending or 0,
+          e.draft_counts.actions_submitted or 0
         )
       )
     end

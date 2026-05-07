@@ -1,9 +1,9 @@
-# PowerReview Session File Schema (v6)
+# PowerReview Session File Schema (v7)
 
 This document defines the JSON schema for PowerReview session state files as stored by the CLI tool.
 External tools that create or consume these files **must** conform to this specification.
 
-> **Neovim adapter**: The CLI outputs v4 (nested) JSON. The Neovim plugin's `cli.adapt_session()` converts
+> **Neovim adapter**: The CLI outputs v7 (nested) JSON. The Neovim plugin's `cli.adapt_session()` converts
 > this to a flat v2-compatible shape for UI code. See `lua/power-review/cli.lua` for the mapping.
 
 ## File Location
@@ -40,11 +40,11 @@ Writes are atomic: data is written to a `.tmp` file first, then renamed to the f
 
 ## Top-Level Object: `ReviewSession`
 
-The v6 format uses a nested structure with logical groupings.
+The v7 format uses a nested structure with logical groupings.
 
 | Field          | Type                             | Required | Description                                           |
 |----------------|----------------------------------|----------|-------------------------------------------------------|
-| `version`      | `number`                         | yes      | Schema version. Must be `6`.                          |
+| `version`      | `number`                         | yes      | Schema version. Must be `7`.                          |
 | `id`           | `string`                         | yes      | Session identifier.                                   |
 | `provider`     | `ProviderInfo`                   | yes      | Provider metadata.                                    |
 | `pull_request` | `PullRequestInfo`                | yes      | PR metadata.                                          |
@@ -54,6 +54,7 @@ The v6 format uses a nested structure with logical groupings.
 | `files`        | `ChangedFile[]`                  | yes      | List of files changed in the PR.                      |
 | `threads`      | `ThreadsInfo`                    | yes      | Remote comment threads.                               |
 | `drafts`       | `object`                         | yes      | Local draft comments. Map of `{uuid: DraftComment}`.  |
+| `draft_actions`| `object`                         | yes      | Local draft review actions. Map of `{uuid: DraftAction}`. |
 | `proposals`    | `object`                         | yes      | Proposed code fixes. Map of `{uuid: ProposedFix}`.    |
 | `fix_worktree` | `FixWorktreeInfo \| null`        | no       | Fix worktree info for AI code changes, or `null`.     |
 | `metadata`     | `ReviewMetadata`                 | yes      | Derived metadata summaries for UI and AI agents.      |
@@ -72,17 +73,32 @@ Derived counts and normalized labels useful for UI and AI agents. Recomputed by 
 | `reviewers`  | `object` | Reviewer totals by required/vote state.          |
 | `files`      | `object` | Changed-file totals by change type.              |
 | `threads`    | `object` | Thread totals by status and location level.      |
-| `drafts`     | `object` | Draft totals by status and author type.          |
+| `drafts`     | `object` | Draft comment and draft action totals by status and author type. |
 | `work_items` | `object` | Work item totals by type/state.                  |
 | `review`     | `object` | File review progress counts.                     |
 | `iteration`  | `object` | Current and reviewed iteration commit metadata.  |
 | `state`      | `object` | PR state, merge conflict flag, vote label.       |
 | `timestamps` | `object` | Session, PR, and thread sync timestamps.         |
 
+### `metadata.drafts` Object
+
+| Field               | Type     | Description                                      |
+|---------------------|----------|--------------------------------------------------|
+| `total`             | `number` | Total draft comments.                            |
+| `draft`             | `number` | Draft comments still awaiting approval.          |
+| `pending`           | `number` | Draft comments approved for submit.              |
+| `submitted`         | `number` | Draft comments already submitted.                |
+| `ai_authored`       | `number` | Draft comments created by AI agents.             |
+| `user_authored`     | `number` | Draft comments created by the user.              |
+| `actions_total`     | `number` | Total draft actions.                             |
+| `actions_draft`     | `number` | Draft actions still awaiting approval.           |
+| `actions_pending`   | `number` | Draft actions approved for submit.               |
+| `actions_submitted` | `number` | Draft actions already submitted.                 |
+
 ### String Formats
 
 - **Timestamps**: ISO 8601 UTC format `YYYY-MM-DDTHH:MM:SSZ`.
-- **UUIDs** (draft keys): Version 4 UUID, e.g. `"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"`.
+- **UUIDs** (draft, draft action, and proposal keys): Version 4 UUID, e.g. `"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"`.
 - **Commit SHAs**: Full 40-character hex SHA.
 - **Enums**: Serialized as lowercase strings (e.g. `"approved"`, `"active"`, `"worktree"`).
 - **Nulls**: Omitted from serialized output.
@@ -444,6 +460,66 @@ In the `drafts` map:
 
 ---
 
+## `DraftAction` Object
+
+A locally-created non-comment review action not yet applied to the remote provider. Stored as values in the `draft_actions` map, keyed by UUID.
+
+Draft actions follow the same lifecycle as draft comments: `draft` -> `pending` -> `submitted`.
+
+| Field                | Type             | Required | Description                                                                  |
+|----------------------|------------------|----------|------------------------------------------------------------------------------|
+| `action_type`        | `string`         | yes      | Action kind. See Draft Action Type Values.                                   |
+| `status`             | `string`         | yes      | Draft lifecycle status. See Draft Status Values.                             |
+| `author`             | `string`         | yes      | Who created the action. See Draft Author Values.                             |
+| `author_name`        | `string \| null` | no       | Display name of the agent or person.                                         |
+| `thread_id`          | `number`         | yes      | Remote thread ID the action targets.                                         |
+| `comment_id`         | `number \| null` | no       | Remote comment ID for comment reactions.                                     |
+| `from_thread_status` | `string \| null` | no       | Thread status captured when the action was created.                          |
+| `to_thread_status`   | `string \| null` | no       | Target thread status for `ThreadStatusChange`.                               |
+| `reaction`           | `string \| null` | no       | Target reaction for `CommentReaction`. Currently `Like`.                     |
+| `note`               | `string \| null` | no       | Rationale shown to the user before approval.                                 |
+| `created_at`         | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
+| `updated_at`         | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
+
+> **Note**: The action's UUID is the *key* in the `draft_actions` map, not a field in the object itself.
+> The Neovim adapter adds it as `action.id` when converting to the flat array format.
+
+### Draft Action Type Values
+
+| Value                  | Description                                                   |
+|------------------------|---------------------------------------------------------------|
+| `"ThreadStatusChange"` | Apply a new status to a remote comment thread after submit.   |
+| `"CommentReaction"`    | Apply a reaction to a remote comment after submit.            |
+
+### Comment Reaction Values
+
+| Value    | Description                          |
+|----------|--------------------------------------|
+| `"Like"` | Like the targeted remote comment.    |
+
+### Example
+
+In the `draft_actions` map:
+
+```json
+{
+  "e7f8a9b0-c1d2-4e3f-9a0b-1c2d3e4f5a6b": {
+    "action_type": "ThreadStatusChange",
+    "status": "draft",
+    "author": "ai",
+    "author_name": "CodeFixer",
+    "thread_id": 100,
+    "from_thread_status": "Active",
+    "to_thread_status": "Fixed",
+    "note": "The requested fix was implemented.",
+    "created_at": "2026-03-27T13:05:00Z",
+    "updated_at": "2026-03-27T13:05:00Z"
+  }
+}
+```
+
+---
+
 ## `ProposedFix` Object
 
 A proposed code fix created by an AI agent in response to a PR comment. Stored as values in the `proposals` map, keyed by UUID. Each proposal represents code changes on a temporary branch that must be approved before being applied (merged into the PR source branch).
@@ -521,11 +597,11 @@ Information about the isolated fix worktree used by AI agents to make code chang
 
 ## Full Example
 
-A complete v6 session file:
+A complete v7 session file:
 
 ```json
 {
-  "version": 5,
+  "version": 7,
   "id": "azdo_my-org_my-project_my-repo_42",
   "provider": {
     "type": "azdo",
@@ -700,6 +776,20 @@ A complete v6 session file:
       "updated_at": "2026-03-27T13:00:00Z"
     }
   },
+  "draft_actions": {
+    "e7f8a9b0-c1d2-4e3f-9a0b-1c2d3e4f5a6b": {
+      "action_type": "ThreadStatusChange",
+      "status": "draft",
+      "author": "ai",
+      "author_name": "CodeFixer",
+      "thread_id": 100,
+      "from_thread_status": "Active",
+      "to_thread_status": "Fixed",
+      "note": "The requested fix was implemented.",
+      "created_at": "2026-03-27T13:05:00Z",
+      "updated_at": "2026-03-27T13:05:00Z"
+    }
+  },
   "proposals": {
     "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e": {
       "thread_id": 100,
@@ -747,14 +837,15 @@ A complete v6 session file:
   - Links to the third draft reply via `reply_draft_id` (when approved, the reply is auto-approved too).
   - Is in `"draft"` status, awaiting user review and approval.
 - The `fix_worktree` records the isolated worktree where the AI agent made its code changes.
+- The `draft_actions` map contains one AI-authored thread status change. It remains local until approved and submitted.
 
 ---
 
-## Neovim Adapter Mapping (v4 -> flat)
+## Neovim Adapter Mapping (v7 -> flat)
 
-The Neovim plugin's `cli.adapt_session()` function converts the nested v4 format to a flat shape:
+The Neovim plugin's `cli.adapt_session()` function converts the nested v7 format to a flat shape:
 
-| v4 Path | Flat Field |
+| v7 Path | Flat Field |
 |---------|-----------|
 | `pull_request.id` | `pr_id` |
 | `pull_request.url` | `pr_url` |
@@ -785,6 +876,7 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v4 format
 | `review.changed_since_review` | `changed_since_review` |
 | `threads.items` | `threads` (array) |
 | `drafts` (map) | `drafts` (array, sorted by `created_at`, `id` field added) |
+| `draft_actions` (map) | `draft_actions` (array, sorted by `created_at`, `id` field added) |
 | `vote` (string enum) | `vote` (number: approved=10, approved_with_suggestions=5, no_vote=0, wait_for_author=-5, rejected=-10) |
 
 ---
@@ -804,6 +896,17 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v4 format
 - Existing v4 sessions are migrated automatically: `proposals` defaults to an empty map `{}`, `fix_worktree` defaults to `null`.
 - No other fields are changed. The migration is non-destructive.
 
+### v5 -> v6
+
+- Added derived `metadata` summaries for reviewers, files, threads, drafts, work items, review progress, iteration, PR state, and timestamps.
+- Existing v5 sessions are migrated automatically by recomputing metadata from the stored session state.
+
+### v6 -> v7
+
+- Added the `draft_actions` object (type `Map<UUID, DraftAction>`) for approval-gated thread status changes and comment reactions.
+- Existing v6 sessions are migrated automatically: `draft_actions` defaults to an empty map `{}`.
+- Draft metadata now includes action counts: `actions_total`, `actions_draft`, `actions_pending`, and `actions_submitted`.
+
 ---
 
 ## Refresh Semantics
@@ -814,7 +917,7 @@ When a session is refreshed (`dnx PowerReview -- open --pr-url ...` on an existi
 - **Files** are fully replaced with the latest iteration's changed files. Iteration metadata is updated.
 - **Threads** are fully replaced with fresh data from the provider.
 - **Review state** undergoes smart reset: if the iteration changed, files that were modified between iterations lose their "reviewed" mark; unchanged files retain it. `changed_since_review` is recomputed.
-- **Drafts** are preserved. They are never affected by refresh operations.
+- **Drafts** and **draft actions** are preserved. They are never affected by refresh operations.
 - **Proposals** and **fix worktree** are preserved. They are never affected by refresh operations.
 
 When only threads are synced (`dnx PowerReview -- sync --pr-url ...`):

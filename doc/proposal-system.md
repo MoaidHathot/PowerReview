@@ -1,6 +1,6 @@
 # Incoming Comment Response System
 
-When someone comments on your pull request, AI agents can automatically read those comments and respond with draft replies, proposed code fixes, or explanations. Everything stays in draft until you approve it -- no changes reach your branch or the remote provider without your explicit approval.
+When someone comments on your pull request, AI agents can automatically read those comments and respond with draft replies, proposed code fixes, explanations, or draft review actions. Everything stays in draft until you approve it -- no changes reach your branch or the remote provider without your explicit approval.
 
 This document covers the full system: architecture, setup, AI agent workflow, user workflow, CLI command reference, and ActionView integration.
 
@@ -56,20 +56,20 @@ This document covers the full system: architecture, setup, AI agent workflow, us
 | Component | Role |
 |-----------|------|
 | **External trigger** | Detects new comments on your PRs. Your own mechanism (scheduler, webhook, manual). Not part of PowerReview. |
-| **AI agent** | Reads comments via MCP, decides action, creates draft replies and/or code fixes. |
-| **PowerReview CLI/MCP** | Manages sessions, threads, drafts, proposals. Syncs with AzDO. All business logic lives here. |
-| **Session file** | JSON on disk. Contains PR metadata, threads, drafts, and proposals. Watched by Neovim for live UI updates. |
+| **AI agent** | Reads comments via MCP, decides action, creates draft replies, draft actions, and/or code fixes. |
+| **PowerReview CLI/MCP** | Manages sessions, threads, drafts, draft actions, proposals. Syncs with AzDO. All business logic lives here. |
+| **Session file** | JSON on disk. Contains PR metadata, threads, drafts, draft actions, and proposals. Watched by Neovim for live UI updates. |
 | **Fix worktree** | Isolated git working directory at `{repo}/.power-review-fixes/{pr_id}`. AI makes code changes here without touching your working directory. One worktree per PR, reused across all fixes. |
 | **ActionView** | Your platform for viewing diffs and executing CLI commands. Calls PowerReview CLI to list/diff/approve/apply proposals. |
 
 ### Data flow
 
 1. **Incoming**: AzDO -> `powerreview sync` -> session file (threads updated)
-2. **AI processing**: AI reads threads via MCP -> creates draft replies and/or proposals -> session file updated
+2. **AI processing**: AI reads threads via MCP -> creates draft replies, draft actions, and/or proposals -> session file updated
 3. **Code changes**: AI writes code in fix worktree -> commits to temp branch (`powerreview/fix/thread-{id}`)
 4. **User review**: User runs `proposal list` / `proposal diff` via ActionView or CLI
 5. **Approval**: User runs `proposal approve` + `proposal apply --push` -> cherry-pick into PR branch -> push
-6. **Reply submission**: User runs `submit` -> approved draft replies are posted to AzDO
+6. **Submission**: User runs `submit` -> approved draft replies and draft actions are applied to AzDO
 
 ---
 
@@ -112,13 +112,14 @@ The AI agent connects to PowerReview via MCP (`powerreview mcp`) and follows thi
 
 #### Decision framework
 
-For each incoming comment, the agent decides one of three actions:
+For each incoming comment, the agent decides one of these actions:
 
 | Action | When to use | What the agent does |
 |--------|------------|---------------------|
 | **Reply** | Question, clarification, acknowledgment | Calls `ReplyToThread` to create a draft reply |
 | **Code fix** | Reviewer identified a real code issue | Creates a fix branch, makes changes, commits, registers a proposal |
-| **Won't fix** | Valid point but intentional or out of scope | Calls `ReplyToThread` with an explanation |
+| **Won't fix / by design** | Valid point but intentional or out of scope | Calls `ReplyToThread` with an explanation and `DraftThreadStatusChange` for the proposed status |
+| **Reaction** | Lightweight acknowledgement is enough | Calls `DraftCommentReaction` to create an approval-gated reaction |
 
 #### Code fix sequence (6 steps)
 
@@ -132,7 +133,7 @@ For each incoming comment, the agent decides one of three actions:
      filesChanged, replyDraftId)
 ```
 
-The proposal is created as a draft. The user must approve and apply it.
+The proposal is created as a draft. The user must approve and apply it. Thread status changes and comment reactions are created as draft actions; the user must approve them before `submit` applies them remotely.
 
 ### User side
 
@@ -143,7 +144,7 @@ After the AI agent has processed comments, you review its work:
 2. View diffs           -> inspect the actual code changes
 3. Approve or reject    -> make your decision
 4. Apply (if approved)  -> cherry-pick into PR branch, optionally push
-5. Submit replies       -> post approved draft replies to AzDO
+5. Submit replies/actions -> post approved draft replies and apply approved draft actions to AzDO
 ```
 
 ### Proposal lifecycle
@@ -689,12 +690,13 @@ The reviewer sees your reply on the thread, and the PR branch now contains the f
 ## Safety & Constraints
 
 1. **All proposals start as drafts.** Nothing reaches your branch until you explicitly approve and apply.
-2. **Code changes are isolated.** The fix worktree (`{repo}/.power-review-fixes/{pr_id}`) is a separate git checkout. Your working directory is never touched.
-3. **Approve/apply/reject are user-only.** These operations are CLI commands, not MCP tools. AI agents cannot approve their own proposals.
-4. **AI can only modify its own proposals.** Author guards prevent AI from deleting user-created proposals.
-5. **Cherry-pick conflicts require manual resolution.** If the fix branch conflicts with the current source branch, `proposal apply` fails with an error message. You resolve it manually in the worktree.
-6. **Linked replies auto-approve.** When you approve a proposal with a `reply_draft_id`, the linked reply moves from Draft to Pending automatically. It still needs `submit` to be posted to AzDO.
-7. **Multiple proposals per PR.** Each fix gets its own branch (`powerreview/fix/thread-{id}`). Proposals are independent -- you can approve one and reject another.
+2. **Remote review actions start as drafts.** Thread status changes and comment reactions are not applied remotely until you approve them and run `submit`.
+3. **Code changes are isolated.** The fix worktree (`{repo}/.power-review-fixes/{pr_id}`) is a separate git checkout. Your working directory is never touched.
+4. **Approve/apply/reject are user-only.** These operations are CLI commands, not MCP tools. AI agents cannot approve their own proposals or draft actions.
+5. **AI can only modify its own proposals.** Author guards prevent AI from deleting user-created proposals.
+6. **Cherry-pick conflicts require manual resolution.** If the fix branch conflicts with the current source branch, `proposal apply` fails with an error message. You resolve it manually in the worktree.
+7. **Linked replies auto-approve.** When you approve a proposal with a `reply_draft_id`, the linked reply moves from Draft to Pending automatically. It still needs `submit` to be posted to AzDO.
+8. **Multiple proposals per PR.** Each fix gets its own branch (`powerreview/fix/thread-{id}`). Proposals are independent -- you can approve one and reject another.
 
 ---
 
@@ -704,5 +706,5 @@ The reviewer sees your reply on the thread, and the PR branch now contains the f
 |----------|----------------|
 | [`skills/responding-to-comments/SKILL.md`](../skills/responding-to-comments/SKILL.md) | AI agent instructions for the comment response workflow |
 | [`skills/reviewing-prs/references/TOOLS.md`](../skills/reviewing-prs/references/TOOLS.md) | Complete MCP tool API reference (all parameters, returns, errors) |
-| [`doc/session-schema.md`](session-schema.md) | Session file JSON schema (v6) including ProposedFix, FixWorktreeInfo, and metadata summaries |
+| [`doc/session-schema.md`](session-schema.md) | Session file JSON schema (v7) including DraftAction, ProposedFix, FixWorktreeInfo, and metadata summaries |
 | [`README.md`](../README.md) | Project overview, installation, configuration |

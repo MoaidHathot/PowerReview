@@ -382,6 +382,66 @@ function M.api.delete_draft_comment(draft_id)
   return true, nil
 end
 
+local function reload_after_draft_action(session, result)
+  local review = require("power-review.review")
+  review._reload_current_session(session.pr_url, result)
+  require("power-review.ui").refresh_neotree()
+end
+
+---@param action_id string The local draft action UUID
+---@return boolean success, string|nil error
+function M.api.approve_draft_action(action_id)
+  local session = M._current_session
+  if not session then
+    return false, "No active review session"
+  end
+
+  local cli = require("power-review.cli")
+  local result, err = cli.approve_draft_action(session.pr_url, action_id)
+  if not result then
+    return false, err
+  end
+
+  reload_after_draft_action(session, result)
+  return true, nil
+end
+
+---@param action_id string The local draft action UUID
+---@return boolean success, string|nil error
+function M.api.unapprove_draft_action(action_id)
+  local session = M._current_session
+  if not session then
+    return false, "No active review session"
+  end
+
+  local cli = require("power-review.cli")
+  local result, err = cli.unapprove_draft_action(session.pr_url, action_id)
+  if not result then
+    return false, err
+  end
+
+  reload_after_draft_action(session, result)
+  return true, nil
+end
+
+---@param action_id string The local draft action UUID
+---@return boolean success, string|nil error
+function M.api.delete_draft_action(action_id)
+  local session = M._current_session
+  if not session then
+    return false, "No active review session"
+  end
+
+  local cli = require("power-review.cli")
+  local result, err = cli.delete_draft_action(session.pr_url, action_id)
+  if not result then
+    return false, err
+  end
+
+  reload_after_draft_action(session, result)
+  return true, nil
+end
+
 --- Approve a draft comment (delegates to CLI).
 ---@param draft_id string The local draft UUID
 ---@return boolean success, string|nil error

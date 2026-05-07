@@ -31,6 +31,10 @@ local HL = {
   EXPANDER = "PowerReviewDraftExpander",
 }
 
+local function normalize_status(status)
+  return (status or "draft"):lower()
+end
+
 local hl_created = false
 local function ensure_highlights()
   if hl_created then
@@ -78,6 +82,13 @@ local function build_nodes(session)
     end
   end
 
+  local filtered_actions = {}
+  for _, a in ipairs(session.draft_actions or {}) do
+    if M._filter == "all" or (a.author or ""):lower() == "ai" then
+      table.insert(filtered_actions, a)
+    end
+  end
+
   -- Counts for summary
   local all_counts = helpers.get_draft_counts(session)
   local ai_count = 0
@@ -89,11 +100,15 @@ local function build_nodes(session)
 
   local filter_label = M._filter == "ai" and " [AI only]" or ""
   local summary_text = string.format(
-    "Drafts: %d total (%d draft, %d pending, %d submitted) | AI: %d%s",
+    "Drafts: %d comments + %d actions (%d draft, %d pending, %d submitted; actions %d/%d/%d) | AI: %d%s",
     all_counts.total,
+    all_counts.actions_total,
     all_counts.draft,
     all_counts.pending,
     all_counts.submitted,
+    all_counts.actions_draft,
+    all_counts.actions_pending,
+    all_counts.actions_submitted,
     ai_count,
     filter_label
   )
@@ -101,8 +116,17 @@ local function build_nodes(session)
   -- Group filtered drafts by status
   local by_status = { draft = {}, pending = {}, submitted = {} }
   for _, d in ipairs(filtered_drafts) do
-    if by_status[d.status] then
-      table.insert(by_status[d.status], d)
+    local status = normalize_status(d.status)
+    if by_status[status] then
+      table.insert(by_status[status], d)
+    end
+  end
+
+  local actions_by_status = { draft = {}, pending = {}, submitted = {} }
+  for _, a in ipairs(filtered_actions) do
+    local status = normalize_status(a.status)
+    if actions_by_status[status] then
+      table.insert(actions_by_status[status], a)
     end
   end
 
@@ -146,6 +170,33 @@ local function build_nodes(session)
     )
   end
 
+  if #actions_by_status.draft > 0 then
+    local action_children = {}
+    for _, a in ipairs(actions_by_status.draft) do
+      local preview = helpers.draft_action_label(a):sub(1, 90)
+      table.insert(
+        action_children,
+        NuiTree.Node({
+          text = string.format("[DRAFT ACTION] %s", preview),
+          node_type = "draft_action_item",
+          action_id = a.id,
+          action_status = normalize_status(a.status),
+          action_author = a.author,
+          preview = preview,
+          body = a.note,
+        })
+      )
+    end
+    table.insert(
+      root_children,
+      NuiTree.Node({
+        text = string.format(" Draft Actions (%d) - ready to approve", #actions_by_status.draft),
+        node_type = "status_group",
+        group_status = "draft",
+      }, action_children)
+    )
+  end
+
   -- Pending section
   if #by_status.pending > 0 then
     local pending_children = {}
@@ -184,6 +235,33 @@ local function build_nodes(session)
     )
   end
 
+  if #actions_by_status.pending > 0 then
+    local pending_action_children = {}
+    for _, a in ipairs(actions_by_status.pending) do
+      local preview = helpers.draft_action_label(a):sub(1, 90)
+      table.insert(
+        pending_action_children,
+        NuiTree.Node({
+          text = string.format("[PENDING ACTION] %s", preview),
+          node_type = "draft_action_item",
+          action_id = a.id,
+          action_status = normalize_status(a.status),
+          action_author = a.author,
+          preview = preview,
+          body = a.note,
+        })
+      )
+    end
+    table.insert(
+      root_children,
+      NuiTree.Node({
+        text = string.format(" Pending Actions (%d) - ready to submit", #actions_by_status.pending),
+        node_type = "status_group",
+        group_status = "pending",
+      }, pending_action_children)
+    )
+  end
+
   -- Submitted section
   if #by_status.submitted > 0 then
     local submitted_children = {}
@@ -217,6 +295,33 @@ local function build_nodes(session)
         node_type = "status_group",
         group_status = "submitted",
       }, submitted_children)
+    )
+  end
+
+  if #actions_by_status.submitted > 0 then
+    local submitted_action_children = {}
+    for _, a in ipairs(actions_by_status.submitted) do
+      local preview = helpers.draft_action_label(a):sub(1, 90)
+      table.insert(
+        submitted_action_children,
+        NuiTree.Node({
+          text = string.format("[SUBMITTED ACTION] %s", preview),
+          node_type = "draft_action_item",
+          action_id = a.id,
+          action_status = normalize_status(a.status),
+          action_author = a.author,
+          preview = preview,
+          body = a.note,
+        })
+      )
+    end
+    table.insert(
+      root_children,
+      NuiTree.Node({
+        text = string.format(" Submitted Actions (%d)", #actions_by_status.submitted),
+        node_type = "status_group",
+        group_status = "submitted",
+      }, submitted_action_children)
     )
   end
 
@@ -293,6 +398,19 @@ local function prepare_node(node)
     line:append(loc .. " ", HL.FILE_PATH)
 
     -- Preview
+    line:append(node.preview or "", HL.PREVIEW)
+  elseif node_type == "draft_action_item" then
+    local status = node.action_status or "draft"
+    local badge_hl = HL.DRAFT_STATUS
+    if status == "pending" then
+      badge_hl = HL.PENDING_STATUS
+    elseif status == "submitted" then
+      badge_hl = HL.SUBMITTED_STATUS
+    end
+    line:append(string.format("[%s ACTION] ", status:upper()), badge_hl)
+    if node.action_author == "ai" then
+      line:append("AI ", HL.AI_BADGE)
+    end
     line:append(node.preview or "", HL.PREVIEW)
   end
 
@@ -496,19 +614,27 @@ function M._setup_keymaps(split, tree, session)
   -- Approve individual draft (a)
   split:map("n", "a", function()
     local node = tree:get_node()
-    if not node or node.node_type ~= "draft_item" then
+    if not node or (node.node_type ~= "draft_item" and node.node_type ~= "draft_action_item") then
       log.info("Select a draft to approve")
       return
     end
-    if node.draft_status ~= "draft" then
-      log.info("Only drafts can be approved (current: %s)", node.draft_status)
+    local status = node.node_type == "draft_action_item" and node.action_status or node.draft_status
+    if status ~= "draft" then
+      log.info("Only drafts can be approved (current: %s)", status)
       return
     end
 
-    local ok_appr, err = pr.api.approve_draft(node.draft_id)
+    local ok_appr, err
+    if node.node_type == "draft_action_item" then
+      ok_appr, err = pr.api.approve_draft_action(node.action_id)
+    else
+      ok_appr, err = pr.api.approve_draft(node.draft_id)
+    end
     if ok_appr then
       log.info("Draft approved (now pending)")
-      M.refresh(session)
+      local current = pr.get_current_session() or session
+      session = current
+      M.refresh(current)
       require("power-review.ui").refresh_neotree()
     else
       log.error("Failed to approve: %s", err or "unknown")
@@ -519,18 +645,32 @@ function M._setup_keymaps(split, tree, session)
   split:map("n", "A", function()
     local helpers = require("power-review.session_helpers")
     local counts = helpers.get_draft_counts(session)
-    if counts.draft == 0 then
+    local total_draft = counts.draft + counts.actions_draft
+    if total_draft == 0 then
       log.info("No drafts to approve")
       return
     end
 
     vim.ui.input({
-      prompt = string.format("Approve all %d draft(s)? (y/n): ", counts.draft),
+      prompt = string.format("Approve all %d draft(s/actions)? (y/n): ", total_draft),
     }, function(input)
       if input == "y" or input == "Y" then
         local count = pr.api.approve_all_drafts()
-        log.info("Approved %d draft(s)", count)
-        M.refresh(session)
+        local action_count = 0
+        for _, a in ipairs((pr.get_current_session() or session).draft_actions or {}) do
+          if a.status == "draft" then
+            local ok_a, err_a = pr.api.approve_draft_action(a.id)
+            if ok_a then
+              action_count = action_count + 1
+            else
+              log.warn("Failed to approve action %s: %s", a.id, err_a or "unknown")
+            end
+          end
+        end
+        log.info("Approved %d draft(s) and %d action(s)", count, action_count)
+        local current = pr.get_current_session() or session
+        session = current
+        M.refresh(current)
         require("power-review.ui").refresh_neotree()
       end
     end)
@@ -539,19 +679,27 @@ function M._setup_keymaps(split, tree, session)
   -- Unapprove (revert pending back to draft) (u)
   split:map("n", "u", function()
     local node = tree:get_node()
-    if not node or node.node_type ~= "draft_item" then
+    if not node or (node.node_type ~= "draft_item" and node.node_type ~= "draft_action_item") then
       log.info("Select a pending draft to unapprove")
       return
     end
-    if node.draft_status ~= "pending" then
-      log.info("Only pending drafts can be unapproved (current: %s)", node.draft_status)
+    local status = node.node_type == "draft_action_item" and node.action_status or node.draft_status
+    if status ~= "pending" then
+      log.info("Only pending drafts can be unapproved (current: %s)", status)
       return
     end
 
-    local ok_u, err = pr.api.unapprove_draft(node.draft_id)
+    local ok_u, err
+    if node.node_type == "draft_action_item" then
+      ok_u, err = pr.api.unapprove_draft_action(node.action_id)
+    else
+      ok_u, err = pr.api.unapprove_draft(node.draft_id)
+    end
     if ok_u then
       log.info("Draft unapproved (reverted to draft)")
-      M.refresh(session)
+      local current = pr.get_current_session() or session
+      session = current
+      M.refresh(current)
       require("power-review.ui").refresh_neotree()
     else
       log.error("Failed to unapprove: %s", err or "unknown")
@@ -584,21 +732,29 @@ function M._setup_keymaps(split, tree, session)
   -- Delete draft (d)
   split:map("n", "d", function()
     local node = tree:get_node()
-    if not node or node.node_type ~= "draft_item" then
+    if not node or (node.node_type ~= "draft_item" and node.node_type ~= "draft_action_item") then
       log.info("Select a draft to delete")
       return
     end
-    if node.draft_status ~= "draft" then
-      log.info("Only drafts can be deleted (current: %s)", node.draft_status)
+    local status = node.node_type == "draft_action_item" and node.action_status or node.draft_status
+    if status ~= "draft" then
+      log.info("Only drafts can be deleted (current: %s)", status)
       return
     end
 
     vim.ui.input({ prompt = "Delete draft? (y/n): " }, function(input)
       if input == "y" or input == "Y" then
-        local ok_del, err = pr.api.delete_draft_comment(node.draft_id)
+        local ok_del, err
+        if node.node_type == "draft_action_item" then
+          ok_del, err = pr.api.delete_draft_action(node.action_id)
+        else
+          ok_del, err = pr.api.delete_draft_comment(node.draft_id)
+        end
         if ok_del then
           log.info("Draft deleted")
-          M.refresh(session)
+          local current = pr.get_current_session() or session
+          session = current
+          M.refresh(current)
         else
           log.error("Failed to delete: %s", err or "unknown")
         end
@@ -609,12 +765,13 @@ function M._setup_keymaps(split, tree, session)
   -- Show full details (i)
   split:map("n", "i", function()
     local node = tree:get_node()
-    if not node or node.node_type ~= "draft_item" then
+    if not node or (node.node_type ~= "draft_item" and node.node_type ~= "draft_action_item") then
       return
     end
 
     local helpers = require("power-review.session_helpers")
-    local draft = helpers.get_draft(session, node.draft_id)
+    local draft = node.node_type == "draft_item" and helpers.get_draft(session, node.draft_id) or nil
+    local action = node.node_type == "draft_action_item" and helpers.get_draft_action(session, node.action_id) or nil
     if draft then
       local lines = {
         string.format("Draft: %s", draft.id),
@@ -633,6 +790,28 @@ function M._setup_keymaps(split, tree, session)
       -- Filter empty strings
       lines = vim.tbl_filter(function(l)
         return l ~= "" or true
+      end, lines)
+      log.info(table.concat(lines, "\n"))
+    elseif action then
+      local lines = {
+        string.format("Draft action: %s", action.id),
+        string.format("Type: %s", action.action_type),
+        string.format("Status: %s", action.status),
+        string.format(
+          "Author: %s",
+          action.author_name and (action.author .. " (" .. action.author_name .. ")") or action.author
+        ),
+        string.format("Thread: %s", tostring(action.thread_id)),
+        action.comment_id and string.format("Comment: %s", tostring(action.comment_id)) or "",
+        action.to_thread_status and string.format("Target status: %s", action.to_thread_status) or "",
+        action.reaction and string.format("Reaction: %s", action.reaction) or "",
+        string.format("Created: %s", action.created_at),
+        string.format("Updated: %s", action.updated_at),
+        "",
+        action.note or "",
+      }
+      lines = vim.tbl_filter(function(l)
+        return l ~= ""
       end, lines)
       log.info(table.concat(lines, "\n"))
     end
@@ -663,7 +842,11 @@ function M._setup_keymaps(split, tree, session)
   split:map("n", "F", function()
     local node = tree:get_node()
     if not node then
-      log.info("Select a draft or status group to approve by file")
+      log.info("Select a comment draft or status group to approve by file")
+      return
+    end
+    if node.node_type == "draft_action_item" then
+      log.info("Draft actions are not file-scoped; use a to approve the selected action")
       return
     end
 
@@ -742,11 +925,16 @@ function M._setup_keymaps(split, tree, session)
     end
     session = current
 
-    -- Count AI drafts that can be deleted (only status = "draft")
+    -- Count AI drafts/actions that can be deleted (only status = "draft")
     local ai_drafts = {}
     for _, d in ipairs(current.drafts) do
       if (d.author or ""):lower() == "ai" and d.status == "draft" then
-        table.insert(ai_drafts, d)
+        table.insert(ai_drafts, { kind = "comment", id = d.id })
+      end
+    end
+    for _, a in ipairs(current.draft_actions or {}) do
+      if (a.author or ""):lower() == "ai" and normalize_status(a.status) == "draft" then
+        table.insert(ai_drafts, { kind = "action", id = a.id })
       end
     end
 
@@ -766,7 +954,12 @@ function M._setup_keymaps(split, tree, session)
       local deleted = 0
       local errors = 0
       for _, d in ipairs(ai_drafts) do
-        local ok_del, err = pr.api.delete_draft_comment(d.id)
+        local ok_del, err
+        if d.kind == "action" then
+          ok_del, err = pr.api.delete_draft_action(d.id)
+        else
+          ok_del, err = pr.api.delete_draft_comment(d.id)
+        end
         if ok_del then
           deleted = deleted + 1
         else
@@ -824,15 +1017,31 @@ end
 --- Fallback when nui.nvim is not available: use vim.ui.select.
 ---@param session PowerReview.ReviewSession
 function M._select_fallback(session)
-  local drafts = session.drafts
-  if #drafts == 0 then
-    log.info("No draft comments")
+  local helpers = require("power-review.session_helpers")
+  local items = {}
+  for _, d in ipairs(session.drafts or {}) do
+    table.insert(items, vim.tbl_extend("force", { _kind = "comment" }, d))
+  end
+  for _, a in ipairs(session.draft_actions or {}) do
+    table.insert(items, vim.tbl_extend("force", { _kind = "action" }, a))
+  end
+
+  if #items == 0 then
+    log.info("No draft comments or actions")
     return
   end
 
-  vim.ui.select(drafts, {
-    prompt = "Draft comments:",
-    format_item = function(d)
+  vim.ui.select(items, {
+    prompt = "Draft comments/actions:",
+    format_item = function(item)
+      if item._kind == "action" then
+        return string.format(
+          "[%s ACTION]%s",
+          normalize_status(item.status):upper(),
+          " " .. helpers.draft_action_label(item)
+        )
+      end
+      local d = item
       local preview = d.body:gsub("\n", " "):sub(1, 50)
       local author_label = d.author == "ai" and (d.author_name and " (AI: " .. d.author_name .. ")" or " (AI)") or ""
       local loc = d.file_path or "(PR-level)"
@@ -850,14 +1059,19 @@ function M._select_fallback(session)
 
     -- Sub-action picker
     local actions = {}
-    if selected.status == "draft" then
+    local selected_status = normalize_status(selected.status)
+    if selected_status == "draft" then
       table.insert(actions, { label = "Approve (move to pending)", action = "approve" })
-      table.insert(actions, { label = "Edit", action = "edit" })
+      if selected._kind == "comment" then
+        table.insert(actions, { label = "Edit", action = "edit" })
+      end
       table.insert(actions, { label = "Delete", action = "delete" })
-    elseif selected.status == "pending" then
+    elseif selected_status == "pending" then
       table.insert(actions, { label = "View", action = "view" })
     end
-    table.insert(actions, { label = "Navigate to file", action = "navigate" })
+    if selected._kind == "comment" then
+      table.insert(actions, { label = "Navigate to file", action = "navigate" })
+    end
 
     vim.ui.select(actions, {
       prompt = "Action:",
@@ -871,7 +1085,12 @@ function M._select_fallback(session)
       local pr = require("power-review")
 
       if act.action == "approve" then
-        local ok_a, err = pr.api.approve_draft(selected.id)
+        local ok_a, err
+        if selected._kind == "action" then
+          ok_a, err = pr.api.approve_draft_action(selected.id)
+        else
+          ok_a, err = pr.api.approve_draft(selected.id)
+        end
         if ok_a then
           log.info("Draft approved")
         else
@@ -888,7 +1107,12 @@ function M._select_fallback(session)
           initial_body = selected.body,
         })
       elseif act.action == "delete" then
-        local ok_d, err = pr.api.delete_draft_comment(selected.id)
+        local ok_d, err
+        if selected._kind == "action" then
+          ok_d, err = pr.api.delete_draft_action(selected.id)
+        else
+          ok_d, err = pr.api.delete_draft_comment(selected.id)
+        end
         if ok_d then
           log.info("Draft deleted")
         else
@@ -902,7 +1126,11 @@ function M._select_fallback(session)
           end)
         end)
       elseif act.action == "view" then
-        log.info("[%s] %s:%d\n%s", selected.status:upper(), selected.file_path, selected.line_start, selected.body)
+        if selected._kind == "action" then
+          log.info("[%s ACTION] %s", selected_status:upper(), helpers.draft_action_label(selected))
+        else
+          log.info("[%s] %s:%d\n%s", selected.status:upper(), selected.file_path, selected.line_start, selected.body)
+        end
       end
     end)
   end)

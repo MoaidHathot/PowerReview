@@ -230,11 +230,12 @@ function M.build_sections(session, panel_width, collapsed)
     lines = {
       string.format(" PowerReview: %s", session.pr_title or "PR #" .. session.pr_id),
       string.format(
-        "  %d threads   %d drafts   %d pending   %d submitted",
+        "  %d threads   %d drafts   %d actions   %d pending   %d submitted",
         remote_count,
         counts.total,
-        counts.pending,
-        counts.submitted
+        counts.actions_total,
+        counts.pending + counts.actions_pending,
+        counts.submitted + counts.actions_submitted
       ),
       header_sep,
     },

@@ -276,6 +276,138 @@ public sealed class SessionService
     }
 
     /// <summary>
+    /// Create a draft action to change a remote thread status after user approval.
+    /// </summary>
+    public (string Id, DraftAction Action) CreateDraftThreadStatusChange(string sessionId, CreateDraftActionRequest request)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+        var session = LoadOrThrow(sessionId);
+
+        if (!request.ToThreadStatus.HasValue)
+            throw new SessionServiceException("Thread status action requires a target status.");
+
+        var thread = session.Threads.Items.FirstOrDefault(t => t.Id == request.ThreadId)
+            ?? throw new SessionServiceException($"Thread not found: {request.ThreadId}");
+
+        var now = Timestamp();
+        var id = Guid.NewGuid().ToString("D");
+        var action = new DraftAction
+        {
+            ActionType = DraftActionType.ThreadStatusChange,
+            Status = DraftStatus.Draft,
+            Author = request.Author ?? DraftAuthor.User,
+            AuthorName = request.AuthorName,
+            ThreadId = request.ThreadId,
+            FromThreadStatus = thread.Status,
+            ToThreadStatus = request.ToThreadStatus,
+            Note = request.Note,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+
+        session.DraftActions[id] = action;
+        _store.Save(session);
+        return (id, action);
+    }
+
+    /// <summary>
+    /// Create a draft action to react to a remote comment after user approval.
+    /// </summary>
+    public (string Id, DraftAction Action) CreateDraftCommentReaction(string sessionId, CreateDraftActionRequest request)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+        var session = LoadOrThrow(sessionId);
+
+        if (!request.CommentId.HasValue)
+            throw new SessionServiceException("Comment reaction action requires a comment ID.");
+        if (!request.Reaction.HasValue)
+            throw new SessionServiceException("Comment reaction action requires a reaction.");
+
+        var thread = session.Threads.Items.FirstOrDefault(t => t.Id == request.ThreadId)
+            ?? throw new SessionServiceException($"Thread not found: {request.ThreadId}");
+        if (!thread.Comments.Any(c => c.Id == request.CommentId.Value && !c.IsDeleted))
+            throw new SessionServiceException($"Comment not found: {request.CommentId.Value} in thread {request.ThreadId}");
+
+        var now = Timestamp();
+        var id = Guid.NewGuid().ToString("D");
+        var action = new DraftAction
+        {
+            ActionType = DraftActionType.CommentReaction,
+            Status = DraftStatus.Draft,
+            Author = request.Author ?? DraftAuthor.User,
+            AuthorName = request.AuthorName,
+            ThreadId = request.ThreadId,
+            CommentId = request.CommentId,
+            Reaction = request.Reaction,
+            Note = request.Note,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+
+        session.DraftActions[id] = action;
+        _store.Save(session);
+        return (id, action);
+    }
+
+    public DraftAction ApproveDraftAction(string sessionId, string actionId)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+        var session = LoadOrThrow(sessionId);
+
+        if (!session.DraftActions.TryGetValue(actionId, out var action))
+            throw new SessionServiceException($"Draft action not found: {actionId}");
+        if (action.Status != DraftStatus.Draft)
+            throw new SessionServiceException(
+                $"Cannot approve draft action {actionId}: status is '{action.Status}' (expected 'Draft')");
+
+        action.Status = DraftStatus.Pending;
+        action.UpdatedAt = Timestamp();
+        _store.Save(session);
+        return action;
+    }
+
+    public DraftAction UnapproveDraftAction(string sessionId, string actionId)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+        var session = LoadOrThrow(sessionId);
+
+        if (!session.DraftActions.TryGetValue(actionId, out var action))
+            throw new SessionServiceException($"Draft action not found: {actionId}");
+        if (action.Status != DraftStatus.Pending)
+            throw new SessionServiceException(
+                $"Cannot unapprove draft action {actionId}: status is '{action.Status}' (expected 'Pending')");
+
+        action.Status = DraftStatus.Draft;
+        action.UpdatedAt = Timestamp();
+        _store.Save(session);
+        return action;
+    }
+
+    public void DeleteDraftAction(string sessionId, string actionId, DraftAuthor? callerAuthor = null)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+        var session = LoadOrThrow(sessionId);
+
+        if (!session.DraftActions.TryGetValue(actionId, out var action))
+            throw new SessionServiceException($"Draft action not found: {actionId}");
+        if (callerAuthor.HasValue && action.Author != callerAuthor.Value)
+            throw new SessionServiceException(
+                $"Cannot delete draft action {actionId}: author mismatch (action author: '{action.Author}', caller: '{callerAuthor.Value}')");
+        if (!action.CanDelete)
+            throw new SessionServiceException(
+                $"Cannot delete draft action {actionId}: status is '{action.Status}' (only 'Draft' actions can be deleted)");
+
+        session.DraftActions.Remove(actionId);
+        _store.Save(session);
+    }
+
+    public Dictionary<string, DraftAction> GetDraftActions(string sessionId)
+    {
+        var session = _store.Load(sessionId);
+        return session?.DraftActions ?? new Dictionary<string, DraftAction>();
+    }
+
+    /// <summary>
     /// Get a specific draft by ID.
     /// </summary>
     public (string Id, DraftComment Draft)? GetDraft(string sessionId, string draftId)
@@ -368,6 +500,20 @@ public sealed class SessionService
         _store.Save(session);
     }
 
+    internal void MarkActionSubmitted(string sessionId, string actionId)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+
+        var session = LoadOrThrow(sessionId);
+
+        if (!session.DraftActions.TryGetValue(actionId, out var action))
+            throw new SessionServiceException($"Draft action not found: {actionId}");
+
+        action.Status = DraftStatus.Submitted;
+        action.UpdatedAt = Timestamp();
+        _store.Save(session);
+    }
+
     /// <summary>
     /// Load the full session. For read-only access by other services.
     /// </summary>
@@ -409,6 +555,20 @@ public sealed class CreateDraftRequest
     /// </summary>
     public int? ThreadId { get; set; }
     public int? ParentCommentId { get; set; }
+}
+
+/// <summary>
+/// Request to create a non-comment draft action.
+/// </summary>
+public sealed class CreateDraftActionRequest
+{
+    public int ThreadId { get; set; }
+    public int? CommentId { get; set; }
+    public ThreadStatus? ToThreadStatus { get; set; }
+    public CommentReaction? Reaction { get; set; }
+    public string? Note { get; set; }
+    public DraftAuthor? Author { get; set; }
+    public string? AuthorName { get; set; }
 }
 
 /// <summary>

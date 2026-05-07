@@ -259,9 +259,14 @@ function M.submit_pending(session, callback, progress_cb)
       pending_count = pending_count + 1
     end
   end
+  for _, a in ipairs(session.draft_actions or {}) do
+    if a.status == "pending" then
+      pending_count = pending_count + 1
+    end
+  end
 
   if pending_count == 0 then
-    callback("No pending drafts to submit")
+    callback("No pending drafts or actions to submit")
     return
   end
 

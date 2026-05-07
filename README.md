@@ -15,9 +15,9 @@ No business logic lives in Lua. The CLI can be used standalone or through the MC
 
 ## Features
 
-- **Draft comment workflow** -- `draft -> pending -> submitted` pipeline with human approval gate
-- **LLM safety guards** -- AI agents can only modify comments in `draft` status; `pending` and `submitted` are immutable to AI
-- **MCP server** -- 22 tools exposed via stdio for AI agents (Claude, Copilot, etc.) to review PRs and respond to comments autonomously
+- **Draft comment/action workflow** -- `draft -> pending -> submitted` pipeline with human approval gate
+- **LLM safety guards** -- AI agents create local drafts and draft actions; remote PR mutations require user approval and submit
+- **MCP server** -- 23 tools exposed via stdio for AI agents (Claude, Copilot, etc.) to review PRs and respond to comments autonomously
 - **Proposed code fixes** -- AI agents can create code changes on temporary branches in response to PR comments; user reviews diffs and approves before merging
 - **Fix worktree** -- isolated git worktree for AI agents to make code changes without affecting the user's working directory
 - **Iteration tracking** -- detects when the PR author pushes new commits; smart reset preserves review status for unchanged files
@@ -557,7 +557,7 @@ Configure your AI tool's MCP settings (e.g. `.mcp.json`, Claude Desktop config, 
 | `ListChangedFiles` | `prUrl` | List all changed files with change types |
 | `GetFileDiff` | `prUrl`, `filePath` | Get unified diff for a specific file |
 | `ListCommentThreads` | `prUrl`, `filePath?` | List remote threads and local drafts |
-| `GetDraftCounts` | `prUrl` | Get draft comment counts by status |
+| `GetDraftCounts` | `prUrl` | Get draft comment and draft action counts by status |
 | `SyncThreads` | `prUrl` | Sync threads from remote + check for new iterations |
 | `CheckIteration` | `prUrl` | Check for new PR iterations, apply smart reset |
 | `GetIterationDiff` | `prUrl`, `filePath` | Get diff between reviewed iteration and current |
@@ -565,6 +565,8 @@ Configure your AI tool's MCP settings (e.g. `.mcp.json`, Claude Desktop config, 
 | `EditDraftComment` | `prUrl`, `draftId`, `newBody` | Edit an AI-authored draft |
 | `DeleteDraftComment` | `prUrl`, `draftId` | Delete an AI-authored draft |
 | `ReplyToThread` | `prUrl`, `threadId`, `body` | Reply to an existing thread |
+| `DraftThreadStatusChange` | `prUrl`, `threadId`, `status`, `reason?` | Create an approval-gated draft action to change thread status |
+| `DraftCommentReaction` | `prUrl`, `threadId`, `commentId`, `reaction` | Create an approval-gated draft action to react to a comment |
 | `GetWorkingDirectory` | `prUrl` | Get filesystem path to the PR working directory |
 | `ReadFile` | `prUrl`, `filePath`, `offset?`, `limit?` | Read any file in the repository |
 | `ListRepositoryFiles` | `prUrl`, `directory?`, `pattern?`, `recursive?` | List/discover files in the repository |
@@ -575,7 +577,7 @@ Configure your AI tool's MCP settings (e.g. `.mcp.json`, Claude Desktop config, 
 | `ListProposals` | `prUrl` | List all proposals and their statuses |
 | `GetProposalDiff` | `prUrl`, `proposalId` | Get the code diff for a proposed fix |
 
-File access tools (`ReadFile`, `ListRepositoryFiles`, `GetWorkingDirectory`) let AI agents read any file in the repo for context -- not just files changed in the PR. All paths are security-validated to prevent access outside the repository root.
+File access tools (`ReadFile`, `ListRepositoryFiles`, `GetWorkingDirectory`) let AI agents read any file in the repo for context -- not just files changed in the PR. All paths are security-validated to prevent access outside the repository root. MCP tools do not directly resolve threads or react to comments on the remote provider; they create draft actions that the user must approve before `submit` applies them remotely.
 
 ### Architecture
 
@@ -688,7 +690,7 @@ PowerReview/
       PowerReview.Core/           -- Core library (models, services, providers, auth, git, store)
       PowerReview.Cli/            -- Console app (.NET global tool)
         Commands/                 -- System.CommandLine CLI commands
-        Mcp/                      -- MCP server (stdio, 22 tools)
+        Mcp/                      -- MCP server (stdio, 23 tools)
     tests/
       PowerReview.Core.Tests/     -- xUnit tests
   skills/

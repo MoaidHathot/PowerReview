@@ -192,6 +192,17 @@ public class ModelSerializationTests
             {
                 ["d1"] = new DraftComment { Body = "draft 1", CreatedAt = "2024-01-01T00:00:00Z", UpdatedAt = "2024-01-01T00:00:00Z" },
             },
+            DraftActions = new Dictionary<string, DraftAction>
+            {
+                ["a1"] = new DraftAction
+                {
+                    ActionType = DraftActionType.ThreadStatusChange,
+                    ThreadId = 1,
+                    ToThreadStatus = ThreadStatus.WontFix,
+                    CreatedAt = "2024-01-01T00:00:00Z",
+                    UpdatedAt = "2024-01-01T00:00:00Z",
+                },
+            },
             Vote = VoteValue.Approve,
             CreatedAt = "2024-01-01T00:00:00Z",
             UpdatedAt = "2024-01-01T00:00:00Z",
@@ -210,7 +221,36 @@ public class ModelSerializationTests
         Assert.Single(deserialized.Threads.Items[0].Comments);
         Assert.Single(deserialized.Drafts);
         Assert.Equal("draft 1", deserialized.Drafts["d1"].Body);
+        Assert.Single(deserialized.DraftActions);
+        Assert.Equal(ThreadStatus.WontFix, deserialized.DraftActions["a1"].ToThreadStatus);
         Assert.Equal(VoteValue.Approve, deserialized.Vote);
+    }
+
+    [Fact]
+    public void DraftAction_SerializesWithCorrectPropertyNames()
+    {
+        var action = new DraftAction
+        {
+            ActionType = DraftActionType.CommentReaction,
+            Status = DraftStatus.Draft,
+            Author = DraftAuthor.Ai,
+            AuthorName = "Agent",
+            ThreadId = 42,
+            CommentId = 7,
+            Reaction = CommentReaction.Like,
+            Note = "acknowledge reply",
+            CreatedAt = "2024-01-01T00:00:00Z",
+            UpdatedAt = "2024-01-01T00:00:00Z",
+        };
+
+        var json = JsonSerializer.Serialize(action, JsonOptions);
+
+        Assert.Contains("\"action_type\"", json);
+        Assert.Contains("\"thread_id\"", json);
+        Assert.Contains("\"comment_id\"", json);
+        Assert.Contains("\"reaction\"", json);
+        Assert.Contains("\"author_name\"", json);
+        Assert.DoesNotContain("CanEdit", json);
     }
 
     [Fact]
@@ -253,6 +293,11 @@ public class ModelSerializationTests
                 ["d1"] = new() { Status = DraftStatus.Draft, Author = DraftAuthor.Ai },
                 ["d2"] = new() { Status = DraftStatus.Pending, Author = DraftAuthor.User },
             },
+            DraftActions = new Dictionary<string, DraftAction>
+            {
+                ["a1"] = new() { Status = DraftStatus.Draft, ActionType = DraftActionType.ThreadStatusChange, ThreadId = 1, ToThreadStatus = ThreadStatus.Fixed },
+                ["a2"] = new() { Status = DraftStatus.Pending, ActionType = DraftActionType.CommentReaction, ThreadId = 2, CommentId = 1, Reaction = CommentReaction.Like },
+            },
             Review = new ReviewState
             {
                 ReviewedFiles = ["a.cs"],
@@ -276,6 +321,8 @@ public class ModelSerializationTests
         Assert.Equal(1, metadata.Threads.LineLevel);
         Assert.Equal(2, metadata.Drafts.Total);
         Assert.Equal(1, metadata.Drafts.AiAuthored);
+        Assert.Equal(2, metadata.Drafts.ActionsTotal);
+        Assert.Equal(1, metadata.Drafts.ActionsPending);
         Assert.Equal(2, metadata.WorkItems.Total);
         Assert.Equal(1, metadata.WorkItems.ByType["Bug"]);
         Assert.Equal(1, metadata.Review.ReviewedFiles);

@@ -404,7 +404,7 @@ Configure your AI tool's MCP settings: >json
   }
 <
 
-MCP tools (22 total):
+MCP tools (23 total):
 
   Read-only:
     GetReviewSession, ListChangedFiles, GetFileDiff,
@@ -413,9 +413,9 @@ MCP tools (22 total):
   Sync & iteration:
     SyncThreads, CheckIteration, GetIterationDiff
 
-  Write (drafts):
+  Write (drafts/actions):
     CreateComment, ReplyToThread, EditDraftComment, DeleteDraftComment,
-    UpdateThreadStatus
+    DraftThreadStatusChange, DraftCommentReaction
 
   File access:
     GetWorkingDirectory, ReadFile, ListRepositoryFiles
@@ -426,8 +426,9 @@ MCP tools (22 total):
   Proposals:
     CreateProposal, ListProposals, GetProposalDiff
 
-AI-created comments are tagged with author=ai and start as drafts
-that require user approval before submission.
+AI-created comments and remote review actions are local drafts that require
+user approval before submission. MCP tools do not directly resolve threads
+or react to remote comments.
 
 Proposals represent code fixes on temporary branches. The user must
 approve and apply them before changes are merged into the PR branch.

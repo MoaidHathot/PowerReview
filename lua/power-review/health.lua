@@ -130,11 +130,12 @@ function M.check()
     local counts = helpers.get_draft_counts(session)
     vim.health.ok(
       string.format(
-        "Active session: PR #%d - %s (%d files, %d drafts, %d threads)",
+        "Active session: PR #%d - %s (%d files, %d drafts, %d actions, %d threads)",
         session.pr_id or 0,
         session.pr_title or "?",
         #(session.files or {}),
         counts.total,
+        counts.actions_total,
         #(session.threads or {})
       )
     )

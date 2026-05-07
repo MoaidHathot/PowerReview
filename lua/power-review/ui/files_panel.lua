@@ -168,8 +168,8 @@ local function build_nodes(session)
 
   -- Root node
   local root_text = string.format("PR #%d: %s", session.pr_id, session.pr_title)
-  if counts.total > 0 then
-    root_text = root_text .. string.format(" [%d drafts]", counts.total)
+  if counts.total + counts.actions_total > 0 then
+    root_text = root_text .. string.format(" [%d drafts, %d actions]", counts.total, counts.actions_total)
   end
 
   local root = NuiTree.Node({

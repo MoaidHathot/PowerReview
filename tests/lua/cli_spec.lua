@@ -85,6 +85,16 @@ local function make_cli_session()
         created_at = "2025-06-01T01:00:00Z",
       },
     },
+    draft_actions = {
+      ["a-1"] = {
+        action_type = "thread_status_change",
+        status = "draft",
+        thread_id = 10,
+        from_thread_status = "active",
+        to_thread_status = "wontfix",
+        created_at = "2025-06-01T02:00:00Z",
+      },
+    },
     files = { "src/foo.lua", "src/bar.lua" },
     created_at = "2025-06-01T00:00:00Z",
     updated_at = "2025-06-02T00:00:00Z",
@@ -231,6 +241,16 @@ describe("adapt_session", function()
     assert.equal("t1", s.threads[1].id)
   end)
 
+  it("converts draft_actions from map to sorted array with id field", function()
+    local input = make_cli_session()
+    local s = cli.adapt_session(input)
+
+    assert.is_table(s.draft_actions)
+    assert.equal(1, #s.draft_actions)
+    assert.equal("a-1", s.draft_actions[1].id)
+    assert.equal("thread_status_change", s.draft_actions[1].action_type)
+  end)
+
   it("returns already-flat sessions unchanged", function()
     local flat = make_flat_session()
     local s = cli.adapt_session(flat)
@@ -263,6 +283,7 @@ describe("adapt_session", function()
     assert.is_nil(s.worktree_path)
     assert.is_nil(s.vote)
     assert.same({}, s.drafts)
+    assert.same({}, s.draft_actions)
     assert.same({}, s.threads)
     assert.same({}, s.files)
   end)

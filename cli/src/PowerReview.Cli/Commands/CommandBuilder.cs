@@ -41,6 +41,7 @@ internal static class CommandBuilder
         root.Subcommands.Add(BuildUpdateDescription(services));
         root.Subcommands.Add(BuildFixWorktree(services));
         root.Subcommands.Add(BuildProposal(services));
+        root.Subcommands.Add(BuildAction(services));
 
         return root;
     }
@@ -1462,6 +1463,234 @@ internal static class CommandBuilder
             "pending" => ThreadStatus.Pending,
             _ => null,
         };
+    }
+
+    private static CommentReaction? ParseCommentReaction(string value)
+    {
+        return value.ToLowerInvariant() switch
+        {
+            "like" => CommentReaction.Like,
+            _ => null,
+        };
+    }
+
+    private static DraftAuthor? ParseDraftAuthor(string? value, DraftAuthor? defaultValue = null)
+    {
+        return value?.ToLowerInvariant() switch
+        {
+            "ai" => DraftAuthor.Ai,
+            "user" => DraftAuthor.User,
+            null => defaultValue,
+            _ => defaultValue,
+        };
+    }
+
+    // =========================================================================
+    // action commands
+    // =========================================================================
+
+    private static Command BuildAction(ServiceFactory services)
+    {
+        var cmd = new Command("action", "Manage draft review actions. Draft actions require approval before submit applies them remotely.");
+
+        cmd.Subcommands.Add(BuildActionCreateThreadStatus(services));
+        cmd.Subcommands.Add(BuildActionCreateReaction(services));
+        cmd.Subcommands.Add(BuildActionList(services));
+        cmd.Subcommands.Add(BuildActionApprove(services));
+        cmd.Subcommands.Add(BuildActionUnapprove(services));
+        cmd.Subcommands.Add(BuildActionDelete(services));
+
+        return cmd;
+    }
+
+    private static Command BuildActionCreateThreadStatus(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var threadId = new Option<int>("--thread-id") { Description = "Remote thread ID", Required = true };
+        var status = new Option<string>("--status") { Description = "Target status: active, fixed, wontfix, closed, bydesign, pending", Required = true };
+        var note = new Option<string?>("--note") { Description = "Optional rationale shown to the user" };
+        var author = new Option<string?>("--author") { Description = "Author type: user or ai" };
+        var authorName = new Option<string?>("--author-name") { Description = "Display name for the action author" };
+
+        var cmd = new Command("create-thread-status", "Create a draft action to change a thread status")
+        {
+            prUrl, threadId, status, note, author, authorName
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var targetStatus = ParseThreadStatus(parseResult.GetValue(status)!);
+            if (targetStatus == null)
+                return CliOutput.WriteUsageError("Invalid thread status. Use: active, fixed, wontfix, closed, bydesign, pending");
+
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var (id, action) = services.SessionService.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
+                {
+                    ThreadId = parseResult.GetValue(threadId),
+                    ToThreadStatus = targetStatus,
+                    Note = parseResult.GetValue(note),
+                    Author = ParseDraftAuthor(parseResult.GetValue(author), DraftAuthor.User),
+                    AuthorName = parseResult.GetValue(authorName),
+                });
+                CliOutput.WriteJson(new { id, action, note = "Draft action created. The user must approve it before submit applies it remotely." });
+            }
+            catch (SessionServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildActionCreateReaction(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var threadId = new Option<int>("--thread-id") { Description = "Remote thread ID", Required = true };
+        var commentId = new Option<int>("--comment-id") { Description = "Remote comment ID", Required = true };
+        var reaction = new Option<string>("--reaction") { Description = "Reaction to apply: like", Required = true };
+        var note = new Option<string?>("--note") { Description = "Optional rationale shown to the user" };
+        var author = new Option<string?>("--author") { Description = "Author type: user or ai" };
+        var authorName = new Option<string?>("--author-name") { Description = "Display name for the action author" };
+
+        var cmd = new Command("create-reaction", "Create a draft action to react to a thread comment")
+        {
+            prUrl, threadId, commentId, reaction, note, author, authorName
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var parsedReaction = ParseCommentReaction(parseResult.GetValue(reaction)!);
+            if (parsedReaction == null)
+                return CliOutput.WriteUsageError("Invalid reaction. Use: like");
+
+            try
+            {
+                var sessionId = ResolveSessionId(services, url);
+                var (id, action) = services.SessionService.CreateDraftCommentReaction(sessionId, new CreateDraftActionRequest
+                {
+                    ThreadId = parseResult.GetValue(threadId),
+                    CommentId = parseResult.GetValue(commentId),
+                    Reaction = parsedReaction,
+                    Note = parseResult.GetValue(note),
+                    Author = ParseDraftAuthor(parseResult.GetValue(author), DraftAuthor.User),
+                    AuthorName = parseResult.GetValue(authorName),
+                });
+                CliOutput.WriteJson(new { id, action, note = "Draft action created. The user must approve it before submit applies it remotely." });
+            }
+            catch (SessionServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildActionList(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("list", "List draft review actions") { prUrl };
+
+        cmd.SetAction(parseResult =>
+        {
+            try
+            {
+                var sessionId = ResolveSessionId(services, parseResult.GetValue(prUrl)!);
+                var actions = services.SessionService.GetDraftActions(sessionId)
+                    .Select(kvp => new { id = kvp.Key, action = kvp.Value })
+                    .ToList();
+                CliOutput.WriteJson(actions);
+            }
+            catch (SessionServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildActionApprove(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var actionId = new Option<string>("--action-id") { Description = "Draft action UUID", Required = true };
+        var cmd = new Command("approve", "Approve a draft action (draft -> pending)") { prUrl, actionId };
+
+        cmd.SetAction(parseResult =>
+        {
+            try
+            {
+                var id = parseResult.GetValue(actionId)!;
+                var sessionId = ResolveSessionId(services, parseResult.GetValue(prUrl)!);
+                var action = services.SessionService.ApproveDraftAction(sessionId, id);
+                CliOutput.WriteJson(new { id, action });
+            }
+            catch (SessionServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildActionUnapprove(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var actionId = new Option<string>("--action-id") { Description = "Draft action UUID", Required = true };
+        var cmd = new Command("unapprove", "Unapprove a draft action (pending -> draft)") { prUrl, actionId };
+
+        cmd.SetAction(parseResult =>
+        {
+            try
+            {
+                var id = parseResult.GetValue(actionId)!;
+                var sessionId = ResolveSessionId(services, parseResult.GetValue(prUrl)!);
+                var action = services.SessionService.UnapproveDraftAction(sessionId, id);
+                CliOutput.WriteJson(new { id, action });
+            }
+            catch (SessionServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildActionDelete(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var actionId = new Option<string>("--action-id") { Description = "Draft action UUID", Required = true };
+        var cmd = new Command("delete", "Delete a draft action") { prUrl, actionId };
+
+        cmd.SetAction(parseResult =>
+        {
+            try
+            {
+                var id = parseResult.GetValue(actionId)!;
+                var sessionId = ResolveSessionId(services, parseResult.GetValue(prUrl)!);
+                services.SessionService.DeleteDraftAction(sessionId, id);
+                CliOutput.WriteJson(new { deleted = true, id });
+            }
+            catch (SessionServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
     }
 
     // =========================================================================

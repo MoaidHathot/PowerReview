@@ -50,6 +50,11 @@ public interface IProvider
     Task DeleteCommentAsync(int prId, int threadId, int commentId, CancellationToken ct = default);
 
     /// <summary>
+    /// Apply a reaction to a comment.
+    /// </summary>
+    Task SetCommentReactionAsync(int prId, int threadId, int commentId, CommentReaction reaction, CancellationToken ct = default);
+
+    /// <summary>
     /// Set the review vote for the current user.
     /// </summary>
     Task SetVoteAsync(int prId, string reviewerId, int vote, CancellationToken ct = default);

@@ -39,6 +39,7 @@ public sealed class ReviewMetadata
         var files = session.Files ?? [];
         var threads = session.Threads?.Items ?? [];
         var drafts = session.Drafts?.Values.ToList() ?? [];
+        var draftActions = session.DraftActions?.Values.ToList() ?? [];
         var reviewers = session.PullRequest.Reviewers ?? [];
         var workItems = session.PullRequest.WorkItems ?? [];
         var review = session.Review ?? new ReviewState();
@@ -105,6 +106,10 @@ public sealed class ReviewMetadata
                 Submitted = draftCounts.GetValueOrDefault("submitted"),
                 AiAuthored = drafts.Count(d => d.Author == DraftAuthor.Ai),
                 UserAuthored = drafts.Count(d => d.Author == DraftAuthor.User),
+                ActionsTotal = draftActions.Count,
+                ActionsDraft = draftActions.Count(a => a.Status == DraftStatus.Draft),
+                ActionsPending = draftActions.Count(a => a.Status == DraftStatus.Pending),
+                ActionsSubmitted = draftActions.Count(a => a.Status == DraftStatus.Submitted),
             },
             WorkItems = new WorkItemMetadata
             {
@@ -266,6 +271,18 @@ public sealed class DraftMetadata
 
     [JsonPropertyName("user_authored")]
     public int UserAuthored { get; set; }
+
+    [JsonPropertyName("actions_total")]
+    public int ActionsTotal { get; set; }
+
+    [JsonPropertyName("actions_draft")]
+    public int ActionsDraft { get; set; }
+
+    [JsonPropertyName("actions_pending")]
+    public int ActionsPending { get; set; }
+
+    [JsonPropertyName("actions_submitted")]
+    public int ActionsSubmitted { get; set; }
 }
 
 public sealed class WorkItemMetadata

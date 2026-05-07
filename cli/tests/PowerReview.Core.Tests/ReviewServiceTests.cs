@@ -317,6 +317,59 @@ public class ReviewServiceTests : IDisposable
         Assert.Equal("src/new.cs", result.Session.Files[0].Path);
     }
 
+    [Fact]
+    public async Task SubmitAsync_PendingThreadStatusAction_UpdatesRemoteAndMarksSubmitted()
+    {
+        var session = CreateAndSaveSession();
+        var (actionId, _) = _sessionService.CreateDraftThreadStatusChange(session.Id, new CreateDraftActionRequest
+        {
+            ThreadId = 101,
+            ToThreadStatus = ThreadStatus.WontFix,
+            Author = DraftAuthor.Ai,
+        });
+        _sessionService.ApproveDraftAction(session.Id, actionId);
+        var provider = new FakeProvider();
+        var service = CreateService(provider);
+
+        var result = await service.SubmitAsync(TestPrUrl);
+
+        Assert.Equal(1, result.Submitted);
+        Assert.Equal(1, result.ActionsSubmitted);
+        Assert.Equal(0, result.Failed);
+        Assert.Equal(1, provider.UpdateThreadStatusCalls);
+        Assert.Equal(ThreadStatus.WontFix, provider.LastThreadStatus);
+
+        var loaded = _store.Load(session.Id)!;
+        Assert.Equal(DraftStatus.Submitted, loaded.DraftActions[actionId].Status);
+        Assert.Equal(ThreadStatus.WontFix, loaded.Threads.Items.First(t => t.Id == 101).Status);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_PendingCommentReactionAction_AppliesReactionAndMarksSubmitted()
+    {
+        var session = CreateAndSaveSession();
+        var (actionId, _) = _sessionService.CreateDraftCommentReaction(session.Id, new CreateDraftActionRequest
+        {
+            ThreadId = 101,
+            CommentId = 1,
+            Reaction = CommentReaction.Like,
+            Author = DraftAuthor.Ai,
+        });
+        _sessionService.ApproveDraftAction(session.Id, actionId);
+        var provider = new FakeProvider();
+        var service = CreateService(provider);
+
+        var result = await service.SubmitAsync(TestPrUrl);
+
+        Assert.Equal(1, result.Submitted);
+        Assert.Equal(1, result.ActionsSubmitted);
+        Assert.Equal(1, provider.SetCommentReactionCalls);
+        Assert.Equal(CommentReaction.Like, provider.LastReaction);
+
+        var loaded = _store.Load(session.Id)!;
+        Assert.Equal(DraftStatus.Submitted, loaded.DraftActions[actionId].Status);
+    }
+
     // ========================================================================
     // GetSession
     // ========================================================================
@@ -611,6 +664,10 @@ public class ReviewServiceTests : IDisposable
         public int GetChangedFilesCalls { get; private set; }
         public int GetThreadsCalls { get; private set; }
         public int CreateThreadCalls { get; private set; }
+        public int UpdateThreadStatusCalls { get; private set; }
+        public int SetCommentReactionCalls { get; private set; }
+        public ThreadStatus? LastThreadStatus { get; private set; }
+        public CommentReaction? LastReaction { get; private set; }
 
         public Task<PullRequest> GetPullRequestAsync(int prId, CancellationToken ct = default)
         {
@@ -660,6 +717,13 @@ public class ReviewServiceTests : IDisposable
             return Task.CompletedTask;
         }
 
+        public Task SetCommentReactionAsync(int prId, int threadId, int commentId, CommentReaction reaction, CancellationToken ct = default)
+        {
+            SetCommentReactionCalls++;
+            LastReaction = reaction;
+            return Task.CompletedTask;
+        }
+
         public Task SetVoteAsync(int prId, string reviewerId, int vote, CancellationToken ct = default)
         {
             return Task.CompletedTask;
@@ -677,6 +741,8 @@ public class ReviewServiceTests : IDisposable
 
         public Task<CommentThread> UpdateThreadStatusAsync(int prId, int threadId, ThreadStatus status, CancellationToken ct = default)
         {
+            UpdateThreadStatusCalls++;
+            LastThreadStatus = status;
             return Task.FromResult(new CommentThread { Id = threadId, Status = status });
         }
 

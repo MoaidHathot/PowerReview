@@ -176,6 +176,17 @@ function M.adapt_session(cli_session)
     return (a.created_at or "") < (b.created_at or "")
   end)
 
+  local draft_actions = {}
+  local raw_draft_actions = cli_session.draft_actions or {}
+  for id, action in pairs(raw_draft_actions) do
+    action.id = id
+    table.insert(draft_actions, action)
+  end
+
+  table.sort(draft_actions, function(a, b)
+    return (a.created_at or "") < (b.created_at or "")
+  end)
+
   ---@type PowerReview.ReviewSession
   local session = {
     version = cli_session.version or 3,
@@ -212,6 +223,7 @@ function M.adapt_session(cli_session)
     vote = M._vote_string_to_number(cli_session.vote),
     metadata = metadata,
     drafts = drafts,
+    draft_actions = draft_actions,
     threads = threads_info.items or {},
     files = cli_session.files or {},
   }
@@ -432,6 +444,30 @@ end
 ---@return table|nil result, string|nil error
 function M.unapprove_draft(pr_url, draft_id)
   return M.run({ "comment", "unapprove", "--pr-url", pr_url, "--draft-id", draft_id })
+end
+
+--- Approve a draft action.
+---@param pr_url string
+---@param action_id string
+---@return table|nil result, string|nil error
+function M.approve_draft_action(pr_url, action_id)
+  return M.run({ "action", "approve", "--pr-url", pr_url, "--action-id", action_id })
+end
+
+--- Unapprove a draft action.
+---@param pr_url string
+---@param action_id string
+---@return table|nil result, string|nil error
+function M.unapprove_draft_action(pr_url, action_id)
+  return M.run({ "action", "unapprove", "--pr-url", pr_url, "--action-id", action_id })
+end
+
+--- Delete a draft action.
+---@param pr_url string
+---@param action_id string
+---@return table|nil result, string|nil error
+function M.delete_draft_action(pr_url, action_id)
+  return M.run({ "action", "delete", "--pr-url", pr_url, "--action-id", action_id })
 end
 
 --- Create a reply draft to an existing thread.

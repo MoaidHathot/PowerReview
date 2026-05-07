@@ -46,38 +46,38 @@ public sealed class ThreadTools
     }
 
     [McpServerTool, Description(
-        "Update the status of a comment thread on the remote provider. " +
-        "Use this to resolve threads that have been addressed, or reactivate them. " +
+        "Create a draft action to update a comment thread status after user approval. " +
+        "This does not update the remote provider directly. " +
         "Valid statuses: active, fixed, wontfix, closed, bydesign, pending.")]
-    public static async Task<string> UpdateThreadStatus(
-        ReviewService reviewService,
+    public static string DraftThreadStatusChange(
+        SessionService sessionService,
         [Description("The pull request URL")] string prUrl,
-        [Description("The remote thread ID to update")] int threadId,
-        [Description("New thread status. One of: active, fixed, wontfix, closed, bydesign, pending")] string status,
-        CancellationToken ct)
+        [Description("The remote thread ID to update after approval")] int threadId,
+        [Description("Target thread status. One of: active, fixed, wontfix, closed, bydesign, pending")] string status,
+        [Description("Optional rationale shown to the user before approval")] string? reason = null,
+        [Description("Optional name identifying this agent")] string? agentName = null)
     {
         try
         {
-            var threadStatus = status.ToLowerInvariant() switch
+            var threadStatus = ParseThreadStatus(status);
+            var sessionId = ToolHelpers.ResolveSessionId(prUrl);
+            var (id, action) = sessionService.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
             {
-                "active" => ThreadStatus.Active,
-                "fixed" or "resolved" => ThreadStatus.Fixed,
-                "wontfix" or "wont-fix" => ThreadStatus.WontFix,
-                "closed" => ThreadStatus.Closed,
-                "bydesign" or "by-design" => ThreadStatus.ByDesign,
-                "pending" => ThreadStatus.Pending,
-                _ => throw new ArgumentException($"Invalid thread status: '{status}'. Use: active, fixed, wontfix, closed, bydesign, pending"),
-            };
+                ThreadId = threadId,
+                ToThreadStatus = threadStatus,
+                Note = reason,
+                Author = DraftAuthor.Ai,
+                AuthorName = agentName,
+            });
 
-            var result = await reviewService.UpdateThreadStatusAsync(prUrl, threadId, threadStatus, ct);
             return ToolHelpers.ToJson(new
             {
-                thread_id = threadId,
-                status,
-                thread = result,
+                id,
+                action,
+                note = "Draft action created. The user must approve it before submit applies it remotely.",
             });
         }
-        catch (ReviewServiceException ex)
+        catch (SessionServiceException ex)
         {
             return ToolHelpers.ToJson(new { error = ex.Message });
         }
@@ -85,5 +85,67 @@ public sealed class ThreadTools
         {
             return ToolHelpers.ToJson(new { error = ex.Message });
         }
+    }
+
+    [McpServerTool, Description(
+        "Create a draft action to react to a comment after user approval. " +
+        "This does not update the remote provider directly. Currently supported reaction: like.")]
+    public static string DraftCommentReaction(
+        SessionService sessionService,
+        [Description("The pull request URL")] string prUrl,
+        [Description("The remote thread ID containing the comment")] int threadId,
+        [Description("The remote comment ID to react to")] int commentId,
+        [Description("Reaction to apply after approval. Supported: like")] string reaction,
+        [Description("Optional rationale shown to the user before approval")] string? reason = null,
+        [Description("Optional name identifying this agent")] string? agentName = null)
+    {
+        try
+        {
+            var parsedReaction = reaction.ToLowerInvariant() switch
+            {
+                "like" => CommentReaction.Like,
+                _ => throw new ArgumentException($"Invalid reaction: '{reaction}'. Use: like"),
+            };
+
+            var sessionId = ToolHelpers.ResolveSessionId(prUrl);
+            var (id, action) = sessionService.CreateDraftCommentReaction(sessionId, new CreateDraftActionRequest
+            {
+                ThreadId = threadId,
+                CommentId = commentId,
+                Reaction = parsedReaction,
+                Note = reason,
+                Author = DraftAuthor.Ai,
+                AuthorName = agentName,
+            });
+
+            return ToolHelpers.ToJson(new
+            {
+                id,
+                action,
+                note = "Draft action created. The user must approve it before submit applies it remotely.",
+            });
+        }
+        catch (SessionServiceException ex)
+        {
+            return ToolHelpers.ToJson(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return ToolHelpers.ToJson(new { error = ex.Message });
+        }
+    }
+
+    private static ThreadStatus ParseThreadStatus(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "active" => ThreadStatus.Active,
+            "fixed" or "resolved" => ThreadStatus.Fixed,
+            "wontfix" or "wont-fix" => ThreadStatus.WontFix,
+            "closed" => ThreadStatus.Closed,
+            "bydesign" or "by-design" => ThreadStatus.ByDesign,
+            "pending" => ThreadStatus.Pending,
+            _ => throw new ArgumentException($"Invalid thread status: '{status}'. Use: active, fixed, wontfix, closed, bydesign, pending"),
+        };
     }
 }

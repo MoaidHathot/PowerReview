@@ -107,9 +107,9 @@ M.draft_count = function(config, node, state)
     -- For the root node, show total draft count
     if node.type == "pr_root" and node.extra and node.extra.draft_counts then
       local counts = node.extra.draft_counts
-      if counts.total > 0 then
+      if counts.total + (counts.actions_total or 0) > 0 then
         return {
-          text = string.format(" [%d drafts]", counts.total),
+          text = string.format(" [%d drafts, %d actions]", counts.total, counts.actions_total or 0),
           highlight = HL.DRAFT_COUNT,
         }
       end
@@ -143,9 +143,9 @@ M.comment_count = function(config, node, state)
     -- Root node: show aggregate counts
     if node.extra and node.extra.draft_counts then
       local counts = node.extra.draft_counts
-      if counts.total > 0 then
+      if counts.total + (counts.actions_total or 0) > 0 then
         return {
-          text = string.format(" [%d drafts]", counts.total),
+          text = string.format(" [%d drafts, %d actions]", counts.total, counts.actions_total or 0),
           highlight = HL.DRAFT_COUNT,
         }
       end

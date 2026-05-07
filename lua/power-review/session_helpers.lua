@@ -42,13 +42,67 @@ end
 ---@return table { draft: number, pending: number, submitted: number, total: number }
 function M.get_draft_counts(session)
   local drafts = session.drafts or {}
-  local counts = { draft = 0, pending = 0, submitted = 0, total = #drafts }
+  local actions = session.draft_actions or {}
+  local counts = {
+    draft = 0,
+    pending = 0,
+    submitted = 0,
+    total = #drafts,
+    actions_draft = 0,
+    actions_pending = 0,
+    actions_submitted = 0,
+    actions_total = #actions,
+  }
   for _, d in ipairs(drafts) do
     if counts[d.status] then
       counts[d.status] = counts[d.status] + 1
     end
   end
+  for _, a in ipairs(actions) do
+    local key = "actions_" .. (a.status or "")
+    if counts[key] then
+      counts[key] = counts[key] + 1
+    end
+  end
   return counts
+end
+
+---@param action PowerReview.DraftAction
+---@return string
+function M.draft_action_label(action)
+  if action.action_type == "thread_status_change" or action.action_type == "ThreadStatusChange" then
+    return string.format(
+      "Thread #%s: %s -> %s%s",
+      tostring(action.thread_id or "?"),
+      tostring(action.from_thread_status or "?"),
+      tostring(action.to_thread_status or "?"),
+      action.note and (" - " .. action.note) or ""
+    )
+  end
+
+  if action.action_type == "comment_reaction" or action.action_type == "CommentReaction" then
+    return string.format(
+      "%s comment #%s in thread #%s%s",
+      tostring(action.reaction or "react"),
+      tostring(action.comment_id or "?"),
+      tostring(action.thread_id or "?"),
+      action.note and (" - " .. action.note) or ""
+    )
+  end
+
+  return action.note or tostring(action.action_type or "draft action")
+end
+
+---@param session PowerReview.ReviewSession
+---@param action_id string
+---@return PowerReview.DraftAction|nil
+function M.get_draft_action(session, action_id)
+  for _, action in ipairs(session.draft_actions or {}) do
+    if action.id == action_id then
+      return action
+    end
+  end
+  return nil
 end
 
 -- ============================================================================

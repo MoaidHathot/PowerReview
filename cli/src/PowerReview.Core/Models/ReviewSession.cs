@@ -4,11 +4,11 @@ namespace PowerReview.Core.Models;
 
 /// <summary>
 /// The complete review session persisted to disk.
-/// This is the v6 session format — the source of truth for all review state.
+/// This is the v7 session format — the source of truth for all review state.
 /// </summary>
 public sealed class ReviewSession
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     [JsonPropertyName("version")]
     public int Version { get; set; } = CurrentVersion;
@@ -46,6 +46,13 @@ public sealed class ReviewSession
     /// </summary>
     [JsonPropertyName("drafts")]
     public Dictionary<string, DraftComment> Drafts { get; set; } = new();
+
+    /// <summary>
+    /// Non-comment review actions keyed by UUID. These are proposed remote actions
+    /// that require user approval before submission.
+    /// </summary>
+    [JsonPropertyName("draft_actions")]
+    public Dictionary<string, DraftAction> DraftActions { get; set; } = new();
 
     /// <summary>
     /// Proposed code fixes keyed by UUID. Each proposal represents an AI-suggested
