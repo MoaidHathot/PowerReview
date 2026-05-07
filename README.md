@@ -551,7 +551,7 @@ Configure your AI tool's MCP settings (e.g. `.mcp.json`, Claude Desktop config, 
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `GetReviewSession` | `prUrl` | Get session metadata (PR info, drafts, vote) |
+| `GetReviewSession` | `prUrl` | Get session metadata (PR info, drafts, vote, derived counts) |
 | `ListChangedFiles` | `prUrl` | List all changed files with change types |
 | `GetFileDiff` | `prUrl`, `filePath` | Get unified diff for a specific file |
 | `ListCommentThreads` | `prUrl`, `filePath?` | List remote threads and local drafts |
@@ -641,6 +641,7 @@ api.set_vote(vote, callback)  -- 10=Approved, 5=Approved w/ suggestions, 0=No vo
 
 -- Session
 api.get_review_session()
+api.get_review_metadata()
 api.reply_to_thread({ thread_id = id, body = "...", author = "user" })
 api.sync_threads(callback)
 api.close_review(callback)

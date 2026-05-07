@@ -171,6 +171,15 @@ end
 ---@param session PowerReview.ReviewSession
 ---@return table { reviewed: number, changed: number, unreviewed: number, total: number }
 function M.get_review_progress(session)
+  if session.metadata and session.metadata.review then
+    return {
+      reviewed = session.metadata.review.reviewed_files or 0,
+      changed = session.metadata.review.changed_since_review or 0,
+      unreviewed = session.metadata.review.unreviewed_files or 0,
+      total = session.metadata.review.total_files or 0,
+    }
+  end
+
   local total = #(session.files or {})
   local reviewed = #(session.reviewed_files or {})
   local changed = #(session.changed_since_review or {})
@@ -186,6 +195,13 @@ function M.get_review_progress(session)
     unreviewed = unreviewed,
     total = total,
   }
+end
+
+--- Get derived metadata summaries for the session.
+---@param session PowerReview.ReviewSession
+---@return PowerReview.ReviewMetadata|table
+function M.get_metadata(session)
+  return session.metadata or {}
 end
 
 return M

@@ -157,6 +157,38 @@ local function build_content(session)
     add_meta("Merge", session.merge_status, HL.STATUS)
   end
 
+  if session.metadata then
+    local md = session.metadata
+    if md.reviewers then
+      add_meta(
+        "Required Reviewers",
+        string.format("%d required, %d pending", md.reviewers.required or 0, md.reviewers.required_pending or 0),
+        HL.REVIEWER
+      )
+    end
+    if md.files then
+      add_meta(
+        "Files",
+        string.format(
+          "%d total (%d added, %d edited, %d deleted, %d renamed)",
+          md.files.total or 0,
+          md.files.added or 0,
+          md.files.edited or 0,
+          md.files.deleted or 0,
+          md.files.renamed or 0
+        ),
+        HL.META_VAL
+      )
+    end
+    if md.threads then
+      add_meta(
+        "Threads",
+        string.format("%d total, %d active", md.threads.total or 0, md.threads.active or 0),
+        HL.META_VAL
+      )
+    end
+  end
+
   -- Labels
   if session.labels and #session.labels > 0 then
     add_meta("Labels", table.concat(session.labels, ", "), HL.LABEL)
@@ -166,10 +198,12 @@ local function build_content(session)
   if session.work_items and #session.work_items > 0 then
     local items = {}
     for _, wi in ipairs(session.work_items) do
+      local prefix = wi.type and wi.type ~= "" and (wi.type .. " ") or ""
+      local suffix = wi.state and wi.state ~= "" and (" [" .. wi.state .. "]") or ""
       if wi.title then
-        table.insert(items, string.format("#%s %s", wi.id or "?", wi.title))
+        table.insert(items, string.format("#%s %s%s%s", wi.id or "?", prefix, wi.title, suffix))
       else
-        table.insert(items, string.format("#%s", wi.id or "?"))
+        table.insert(items, string.format("#%s%s", wi.id or "?", suffix))
       end
     end
     add_meta("Work Items", table.concat(items, "; "), HL.META_VAL)

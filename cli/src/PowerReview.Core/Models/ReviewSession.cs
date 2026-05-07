@@ -4,11 +4,11 @@ namespace PowerReview.Core.Models;
 
 /// <summary>
 /// The complete review session persisted to disk.
-/// This is the v5 session format — the source of truth for all review state.
+/// This is the v6 session format — the source of truth for all review state.
 /// </summary>
 public sealed class ReviewSession
 {
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     [JsonPropertyName("version")]
     public int Version { get; set; } = CurrentVersion;
@@ -61,6 +61,13 @@ public sealed class ReviewSession
     /// </summary>
     [JsonPropertyName("fix_worktree")]
     public FixWorktreeInfo? FixWorktree { get; set; }
+
+    /// <summary>
+    /// Derived metadata summaries useful for UI and AI agents.
+    /// Recomputed whenever the session is saved or loaded.
+    /// </summary>
+    [JsonPropertyName("metadata")]
+    public ReviewMetadata Metadata { get; set; } = new();
 
     [JsonPropertyName("vote")]
     public VoteValue? Vote { get; set; }

@@ -54,7 +54,10 @@ public sealed class ReviewTools
             reviewers = pr.Reviewers.Select(r => new
             {
                 name = r.Name,
+                id = r.Id,
+                unique_name = r.UniqueName,
                 vote = r.Vote,
+                vote_label = r.VoteLabel,
                 is_required = r.IsRequired,
             }),
             labels = pr.Labels,
@@ -63,7 +66,14 @@ public sealed class ReviewTools
                 id = w.Id,
                 title = w.Title,
                 url = w.Url,
+                type = w.Type,
+                state = w.State,
+                tags = w.Tags,
+                area_path = w.AreaPath,
+                iteration_path = w.IterationPath,
             }),
+            iteration = result.Session.Metadata.Iteration,
+            metadata = result.Session.Metadata,
         });
     }
 

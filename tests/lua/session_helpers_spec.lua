@@ -316,3 +316,38 @@ describe("vote_label", function()
     assert.truthy(label:find("99"))
   end)
 end)
+
+-- ============================================================================
+-- metadata helpers
+-- ============================================================================
+
+describe("metadata helpers", function()
+  it("uses metadata review progress when available", function()
+    local session = {
+      metadata = {
+        review = {
+          reviewed_files = 2,
+          changed_since_review = 1,
+          unreviewed_files = 3,
+          total_files = 6,
+        },
+      },
+      files = { "fallback" },
+      reviewed_files = {},
+      changed_since_review = {},
+    }
+
+    local progress = helpers.get_review_progress(session)
+
+    assert.equal(2, progress.reviewed)
+    assert.equal(1, progress.changed)
+    assert.equal(3, progress.unreviewed)
+    assert.equal(6, progress.total)
+  end)
+
+  it("returns metadata table", function()
+    local session = { metadata = { files = { total = 4 } } }
+    local metadata = helpers.get_metadata(session)
+    assert.equal(4, metadata.files.total)
+  end)
+end)

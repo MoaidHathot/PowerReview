@@ -161,6 +161,7 @@ function M.adapt_session(cli_session)
   local threads_info = cli_session.threads or {}
   local iteration = cli_session.iteration or {}
   local review = cli_session.review or {}
+  local metadata = cli_session.metadata or {}
 
   -- Convert drafts from map {id -> draft} to array with id field
   local drafts = {}
@@ -209,6 +210,7 @@ function M.adapt_session(cli_session)
     created_at = cli_session.created_at or "",
     updated_at = cli_session.updated_at or "",
     vote = M._vote_string_to_number(cli_session.vote),
+    metadata = metadata,
     drafts = drafts,
     threads = threads_info.items or {},
     files = cli_session.files or {},

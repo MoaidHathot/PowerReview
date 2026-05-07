@@ -63,6 +63,10 @@ local function make_cli_session()
       changed_since_review = { "src/bar.lua" },
     },
     vote = "Approve",
+    metadata = {
+      files = { total = 2, added = 1, edited = 1, deleted = 0, renamed = 0 },
+      reviewers = { total = 1, required = 1, required_pending = 0 },
+    },
     drafts = {
       ["d-1"] = {
         body = "Looks good",
@@ -188,6 +192,10 @@ describe("adapt_session", function()
 
     -- Vote (string -> number)
     assert.equal(10, s.vote)
+
+    -- Metadata
+    assert.equal(2, s.metadata.files.total)
+    assert.equal(1, s.metadata.reviewers.required)
 
     -- Files
     assert.same({ "src/foo.lua", "src/bar.lua" }, s.files)

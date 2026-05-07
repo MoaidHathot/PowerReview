@@ -161,6 +161,15 @@ public class ModelSerializationTests
                 Title = "Test PR",
                 SourceBranch = "feature",
                 TargetBranch = "main",
+                Reviewers =
+                [
+                    new Reviewer { Name = "Required", Vote = 10, IsRequired = true },
+                    new Reviewer { Name = "Pending", IsRequired = true },
+                ],
+                WorkItems =
+                [
+                    new WorkItem { Id = 123, Title = "Bug", Type = "Bug", State = "Active", Tags = ["security", "api"] },
+                ],
             },
             Files = [new ChangedFile { Path = "a.cs", ChangeType = ChangeType.Edit }],
             Threads = new ThreadsInfo
@@ -202,6 +211,77 @@ public class ModelSerializationTests
         Assert.Single(deserialized.Drafts);
         Assert.Equal("draft 1", deserialized.Drafts["d1"].Body);
         Assert.Equal(VoteValue.Approve, deserialized.Vote);
+    }
+
+    [Fact]
+    public void ReviewMetadata_ComputesUsefulSummaries()
+    {
+        var session = new ReviewSession
+        {
+            PullRequest = new PullRequestInfo
+            {
+                Status = PullRequestStatus.Active,
+                MergeStatus = MergeStatus.Conflicts,
+                Reviewers =
+                [
+                    new Reviewer { Name = "Required", Vote = 10, IsRequired = true },
+                    new Reviewer { Name = "Pending", IsRequired = true },
+                    new Reviewer { Name = "Rejected", Vote = -10 },
+                ],
+                WorkItems =
+                [
+                    new WorkItem { Id = 1, Type = "Bug", State = "Active" },
+                    new WorkItem { Id = 2, Type = "Task", State = "Closed" },
+                ],
+            },
+            Files =
+            [
+                new ChangedFile { Path = "a.cs", ChangeType = ChangeType.Add },
+                new ChangedFile { Path = "b.cs", ChangeType = ChangeType.Edit },
+                new ChangedFile { Path = "c.cs", ChangeType = ChangeType.Delete },
+            ],
+            Threads = new ThreadsInfo
+            {
+                Items =
+                [
+                    new CommentThread { Id = 1, Status = ThreadStatus.Active, FilePath = "a.cs", LineStart = 10 },
+                    new CommentThread { Id = 2, Status = ThreadStatus.Fixed },
+                ],
+            },
+            Drafts = new Dictionary<string, DraftComment>
+            {
+                ["d1"] = new() { Status = DraftStatus.Draft, Author = DraftAuthor.Ai },
+                ["d2"] = new() { Status = DraftStatus.Pending, Author = DraftAuthor.User },
+            },
+            Review = new ReviewState
+            {
+                ReviewedFiles = ["a.cs"],
+                ChangedSinceReview = ["b.cs"],
+            },
+        };
+
+        var metadata = ReviewMetadata.FromSession(session);
+
+        Assert.Equal(3, metadata.Reviewers.Total);
+        Assert.Equal(2, metadata.Reviewers.Required);
+        Assert.Equal(1, metadata.Reviewers.RequiredPending);
+        Assert.Equal(1, metadata.Reviewers.Approved);
+        Assert.Equal(1, metadata.Reviewers.Rejected);
+        Assert.Equal(3, metadata.Files.Total);
+        Assert.Equal(1, metadata.Files.Added);
+        Assert.Equal(1, metadata.Files.Edited);
+        Assert.Equal(1, metadata.Files.Deleted);
+        Assert.Equal(2, metadata.Threads.Total);
+        Assert.Equal(1, metadata.Threads.Active);
+        Assert.Equal(1, metadata.Threads.LineLevel);
+        Assert.Equal(2, metadata.Drafts.Total);
+        Assert.Equal(1, metadata.Drafts.AiAuthored);
+        Assert.Equal(2, metadata.WorkItems.Total);
+        Assert.Equal(1, metadata.WorkItems.ByType["Bug"]);
+        Assert.Equal(1, metadata.Review.ReviewedFiles);
+        Assert.Equal(1, metadata.Review.ChangedSinceReview);
+        Assert.Equal(1, metadata.Review.UnreviewedFiles);
+        Assert.True(metadata.State.HasMergeConflicts);
     }
 
     [Fact]

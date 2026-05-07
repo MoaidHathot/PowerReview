@@ -1,4 +1,4 @@
-# PowerReview Session File Schema (v5)
+# PowerReview Session File Schema (v6)
 
 This document defines the JSON schema for PowerReview session state files as stored by the CLI tool.
 External tools that create or consume these files **must** conform to this specification.
@@ -40,11 +40,11 @@ Writes are atomic: data is written to a `.tmp` file first, then renamed to the f
 
 ## Top-Level Object: `ReviewSession`
 
-The v5 format uses a nested structure with logical groupings.
+The v6 format uses a nested structure with logical groupings.
 
 | Field          | Type                             | Required | Description                                           |
 |----------------|----------------------------------|----------|-------------------------------------------------------|
-| `version`      | `number`                         | yes      | Schema version. Must be `5`.                          |
+| `version`      | `number`                         | yes      | Schema version. Must be `6`.                          |
 | `id`           | `string`                         | yes      | Session identifier.                                   |
 | `provider`     | `ProviderInfo`                   | yes      | Provider metadata.                                    |
 | `pull_request` | `PullRequestInfo`                | yes      | PR metadata.                                          |
@@ -56,9 +56,28 @@ The v5 format uses a nested structure with logical groupings.
 | `drafts`       | `object`                         | yes      | Local draft comments. Map of `{uuid: DraftComment}`.  |
 | `proposals`    | `object`                         | yes      | Proposed code fixes. Map of `{uuid: ProposedFix}`.    |
 | `fix_worktree` | `FixWorktreeInfo \| null`        | no       | Fix worktree info for AI code changes, or `null`.     |
+| `metadata`     | `ReviewMetadata`                 | yes      | Derived metadata summaries for UI and AI agents.      |
 | `vote`         | `string \| null`                 | yes      | Review vote enum string, or `null`.                   |
 | `created_at`   | `string`                         | yes      | ISO 8601 UTC timestamp of session creation.           |
 | `updated_at`   | `string`                         | yes      | ISO 8601 UTC timestamp of last modification.          |
+
+---
+
+## `ReviewMetadata` Object
+
+Derived counts and normalized labels useful for UI and AI agents. Recomputed by the CLI when sessions are saved or loaded.
+
+| Field        | Type     | Description                                      |
+|--------------|----------|--------------------------------------------------|
+| `reviewers`  | `object` | Reviewer totals by required/vote state.          |
+| `files`      | `object` | Changed-file totals by change type.              |
+| `threads`    | `object` | Thread totals by status and location level.      |
+| `drafts`     | `object` | Draft totals by status and author type.          |
+| `work_items` | `object` | Work item totals by type/state.                  |
+| `review`     | `object` | File review progress counts.                     |
+| `iteration`  | `object` | Current and reviewed iteration commit metadata.  |
+| `state`      | `object` | PR state, merge conflict flag, vote label.       |
+| `timestamps` | `object` | Session, PR, and thread sync timestamps.         |
 
 ### String Formats
 
@@ -502,7 +521,7 @@ Information about the isolated fix worktree used by AI agents to make code chang
 
 ## Full Example
 
-A complete v5 session file:
+A complete v6 session file:
 
 ```json
 {

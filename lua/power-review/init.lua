@@ -531,8 +531,19 @@ function M.api.get_review_session()
     file_count = #(session.files or {}),
     vote = session.vote,
     vote_label = vote_label,
+    metadata = session.metadata or {},
   },
     nil
+end
+
+--- Get derived review metadata summaries for AI agents and integrations.
+---@return PowerReview.ReviewMetadata|nil metadata, string|nil error
+function M.api.get_review_metadata()
+  local session = M._current_session
+  if not session then
+    return nil, "No active review session"
+  end
+  return session.metadata or {}, nil
 end
 
 --- Set the review vote

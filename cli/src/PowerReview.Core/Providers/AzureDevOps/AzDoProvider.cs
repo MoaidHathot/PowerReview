@@ -145,13 +145,18 @@ public sealed class AzDoProvider : IProvider
                     {
                         var idsParam = string.Join(",", ids);
                         var witResponse = await GetOrgLevelAsync<AzDoApiModels.ListResponse<AzDoApiModels.WorkItemDetailResponse>>(
-                            $"/_apis/wit/workitems?ids={idsParam}&fields=System.Title,System.WorkItemType&api-version={_apiVersion}", ct);
+                            $"/_apis/wit/workitems?ids={idsParam}&fields=System.Title,System.WorkItemType,System.State,System.Tags,System.AreaPath,System.IterationPath&api-version={_apiVersion}", ct);
 
                         pr.WorkItems = witResponse.Value?.Select(wi => new WorkItem
                         {
                             Id = wi.Id,
                             Title = wi.Fields?.Title ?? "",
                             Url = wi.Links?.Html?.Href ?? "",
+                            Type = wi.Fields?.WorkItemType ?? "",
+                            State = wi.Fields?.State ?? "",
+                            Tags = ParseTags(wi.Fields?.Tags),
+                            AreaPath = wi.Fields?.AreaPath ?? "",
+                            IterationPath = wi.Fields?.IterationPath ?? "",
                         }).ToList() ?? [];
                     }
                     catch
@@ -208,6 +213,16 @@ public sealed class AzDoProvider : IProvider
             WorkItems = [], // Work items require separate API call; not included in PR response
             ProviderType = ProviderType.AzDo,
         };
+    }
+
+    private static List<string> ParseTags(string? tags)
+    {
+        if (string.IsNullOrWhiteSpace(tags))
+            return [];
+
+        return tags.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+            .ToList();
     }
 
     // =========================================================================

@@ -488,7 +488,7 @@ The data directory is resolved in this order:
 
 SCHEMA OVERVIEW ~
                                                 *power-review-state-schema*
-The CLI outputs v5 JSON format with a nested structure (pull_request,
+The CLI outputs v6 JSON format with a nested structure (pull_request,
 provider, git, review, proposals groupings). The full schema is documented
 in `doc/session-schema.md`.
 

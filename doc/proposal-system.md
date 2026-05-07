@@ -704,5 +704,5 @@ The reviewer sees your reply on the thread, and the PR branch now contains the f
 |----------|----------------|
 | [`skills/responding-to-comments/SKILL.md`](../skills/responding-to-comments/SKILL.md) | AI agent instructions for the comment response workflow |
 | [`skills/reviewing-prs/references/TOOLS.md`](../skills/reviewing-prs/references/TOOLS.md) | Complete MCP tool API reference (all parameters, returns, errors) |
-| [`doc/session-schema.md`](session-schema.md) | Session file JSON schema (v5) including ProposedFix and FixWorktreeInfo |
+| [`doc/session-schema.md`](session-schema.md) | Session file JSON schema (v6) including ProposedFix, FixWorktreeInfo, and metadata summaries |
 | [`README.md`](../README.md) | Project overview, installation, configuration |

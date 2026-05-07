@@ -299,6 +299,18 @@ internal static class AzDoApiModels
 
         [JsonPropertyName("System.WorkItemType")]
         public string? WorkItemType { get; set; }
+
+        [JsonPropertyName("System.State")]
+        public string? State { get; set; }
+
+        [JsonPropertyName("System.Tags")]
+        public string? Tags { get; set; }
+
+        [JsonPropertyName("System.AreaPath")]
+        public string? AreaPath { get; set; }
+
+        [JsonPropertyName("System.IterationPath")]
+        public string? IterationPath { get; set; }
     }
 
     internal sealed class WorkItemLinks

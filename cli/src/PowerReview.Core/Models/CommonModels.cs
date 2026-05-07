@@ -36,6 +36,16 @@ public sealed class Reviewer
 
     [JsonPropertyName("is_required")]
     public bool IsRequired { get; set; }
+
+    [JsonPropertyName("vote_label")]
+    public string VoteLabel => Vote switch
+    {
+        10 => "approved",
+        5 => "approved_with_suggestions",
+        -5 => "wait_for_author",
+        -10 => "rejected",
+        _ => "no_vote",
+    };
 }
 
 /// <summary>
@@ -51,6 +61,21 @@ public sealed class WorkItem
 
     [JsonPropertyName("url")]
     public string Url { get; set; } = "";
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "";
+
+    [JsonPropertyName("state")]
+    public string State { get; set; } = "";
+
+    [JsonPropertyName("tags")]
+    public List<string> Tags { get; set; } = [];
+
+    [JsonPropertyName("area_path")]
+    public string AreaPath { get; set; } = "";
+
+    [JsonPropertyName("iteration_path")]
+    public string IterationPath { get; set; } = "";
 }
 
 /// <summary>

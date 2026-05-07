@@ -30,7 +30,14 @@ public static class SessionMigration
             // FixWorktree is nullable, defaults to null — no action needed
         }
 
+        // v5 -> v6: Add derived ReviewMetadata for UI and AI-agent context.
+        if (session.Version < 6)
+        {
+            session.Metadata = ReviewMetadata.FromSession(session);
+        }
+
         session.Version = ReviewSession.CurrentVersion;
+        session.Metadata = ReviewMetadata.FromSession(session);
         return session;
     }
 }

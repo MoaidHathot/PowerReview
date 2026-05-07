@@ -44,12 +44,29 @@
 ---@field id? string Provider-assigned reviewer ID
 ---@field unique_name? string Email or login (e.g., user@example.com)
 ---@field vote number|nil Review vote value, or nil if not voted
+---@field vote_label? string Normalized vote label, e.g. "approved" or "no_vote"
 ---@field is_required boolean Whether the reviewer is required
 
 ---@class PowerReview.WorkItem
 ---@field id number Work item / issue ID
 ---@field title? string Work item title (may not be available from all providers)
 ---@field url? string Web URL to the work item
+---@field type? string Work item type, e.g. Bug/User Story
+---@field state? string Work item state
+---@field tags? string[] Work item tags
+---@field area_path? string Area path
+---@field iteration_path? string Iteration path
+
+---@class PowerReview.ReviewMetadata
+---@field reviewers table Reviewer count summary
+---@field files table Changed-file count summary
+---@field threads table Thread count summary
+---@field drafts table Draft count summary
+---@field work_items table Work item count summary
+---@field review table Review progress summary
+---@field iteration table Iteration and reviewed baseline summary
+---@field state table PR state summary
+---@field timestamps table Session/PR timestamp summary
 
 ---@class PowerReview.SubmitResult
 ---@field submitted number Count of successfully submitted drafts
@@ -154,6 +171,7 @@
 ---@field drafts PowerReview.DraftComment[]
 ---@field threads PowerReview.CommentThread[]
 ---@field files PowerReview.ChangedFile[]
+---@field metadata? PowerReview.ReviewMetadata Derived metadata summaries for UI and AI agents
 
 ---@class PowerReview.SessionSummary
 ---@field id string

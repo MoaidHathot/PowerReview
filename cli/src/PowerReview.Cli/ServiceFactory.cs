@@ -22,15 +22,15 @@ internal sealed class ServiceFactory
         _config = new Lazy<PowerReviewConfig>(() => ConfigLoader.Load());
         _store = new Lazy<SessionStore>(() => new SessionStore(_config.Value));
         _sessionService = new Lazy<SessionService>(() => new SessionService(_store.Value));
+        _fixWorktreeService = new Lazy<FixWorktreeService>(() => new FixWorktreeService(
+            _store.Value,
+            _config.Value));
         _reviewService = new Lazy<ReviewService>(() => new ReviewService(
             _store.Value,
             _sessionService.Value,
             _config.Value,
             new AuthResolver(_config.Value.Auth),
             _fixWorktreeService.Value));
-        _fixWorktreeService = new Lazy<FixWorktreeService>(() => new FixWorktreeService(
-            _store.Value,
-            _config.Value));
         _proposalService = new Lazy<ProposalService>(() => new ProposalService(
             _store.Value,
             _sessionService.Value,

@@ -44,6 +44,7 @@ public sealed class SessionStore
     public void Save(ReviewSession session)
     {
         session.UpdatedAt = DateTime.UtcNow.ToString("o");
+        session.Metadata = ReviewMetadata.FromSession(session);
 
         Directory.CreateDirectory(_sessionsDir);
 
@@ -90,6 +91,10 @@ public sealed class SessionStore
         {
             session = SessionMigration.Migrate(session);
             Save(session); // Persist migrated version
+        }
+        else
+        {
+            session.Metadata = ReviewMetadata.FromSession(session);
         }
 
         return session;

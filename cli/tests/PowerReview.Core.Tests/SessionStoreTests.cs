@@ -77,7 +77,7 @@ public class SessionStoreTests : IDisposable
 
         Assert.NotNull(loaded);
         Assert.Equal("test-session", loaded.Id);
-        Assert.Equal(5, loaded.Version);
+        Assert.Equal(6, loaded.Version);
         Assert.Equal(ProviderType.AzDo, loaded.Provider.Type);
         Assert.Equal("testorg", loaded.Provider.Organization);
         Assert.Equal(42, loaded.PullRequest.Id);
@@ -190,7 +190,7 @@ public class SessionStoreTests : IDisposable
     // --- Migration ---
 
     [Fact]
-    public void Load_MigratesV4ToV5_AddsProposalsAndFixWorktree()
+    public void Load_MigratesV4ToV6_AddsProposalsFixWorktreeAndMetadata()
     {
         // Create a v4-style session (manually set version to 4)
         var now = DateTime.UtcNow.ToString("o");
@@ -218,9 +218,11 @@ public class SessionStoreTests : IDisposable
         var loaded = _store.Load("migration-test");
 
         Assert.NotNull(loaded);
-        Assert.Equal(5, loaded.Version);
+        Assert.Equal(6, loaded.Version);
         Assert.NotNull(loaded.Proposals);
         Assert.Empty(loaded.Proposals);
         Assert.Null(loaded.FixWorktree);
+        Assert.NotNull(loaded.Metadata);
+        Assert.Equal(0, loaded.Metadata.Files.Total);
     }
 }
