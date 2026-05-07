@@ -14,6 +14,7 @@ namespace PowerReview.Core.Tests;
 public class ReviewServiceTests : IDisposable
 {
     private readonly string _tempDir;
+    private readonly string _repoDir;
     private readonly SessionStore _store;
     private readonly SessionService _sessionService;
     private readonly ReviewService _service;
@@ -25,6 +26,7 @@ public class ReviewServiceTests : IDisposable
     public ReviewServiceTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "powerreview-review-tests-" + Guid.NewGuid().ToString("N")[..8]);
+        _repoDir = Path.Combine(_tempDir, "repo");
         _store = new SessionStore(_tempDir);
         _sessionService = new SessionService(_store);
         _config = new PowerReviewConfig();
@@ -37,7 +39,27 @@ public class ReviewServiceTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_tempDir))
-            Directory.Delete(_tempDir, recursive: true);
+        {
+            try
+            {
+                ResetAttributes(_tempDir);
+                Directory.Delete(_tempDir, recursive: true);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Windows can briefly keep git object files read-only/locked after subprocess tests.
+                ResetAttributes(_tempDir);
+                Directory.Delete(_tempDir, recursive: true);
+            }
+        }
+    }
+
+    private static void ResetAttributes(string root)
+    {
+        foreach (var path in Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories))
+        {
+            try { File.SetAttributes(path, FileAttributes.Normal); } catch { }
+        }
     }
 
     /// <summary>
@@ -65,6 +87,7 @@ public class ReviewServiceTests : IDisposable
                 Url = TestPrUrl,
                 Title = "Test PR",
                 Description = "Test description",
+                TargetBranch = "main",
             },
             Files =
             [
@@ -124,6 +147,69 @@ public class ReviewServiceTests : IDisposable
 
         _store.Save(session);
         return session;
+    }
+
+    private async Task<ReviewSession> CreateAndSaveGitBackedSessionAsync()
+    {
+        Directory.CreateDirectory(_repoDir);
+
+        await RunGitAsync(["init"], _repoDir);
+        await RunGitAsync(["config", "user.email", "review@example.test"], _repoDir);
+        await RunGitAsync(["config", "user.name", "PowerReview Tests"], _repoDir);
+        await RunGitAsync(["checkout", "-B", "main"], _repoDir);
+
+        var srcDir = Path.Combine(_repoDir, "src");
+        Directory.CreateDirectory(srcDir);
+        await File.WriteAllTextAsync(Path.Combine(srcDir, "main.cs"), "class Main { }\n");
+        await RunGitAsync(["add", "src/main.cs"], _repoDir);
+        await RunGitAsync(["commit", "-m", "initial"], _repoDir);
+
+        var targetCommit = await RunGitAsync(["rev-parse", "HEAD"], _repoDir);
+
+        await RunGitAsync(["checkout", "-b", "feature/test"], _repoDir);
+        await File.WriteAllTextAsync(Path.Combine(srcDir, "main.cs"), "class Main {\n    void Added() { }\n}\n");
+        await File.WriteAllTextAsync(Path.Combine(srcDir, "utils.cs"), "class Utils { }\n");
+        await RunGitAsync(["add", "src/main.cs", "src/utils.cs"], _repoDir);
+        await RunGitAsync(["commit", "-m", "feature"], _repoDir);
+
+        var sourceCommit = await RunGitAsync(["rev-parse", "HEAD"], _repoDir);
+        var session = CreateAndSaveSession();
+        session.Git.RepoPath = _repoDir;
+        session.PullRequest.SourceBranch = "feature/test";
+        session.PullRequest.TargetBranch = "refs/heads/main";
+        session.Iteration.TargetCommit = targetCommit;
+        session.Iteration.SourceCommit = sourceCommit;
+        _store.Save(session);
+
+        return session;
+    }
+
+    private static async Task<string> RunGitAsync(string[] args, string workingDirectory)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+
+        using var process = System.Diagnostics.Process.Start(psi)!;
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException($"git {string.Join(' ', args)} failed: {stderr}");
+
+        return stdout.Trim();
     }
 
     // ========================================================================
@@ -288,6 +374,40 @@ public class ReviewServiceTests : IDisposable
         var file = _service.GetFileDiff(
             "https://dev.azure.com/noorg/noproj/_git/norepo/pullrequest/999", "src/main.cs");
         Assert.Null(file);
+    }
+
+    [Fact]
+    public async Task GetFileDiffWithPatchAsync_ReturnsUnifiedDiff()
+    {
+        await CreateAndSaveGitBackedSessionAsync();
+
+        var result = await _service.GetFileDiffWithPatchAsync(TestPrUrl, "src/main.cs");
+
+        Assert.Equal("src/main.cs", result.File.Path);
+        Assert.Contains("diff --git", result.Diff);
+        Assert.Contains("+    void Added() { }", result.Diff);
+    }
+
+    [Fact]
+    public async Task GetFileDiffWithPatchAsync_NormalizesBackslashes()
+    {
+        await CreateAndSaveGitBackedSessionAsync();
+
+        var result = await _service.GetFileDiffWithPatchAsync(TestPrUrl, "src\\main.cs");
+
+        Assert.Equal("src/main.cs", result.File.Path);
+        Assert.Contains("diff --git", result.Diff);
+    }
+
+    [Fact]
+    public async Task GetFileDiffWithPatchAsync_NoLocalRepo_ThrowsHelpfulError()
+    {
+        CreateAndSaveSession();
+
+        var ex = await Assert.ThrowsAsync<ReviewServiceException>(() =>
+            _service.GetFileDiffWithPatchAsync(TestPrUrl, "src/main.cs"));
+
+        Assert.Contains("No local git repository", ex.Message);
     }
 
     // ========================================================================

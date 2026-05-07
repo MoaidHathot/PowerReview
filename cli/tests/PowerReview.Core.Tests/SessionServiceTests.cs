@@ -45,6 +45,44 @@ public class SessionServiceTests : IDisposable
         return session.Id;
     }
 
+    private string CreateAndSaveSessionWithThread()
+    {
+        var now = DateTime.UtcNow.ToString("o");
+        var session = new ReviewSession
+        {
+            Id = "test-session",
+            Provider = new ProviderInfo
+            {
+                Type = ProviderType.AzDo,
+                Organization = "org",
+                Project = "proj",
+                Repository = "repo",
+            },
+            PullRequest = new PullRequestInfo { Id = 1, Title = "Test" },
+            Files = [new ChangedFile { Path = "src/main.cs" }],
+            Threads = new ThreadsInfo
+            {
+                SyncedAt = now,
+                Items =
+                [
+                    new CommentThread
+                    {
+                        Id = 42,
+                        FilePath = "src/main.cs",
+                        LineStart = 10,
+                        LineEnd = 12,
+                        ColStart = 3,
+                        ColEnd = 8,
+                    },
+                ],
+            },
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        _store.Save(session);
+        return session.Id;
+    }
+
     // --- CreateDraft ---
 
     [Fact]
@@ -164,6 +202,43 @@ public class SessionServiceTests : IDisposable
 
         Assert.True(draft.IsReply);
         Assert.Equal(42, draft.ThreadId);
+    }
+
+    [Fact]
+    public void CreateDraft_ReplyInheritsThreadLocation()
+    {
+        var sessionId = CreateAndSaveSessionWithThread();
+
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            ThreadId = 42,
+            Body = "Reply text",
+        });
+
+        Assert.True(draft.IsReply);
+        Assert.Equal("src/main.cs", draft.FilePath);
+        Assert.Equal(10, draft.LineStart);
+        Assert.Equal(12, draft.LineEnd);
+        Assert.Equal(3, draft.ColStart);
+        Assert.Equal(8, draft.ColEnd);
+    }
+
+    [Fact]
+    public void CreateDraft_ReplyKeepsExplicitLocationWhenProvided()
+    {
+        var sessionId = CreateAndSaveSessionWithThread();
+
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        {
+            ThreadId = 42,
+            FilePath = "custom/path.cs",
+            LineStart = 99,
+            Body = "Reply text",
+        });
+
+        Assert.Equal("custom/path.cs", draft.FilePath);
+        Assert.Equal(99, draft.LineStart);
+        Assert.Equal(12, draft.LineEnd);
     }
 
     [Fact]

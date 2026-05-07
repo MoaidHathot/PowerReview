@@ -15,6 +15,7 @@ public class McpToolTests : IDisposable
     private readonly string _tempDir;
     private readonly SessionStore _store;
     private readonly SessionService _sessionService;
+    private readonly ReviewService _reviewService;
     private readonly ProposalService _proposalService;
 
     public McpToolTests()
@@ -23,7 +24,9 @@ public class McpToolTests : IDisposable
         _store = new SessionStore(_tempDir);
         _sessionService = new SessionService(_store);
         var config = new PowerReviewConfig();
+        var authResolver = new PowerReview.Core.Auth.AuthResolver(config.Auth);
         var fixWorktreeService = new FixWorktreeService(_store, config);
+        _reviewService = new ReviewService(_store, _sessionService, config, authResolver, fixWorktreeService);
         _proposalService = new ProposalService(_store, _sessionService, fixWorktreeService);
     }
 
@@ -233,7 +236,7 @@ public class McpToolTests : IDisposable
     [Fact]
     public void ReplyToThread_CreatesAiAuthoredReply()
     {
-        CreateAndSaveTestSession();
+        CreateAndSaveTestSessionWithThreads();
         var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
         var sessionId = "azdo_testorg_testproject_testrepo_42";
 
@@ -254,6 +257,8 @@ public class McpToolTests : IDisposable
         Assert.Equal(DraftAuthor.Ai, draft.Author);
         Assert.Equal("TestAgent", draft.AuthorName);
         Assert.Equal(100, draft.ThreadId);
+        Assert.Equal("src/main.cs", draft.FilePath);
+        Assert.Equal(10, draft.LineStart);
     }
 
     // =========================================================================
@@ -288,6 +293,19 @@ public class McpToolTests : IDisposable
         Assert.Equal(2, json.RootElement.GetProperty("draft").GetInt32());
         Assert.Equal(1, json.RootElement.GetProperty("pending").GetInt32());
         Assert.Equal(3, json.RootElement.GetProperty("total").GetInt32());
+    }
+
+    [Fact]
+    public async Task GetFileDiff_WithoutLocalRepo_ReturnsError()
+    {
+        CreateAndSaveTestSession();
+        var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
+
+        var result = await ReviewTools.GetFileDiff(_reviewService, prUrl, "src/main.cs", CancellationToken.None);
+
+        var json = System.Text.Json.JsonDocument.Parse(result);
+        Assert.True(json.RootElement.TryGetProperty("error", out var error));
+        Assert.Contains("No local git repository", error.GetString());
     }
 
     // =========================================================================

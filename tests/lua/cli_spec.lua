@@ -497,3 +497,67 @@ describe("CLI executable normalization", function()
     )
   end)
 end)
+
+-- ============================================================================
+-- Diff command wrappers
+-- ============================================================================
+
+describe("diff command wrappers", function()
+  local original_system = vim.system
+  local original_fn = vim.fn
+  local original_executable = cli._executable
+
+  before_each(function()
+    vim.fn = {
+      has = function()
+        return 0
+      end,
+    }
+    cli.configure({ executable = "powerreview" })
+  end)
+
+  after_each(function()
+    vim.system = original_system
+    vim.fn = original_fn
+    cli._executable = original_executable
+  end)
+
+  it("requests patch diff by default", function()
+    local captured_cmd
+    vim.system = function(cmd, _opts)
+      captured_cmd = cmd
+      return {
+        wait = function()
+          return { code = 0, stdout = [[{"file":{"path":"src/main.cs"},"diff":"diff --git"}]], stderr = "" }
+        end,
+      }
+    end
+
+    local result, err = cli.get_file_diff("https://example/pr/1", "src/main.cs")
+
+    assert.is_nil(err)
+    assert.equal("diff --git", result.diff)
+    assert.same({ "powerreview", "diff", "--pr-url", "https://example/pr/1", "--file", "src/main.cs" }, captured_cmd)
+  end)
+
+  it("can request metadata format explicitly", function()
+    local captured_cmd
+    vim.system = function(cmd, _opts)
+      captured_cmd = cmd
+      return {
+        wait = function()
+          return { code = 0, stdout = [[{"path":"src/main.cs","change_type":"Edit"}]], stderr = "" }
+        end,
+      }
+    end
+
+    local result, err = cli.get_file_diff_metadata("https://example/pr/1", "src/main.cs")
+
+    assert.is_nil(err)
+    assert.equal("src/main.cs", result.path)
+    assert.same(
+      { "powerreview", "diff", "--pr-url", "https://example/pr/1", "--file", "src/main.cs", "--format", "metadata" },
+      captured_cmd
+    )
+  end)
+end)

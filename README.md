@@ -501,7 +501,7 @@ The CLI handles all PR review business logic. The Neovim plugin calls it under t
 powerreview open --pr-url <url> [--repo-path <path>]
 powerreview session --pr-url <url>
 powerreview files --pr-url <url>
-powerreview diff --pr-url <url> --file <path>
+powerreview diff --pr-url <url> --file <path> [--format patch|metadata]
 powerreview threads --pr-url <url> [--file <path>]
 powerreview comment create|edit|delete|approve|approve-all|unapprove ...
 powerreview reply --pr-url <url> --thread-id <n> --body <text>
@@ -525,6 +525,8 @@ powerreview mcp
 ```
 
 All commands output JSON to stdout, errors to stderr. Exit codes: 0 = success, 1 = error, 2 = usage error.
+
+`powerreview diff` defaults to `--format patch` and returns `{ "file": ..., "diff": "..." }` with unified diff text generated from the local PR worktree. Use `--format metadata` to return only the changed-file record.
 
 ## MCP Server
 

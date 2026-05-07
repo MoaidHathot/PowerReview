@@ -238,7 +238,7 @@ function M.api.get_file_diff(file_path)
     return nil, "No active review session"
   end
   local review = require("power-review.review")
-  return review.get_file_diff(session, file_path)
+  return review.get_file_diff_text(session, file_path)
 end
 
 --- Get all comment threads (remote + local drafts)

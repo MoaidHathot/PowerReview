@@ -300,12 +300,27 @@ function M.get_files(pr_url)
   return M.run({ "files", "--pr-url", pr_url })
 end
 
---- Get diff info for a file.
+--- Get diff info and unified patch text for a file.
+---@param pr_url string
+---@param file_path string
+---@param opts? { format?: "patch"|"metadata" }
+---@return table|nil diff_info, string|nil error
+function M.get_file_diff(pr_url, file_path, opts)
+  opts = opts or {}
+  local args = { "diff", "--pr-url", pr_url, "--file", file_path }
+  if opts.format then
+    table.insert(args, "--format")
+    table.insert(args, opts.format)
+  end
+  return M.run(args)
+end
+
+--- Get changed-file metadata for a file.
 ---@param pr_url string
 ---@param file_path string
 ---@return table|nil diff_info, string|nil error
-function M.get_file_diff(pr_url, file_path)
-  return M.run({ "diff", "--pr-url", pr_url, "--file", file_path })
+function M.get_file_diff_metadata(pr_url, file_path)
+  return M.get_file_diff(pr_url, file_path, { format = "metadata" })
 end
 
 --- List comment threads.

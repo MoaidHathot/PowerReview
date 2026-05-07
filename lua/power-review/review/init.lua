@@ -431,12 +431,24 @@ function M.get_threads_for_file(session, file_path)
   return filtered
 end
 
---- Get file diff content from the CLI.
+--- Get structured file diff data from the CLI.
 ---@param session PowerReview.ReviewSession
 ---@param file_path string
 ---@return table|nil diff_info, string|nil error
 function M.get_file_diff(session, file_path)
   return cli.get_file_diff(session.pr_url, file_path)
+end
+
+--- Get file diff patch text from the CLI.
+---@param session PowerReview.ReviewSession
+---@param file_path string
+---@return string|nil diff, string|nil error
+function M.get_file_diff_text(session, file_path)
+  local diff_info, err = M.get_file_diff(session, file_path)
+  if err then
+    return nil, err
+  end
+  return diff_info and diff_info.diff or nil, nil
 end
 
 -- ===== Iteration tracking =====

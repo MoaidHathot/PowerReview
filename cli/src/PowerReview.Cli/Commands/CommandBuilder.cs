@@ -197,22 +197,39 @@ internal static class CommandBuilder
             Description = "File path to get diff info for",
             Required = true,
         };
-
-        var cmd = new Command("diff", "Get diff info for a file in a PR session. No auth required.")
+        var format = new Option<string?>("--format")
         {
-            prUrl, file
+            Description = "Output format: patch (default) or metadata",
         };
 
-        cmd.SetAction(parseResult =>
+        var cmd = new Command("diff", "Get the unified diff for a file in a PR session. No auth required.")
+        {
+            prUrl, file, format
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
         {
             var url = parseResult.GetValue(prUrl)!;
             var filePath = parseResult.GetValue(file)!;
+            var outputFormat = (parseResult.GetValue(format) ?? "patch").Trim().ToLowerInvariant();
+
+            if (outputFormat is not ("patch" or "metadata"))
+                return CliOutput.WriteUsageError("Invalid diff format. Use: patch or metadata.");
+
             try
             {
-                var result = services.ReviewService.GetFileDiff(url, filePath);
-                if (result == null)
-                    return CliOutput.WriteError("File not found in session.");
-                CliOutput.WriteJson(result);
+                if (outputFormat == "metadata")
+                {
+                    var result = services.ReviewService.GetFileDiff(url, filePath);
+                    if (result == null)
+                        return CliOutput.WriteError("File not found in session.");
+                    CliOutput.WriteJson(result);
+                }
+                else
+                {
+                    var result = await services.ReviewService.GetFileDiffWithPatchAsync(url, filePath, ct);
+                    CliOutput.WriteJson(result);
+                }
             }
             catch (ReviewServiceException ex)
             {

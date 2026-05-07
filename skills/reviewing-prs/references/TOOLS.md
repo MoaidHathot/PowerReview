@@ -159,11 +159,12 @@ Get the unified git diff for a specific changed file.
 }
 ```
 
-The `diff` field contains the full unified diff output. If no local git repo is available, `diff` is `null` and a `note` field explains why.
+The `diff` field contains the full unified diff output generated from the local PR worktree.
 
 **Errors:**
 - `"File 'path' not found in the changed files list."` -- file path doesn't match any changed file
 - `"No session found for this PR."` -- no active session
+- `"No local git repository available..."` -- session was opened without a local repo/worktree
 - `"Failed to generate diff: ..."` -- git error
 
 ---

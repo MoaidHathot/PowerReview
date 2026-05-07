@@ -666,9 +666,88 @@ public sealed class ReviewService
         var result = GetSession(prUrl);
         if (result == null) return null;
 
-        var normalized = filePath.Replace('\\', '/');
-        return result.Session.Files
-            .FirstOrDefault(f => f.Path.Replace('\\', '/').Equals(normalized, StringComparison.OrdinalIgnoreCase));
+        return FindChangedFile(result.Session, filePath);
+    }
+
+    /// <summary>
+    /// Get unified diff content for a specific file in a PR session.
+    /// Uses provider iteration commits when available, with branch-based fallbacks.
+    /// </summary>
+    public async Task<FileDiffResult> GetFileDiffWithPatchAsync(string prUrl, string filePath, CancellationToken ct = default)
+    {
+        var session = ResolveSession(prUrl);
+        var changedFile = FindChangedFile(session, filePath)
+            ?? throw new ReviewServiceException($"File '{filePath}' not found in the changed files list.");
+
+        var repoPath = session.Git.WorktreePath ?? session.Git.RepoPath;
+        if (string.IsNullOrEmpty(repoPath))
+        {
+            throw new ReviewServiceException(
+                "No local git repository available for this session. " +
+                "Open the review with --repo-path, set git.repo_base_path, or use --format metadata.");
+        }
+
+        var normalizedPath = changedFile.Path.Replace('\\', '/');
+        var targetBranch = NormalizeBranch(session.PullRequest.TargetBranch);
+        var diffSpecs = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(session.Iteration.TargetCommit)
+            && !string.IsNullOrWhiteSpace(session.Iteration.SourceCommit))
+        {
+            diffSpecs.Add($"{session.Iteration.TargetCommit}...{session.Iteration.SourceCommit}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetBranch))
+        {
+            diffSpecs.Add($"{targetBranch}...HEAD");
+            diffSpecs.Add($"origin/{targetBranch}...HEAD");
+            diffSpecs.Add($"{targetBranch}..HEAD");
+            diffSpecs.Add($"origin/{targetBranch}..HEAD");
+        }
+
+        string? emptyDiff = null;
+        var errors = new List<string>();
+
+        foreach (var spec in diffSpecs.Distinct())
+        {
+            var args = spec.Contains("..", StringComparison.Ordinal)
+                ? new[] { "diff", spec, "--", normalizedPath }
+                : new[] { "diff", spec, "HEAD", "--", normalizedPath };
+
+            var (success, stdout, stderr) = await GitOperations.TryRunAsync(
+                args,
+                repoPath,
+                ct: ct);
+
+            if (!success)
+            {
+                errors.Add(stderr);
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(stdout))
+            {
+                return new FileDiffResult
+                {
+                    File = changedFile,
+                    Diff = stdout,
+                };
+            }
+
+            emptyDiff ??= stdout;
+        }
+
+        if (emptyDiff != null)
+        {
+            return new FileDiffResult
+            {
+                File = changedFile,
+                Diff = emptyDiff,
+            };
+        }
+
+        var message = errors.Count > 0 ? errors[^1] : "No diff refs were available.";
+        throw new ReviewServiceException($"Failed to generate diff: {message}");
     }
 
     /// <summary>
@@ -975,6 +1054,20 @@ public sealed class ReviewService
                 $"No session found for PR {prUrl}. Run 'powerreview open --pr-url {prUrl}' first.");
     }
 
+    private static ChangedFile? FindChangedFile(ReviewSession session, string filePath)
+    {
+        var normalized = filePath.Replace('\\', '/');
+        return session.Files
+            .FirstOrDefault(f => f.Path.Replace('\\', '/').Equals(normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizeBranch(string branch)
+    {
+        return branch.StartsWith("refs/heads/", StringComparison.OrdinalIgnoreCase)
+            ? branch["refs/heads/".Length..]
+            : branch;
+    }
+
     /// <summary>
     /// Set up the git working directory for the review.
     /// </summary>
@@ -1065,6 +1158,18 @@ public sealed class SessionQueryResult
 
     /// <summary>Full filesystem path to the session JSON file.</summary>
     public string Path { get; set; } = "";
+}
+
+/// <summary>
+/// Result of querying a file diff with unified patch content.
+/// </summary>
+public sealed class FileDiffResult
+{
+    /// <summary>The changed-file metadata from the review session.</summary>
+    public ChangedFile File { get; set; } = null!;
+
+    /// <summary>Unified diff text for the changed file.</summary>
+    public string Diff { get; set; } = "";
 }
 
 /// <summary>

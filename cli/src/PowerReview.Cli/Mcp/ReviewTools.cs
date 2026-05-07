@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
-using PowerReview.Core.Git;
 using PowerReview.Core.Models;
 using PowerReview.Core.Services;
 
@@ -104,70 +103,15 @@ public sealed class ReviewTools
         [Description("Relative file path within the repository")] string filePath,
         CancellationToken ct)
     {
-        var sessionResult = reviewService.GetSession(prUrl);
-        if (sessionResult == null)
-            return ToolHelpers.ToJson(new { error = "No session found for this PR." });
-
-        var session = sessionResult.Session;
-
-        // Find the file in the changed files list
-        var normalizedPath = filePath.Replace('\\', '/');
-        var changedFile = session.Files
-            .FirstOrDefault(f => f.Path.Replace('\\', '/').Equals(normalizedPath, StringComparison.OrdinalIgnoreCase));
-
-        if (changedFile == null)
-            return ToolHelpers.ToJson(new { error = $"File '{filePath}' not found in the changed files list." });
-
-        // Determine the repo path to run git diff
-        var repoPath = session.Git.WorktreePath ?? session.Git.RepoPath;
-        if (string.IsNullOrEmpty(repoPath))
-        {
-            // No local repo — return file metadata only
-            return ToolHelpers.ToJson(new
-            {
-                file = changedFile,
-                diff = (string?)null,
-                note = "No local git repository available. Only file metadata is returned.",
-            });
-        }
-
-        // Run git diff
-        var targetBranch = session.PullRequest.TargetBranch;
-        string diff;
         try
         {
-            // Try merge-base diff first (target...HEAD)
-            var (success, stdout, _) = await GitOperations.TryRunAsync(
-                ["diff", $"{targetBranch}...HEAD", "--", filePath],
-                repoPath, ct: ct);
-
-            if (success && !string.IsNullOrWhiteSpace(stdout))
-            {
-                diff = stdout;
-            }
-            else
-            {
-                // Fallback to direct diff
-                diff = await GitOperations.RunAsync(
-                    ["diff", targetBranch, "HEAD", "--", filePath],
-                    repoPath, ct: ct);
-            }
+            var result = await reviewService.GetFileDiffWithPatchAsync(prUrl, filePath, ct);
+            return ToolHelpers.ToJson(result);
         }
-        catch (GitException ex)
+        catch (ReviewServiceException ex)
         {
-            return ToolHelpers.ToJson(new
-            {
-                file = changedFile,
-                diff = (string?)null,
-                error = $"Failed to generate diff: {ex.Message}",
-            });
+            return ToolHelpers.ToJson(new { error = ex.Message });
         }
-
-        return ToolHelpers.ToJson(new
-        {
-            file = changedFile,
-            diff,
-        });
     }
 
     [McpServerTool, Description(

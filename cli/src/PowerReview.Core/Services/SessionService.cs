@@ -36,6 +36,25 @@ public sealed class SessionService
 
         // Validate file path exists in the PR's changed files (skip for replies and PR-level comments)
         var filePath = request.FilePath ?? "";
+        var lineStart = request.LineStart;
+        var lineEnd = request.LineEnd;
+        var colStart = request.ColStart;
+        var colEnd = request.ColEnd;
+
+        if (isReply)
+        {
+            var thread = session.Threads.Items.FirstOrDefault(t => t.Id == request.ThreadId!.Value);
+            if (thread != null)
+            {
+                if (string.IsNullOrEmpty(filePath))
+                    filePath = thread.FilePath ?? "";
+                lineStart ??= thread.LineStart;
+                lineEnd ??= thread.LineEnd;
+                colStart ??= thread.ColStart;
+                colEnd ??= thread.ColEnd;
+            }
+        }
+
         if (!string.IsNullOrEmpty(filePath) && !isReply)
         {
             var normalized = NormalizePath(filePath);
@@ -54,10 +73,10 @@ public sealed class SessionService
         var draft = new DraftComment
         {
             FilePath = filePath,
-            LineStart = request.LineStart,
-            LineEnd = request.LineEnd,
-            ColStart = request.ColStart,
-            ColEnd = request.ColEnd,
+            LineStart = lineStart,
+            LineEnd = lineEnd,
+            ColStart = colStart,
+            ColEnd = colEnd,
             Body = body,
             Status = DraftStatus.Draft,
             Author = request.Author ?? DraftAuthor.User,
