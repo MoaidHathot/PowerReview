@@ -236,7 +236,7 @@ public class ReviewServiceTests : IDisposable
         var existing = CreateAndSaveSession();
         existing.Git.RepoPath = "old-repo";
         existing.Git.WorktreePath = "old-worktree";
-        existing.Drafts["draft-1"] = new DraftComment
+        existing.DraftOperations["draft-1"] = new DraftOperation
         {
             FilePath = "src/main.cs",
             Body = "preserve me",
@@ -274,7 +274,7 @@ public class ReviewServiceTests : IDisposable
         Assert.Equal("Refreshed PR", result.Session.PullRequest.Title);
         Assert.Equal("old-repo", result.Session.Git.RepoPath);
         Assert.Equal("old-worktree", result.Session.Git.WorktreePath);
-        Assert.True(result.Session.Drafts.ContainsKey("draft-1"));
+        Assert.True(result.Session.DraftOperations.ContainsKey("draft-1"));
         Assert.Equal(VoteValue.Approve, result.Session.Vote);
         Assert.Contains("src/main.cs", result.Session.Review.ReviewedFiles);
         Assert.True(result.Session.Proposals.ContainsKey("proposal-1"));
@@ -321,26 +321,26 @@ public class ReviewServiceTests : IDisposable
     public async Task SubmitAsync_PendingThreadStatusAction_UpdatesRemoteAndMarksSubmitted()
     {
         var session = CreateAndSaveSession();
-        var (actionId, _) = _sessionService.CreateDraftThreadStatusChange(session.Id, new CreateDraftActionRequest
+        var (actionId, _) = _sessionService.CreateDraftThreadStatusChange(session.Id, new CreateDraftOperationRequest
         {
             ThreadId = 101,
             ToThreadStatus = ThreadStatus.WontFix,
             Author = DraftAuthor.Ai,
         });
-        _sessionService.ApproveDraftAction(session.Id, actionId);
+        _sessionService.ApproveDraft(session.Id, actionId);
         var provider = new FakeProvider();
         var service = CreateService(provider);
 
         var result = await service.SubmitAsync(TestPrUrl);
 
         Assert.Equal(1, result.Submitted);
-        Assert.Equal(1, result.ActionsSubmitted);
+        Assert.Equal(1, result.ThreadStatusChangesSubmitted);
         Assert.Equal(0, result.Failed);
         Assert.Equal(1, provider.UpdateThreadStatusCalls);
         Assert.Equal(ThreadStatus.WontFix, provider.LastThreadStatus);
 
         var loaded = _store.Load(session.Id)!;
-        Assert.Equal(DraftStatus.Submitted, loaded.DraftActions[actionId].Status);
+        Assert.Equal(DraftStatus.Submitted, loaded.DraftOperations[actionId].Status);
         Assert.Equal(ThreadStatus.WontFix, loaded.Threads.Items.First(t => t.Id == 101).Status);
     }
 
@@ -348,26 +348,26 @@ public class ReviewServiceTests : IDisposable
     public async Task SubmitAsync_PendingCommentReactionAction_AppliesReactionAndMarksSubmitted()
     {
         var session = CreateAndSaveSession();
-        var (actionId, _) = _sessionService.CreateDraftCommentReaction(session.Id, new CreateDraftActionRequest
+        var (actionId, _) = _sessionService.CreateDraftCommentReaction(session.Id, new CreateDraftOperationRequest
         {
             ThreadId = 101,
             CommentId = 1,
             Reaction = CommentReaction.Like,
             Author = DraftAuthor.Ai,
         });
-        _sessionService.ApproveDraftAction(session.Id, actionId);
+        _sessionService.ApproveDraft(session.Id, actionId);
         var provider = new FakeProvider();
         var service = CreateService(provider);
 
         var result = await service.SubmitAsync(TestPrUrl);
 
         Assert.Equal(1, result.Submitted);
-        Assert.Equal(1, result.ActionsSubmitted);
+        Assert.Equal(1, result.CommentReactionsSubmitted);
         Assert.Equal(1, provider.SetCommentReactionCalls);
         Assert.Equal(CommentReaction.Like, provider.LastReaction);
 
         var loaded = _store.Load(session.Id)!;
-        Assert.Equal(DraftStatus.Submitted, loaded.DraftActions[actionId].Status);
+        Assert.Equal(DraftStatus.Submitted, loaded.DraftOperations[actionId].Status);
     }
 
     // ========================================================================

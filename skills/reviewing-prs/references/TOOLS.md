@@ -10,7 +10,7 @@ All tools return JSON. Errors are returned as `{ "error": "message" }`.
 
 - Read-only tools (session, PR description, files, diff, threads, draft counts)
 - Sync and iteration tools (sync threads, check iteration, iteration diff)
-- Write tools (create comment/reply drafts, edit/delete drafts, create draft actions)
+- Write tools (create comment/reply drafts, edit/delete drafts, create draft operations)
 - Working directory and file access tools (working directory, read file, list files)
 - Fix worktree tools (prepare worktree, get path, create branch)
 - Proposal tools (create proposal, list proposals, get proposal diff)
@@ -239,7 +239,7 @@ Thread statuses: `Active`, `Fixed`, `WontFix`, `Closed`, `ByDesign`, `Pending`.
 
 ## GetDraftCounts
 
-Get a summary of draft comment and draft action counts by status.
+Get a summary of draft operation counts by status and kind.
 
 **Parameters:**
 
@@ -255,10 +255,10 @@ Get a summary of draft comment and draft action counts by status.
   "pending": 1,
   "submitted": 2,
   "total": 6,
-  "actions_draft": 1,
-  "actions_pending": 0,
-  "actions_submitted": 0,
-  "actions_total": 1
+  "comments": 3,
+  "replies": 2,
+  "thread_status_changes": 1,
+  "comment_reactions": 0
 }
 ```
 
@@ -451,7 +451,7 @@ Create a draft reply to an existing remote comment thread.
 
 ## DraftThreadStatusChange
 
-Create a local draft action to update a comment thread status after user approval. This does not update the remote provider directly. Use this when you want to propose resolving a thread as fixed/won't-fix/by-design, or reactivate a thread.
+Create a local draft operation to update a comment thread status after user approval. This does not update the remote provider directly. Use this when you want to propose resolving a thread as fixed/won't-fix/by-design, or reactivate a thread.
 
 **Parameters:**
 
@@ -468,8 +468,8 @@ Create a local draft action to update a comment thread status after user approva
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440002",
-  "action": {
-    "action_type": "ThreadStatusChange",
+  "operation": {
+    "operation_type": "ThreadStatusChange",
     "status": "Draft",
     "author": "Ai",
     "author_name": "SecurityReviewer",
@@ -478,13 +478,13 @@ Create a local draft action to update a comment thread status after user approva
     "to_thread_status": "Fixed",
     "note": "The requested fix was implemented."
   },
-  "note": "Draft action created. The user must approve it before submit applies it remotely."
+  "note": "Draft operation created. The user must approve it before submit applies it remotely."
 }
 ```
 
 Valid status values: `active`, `fixed` (also accepts `resolved`), `wontfix` (also accepts `wont-fix`), `closed`, `bydesign` (also accepts `by-design`), `pending`.
 
-The user approves the draft action and then runs submit; only then is the remote thread status updated.
+The user approves the draft operation and then runs submit; only then is the remote thread status updated.
 
 **Errors:**
 - `"Invalid thread status: '<value>'. Use: active, fixed, wontfix, closed, bydesign, pending"` -- unrecognized status
@@ -494,7 +494,7 @@ The user approves the draft action and then runs submit; only then is the remote
 
 ## DraftCommentReaction
 
-Create a local draft action to react to a thread comment after user approval. This does not update the remote provider directly. Currently supported reaction: `like`.
+Create a local draft operation to react to a thread comment after user approval. This does not update the remote provider directly. Currently supported reaction: `like`.
 
 **Parameters:**
 
@@ -512,8 +512,8 @@ Create a local draft action to react to a thread comment after user approval. Th
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440003",
-  "action": {
-    "action_type": "CommentReaction",
+  "operation": {
+    "operation_type": "CommentReaction",
     "status": "Draft",
     "author": "Ai",
     "author_name": "SecurityReviewer",
@@ -522,11 +522,11 @@ Create a local draft action to react to a thread comment after user approval. Th
     "reaction": "Like",
     "note": "Acknowledges the reviewer reply."
   },
-  "note": "Draft action created. The user must approve it before submit applies it remotely."
+  "note": "Draft operation created. The user must approve it before submit applies it remotely."
 }
 ```
 
-The user approves the draft action and then runs submit; only then is the remote reaction applied.
+The user approves the draft operation and then runs submit; only then is the remote reaction applied.
 
 **Errors:**
 - `"Invalid reaction: '<value>'. Use: like"` -- unsupported reaction

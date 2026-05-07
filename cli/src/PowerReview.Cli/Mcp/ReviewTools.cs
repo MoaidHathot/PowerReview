@@ -139,23 +139,23 @@ public sealed class ReviewTools
 
         // Also include draft comments for context
         var sessionId = ToolHelpers.ResolveSessionId(prUrl);
-        var drafts = sessionService.GetDrafts(sessionId, filePath);
+        var operations = sessionService.GetDraftOperations(sessionId, filePath);
 
         return ToolHelpers.ToJson(new
         {
             thread_count = threads.Count,
-            draft_count = drafts.Count,
+            draft_count = operations.Count,
             threads,
-            drafts = drafts.Select(kvp => new
+            draft_operations = operations.Select(kvp => new
             {
                 id = kvp.Key,
-                draft = kvp.Value,
+                operation = kvp.Value,
             }),
         });
     }
 
     [McpServerTool, Description(
-        "Get a summary of draft comment counts by status (draft, pending, submitted). " +
+        "Get a summary of draft operation counts by status (draft, pending, submitted). " +
         "Useful for understanding the current state of the review before creating more drafts.")]
     public static string GetDraftCounts(
         SessionService sessionService,
@@ -165,7 +165,6 @@ public sealed class ReviewTools
         {
             var sessionId = ToolHelpers.ResolveSessionId(prUrl);
             var counts = sessionService.GetDraftCounts(sessionId);
-            var actions = sessionService.GetDraftActions(sessionId).Values.ToList();
 
             return ToolHelpers.ToJson(new
             {
@@ -173,10 +172,10 @@ public sealed class ReviewTools
                 counts.Pending,
                 counts.Submitted,
                 counts.Total,
-                ActionsDraft = actions.Count(a => a.Status == DraftStatus.Draft),
-                ActionsPending = actions.Count(a => a.Status == DraftStatus.Pending),
-                ActionsSubmitted = actions.Count(a => a.Status == DraftStatus.Submitted),
-                ActionsTotal = actions.Count,
+                counts.Comments,
+                counts.Replies,
+                counts.ThreadStatusChanges,
+                counts.CommentReactions,
             });
         }
         catch (Exception ex)

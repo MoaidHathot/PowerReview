@@ -254,12 +254,7 @@ end
 ---@param progress_cb? fun(status: string, pending_count: number)
 function M.submit_pending(session, callback, progress_cb)
   local pending_count = 0
-  for _, d in ipairs(session.drafts) do
-    if d.status == "pending" then
-      pending_count = pending_count + 1
-    end
-  end
-  for _, a in ipairs(session.draft_actions or {}) do
+  for _, a in ipairs(session.draft_operations or {}) do
     if a.status == "pending" then
       pending_count = pending_count + 1
     end

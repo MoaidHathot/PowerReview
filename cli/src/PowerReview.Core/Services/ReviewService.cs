@@ -191,95 +191,59 @@ public sealed class ReviewService
     }
 
     /// <summary>
-    /// Submit all pending draft comments to the remote provider.
+    /// Submit all pending draft operations to the remote provider.
     /// </summary>
     public async Task<SubmitResult> SubmitAsync(string prUrl, CancellationToken ct = default)
     {
         var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
 
-        // Get all pending drafts/actions
-        var pendingDrafts = session.Drafts
-            .Where(kvp => kvp.Value.Status == DraftStatus.Pending)
-            .ToList();
-        var pendingActions = session.DraftActions
+        var pendingOperations = session.DraftOperations
             .Where(kvp => kvp.Value.Status == DraftStatus.Pending)
             .ToList();
 
         var result = new SubmitResult
         {
-            Total = pendingDrafts.Count + pendingActions.Count,
-            CommentsTotal = pendingDrafts.Count,
-            ActionsTotal = pendingActions.Count,
+            Total = pendingOperations.Count,
+            CommentsTotal = pendingOperations.Count(kvp => kvp.Value.OperationType == DraftOperationType.Comment),
+            RepliesTotal = pendingOperations.Count(kvp => kvp.Value.OperationType == DraftOperationType.Reply),
+            ThreadStatusChangesTotal = pendingOperations.Count(kvp => kvp.Value.OperationType == DraftOperationType.ThreadStatusChange),
+            CommentReactionsTotal = pendingOperations.Count(kvp => kvp.Value.OperationType == DraftOperationType.CommentReaction),
         };
 
         if (result.Total == 0)
             return result;
 
-        // Submit each draft (sequentially to avoid race conditions on thread creation)
-        foreach (var (draftId, draft) in pendingDrafts)
+        foreach (var (operationId, operation) in pendingOperations)
         {
             try
             {
-                if (draft.IsReply && draft.ThreadId.HasValue)
-                {
-                    // Reply to existing thread
-                    await provider.ReplyToThreadAsync(
-                        session.PullRequest.Id,
-                        draft.ThreadId.Value,
-                        draft.Body,
-                        ct);
-                }
-                else
-                {
-                    // Create new thread
-                    await provider.CreateThreadAsync(
-                        session.PullRequest.Id,
-                        new CreateThreadRequest
-                        {
-                            FilePath = draft.FilePath,
-                            LineStart = draft.LineStart,
-                            LineEnd = draft.LineEnd,
-                            ColStart = draft.ColStart,
-                            ColEnd = draft.ColEnd,
-                            Body = draft.Body,
-                            Status = ThreadStatus.Active,
-                        },
-                        ct);
-                }
-
-                // Mark as submitted
-                _sessionService.MarkSubmitted(session.Id, draftId);
+                await SubmitDraftOperationAsync(session, provider, operationId, operation, ct);
                 result.Submitted++;
-                result.CommentsSubmitted++;
+
+                switch (operation.OperationType)
+                {
+                    case DraftOperationType.Comment:
+                        result.CommentsSubmitted++;
+                        break;
+                    case DraftOperationType.Reply:
+                        result.RepliesSubmitted++;
+                        break;
+                    case DraftOperationType.ThreadStatusChange:
+                        result.ThreadStatusChangesSubmitted++;
+                        break;
+                    case DraftOperationType.CommentReaction:
+                        result.CommentReactionsSubmitted++;
+                        break;
+                }
             }
             catch (Exception ex)
             {
                 result.Failed++;
                 result.Errors.Add(new SubmitError
                 {
-                    DraftId = draftId,
-                    FilePath = draft.FilePath,
-                    Error = ex.Message,
-                });
-            }
-        }
-
-        foreach (var (actionId, action) in pendingActions)
-        {
-            try
-            {
-                await SubmitDraftActionAsync(session, provider, actionId, action, ct);
-                result.Submitted++;
-                result.ActionsSubmitted++;
-            }
-            catch (Exception ex)
-            {
-                result.Failed++;
-                result.Errors.Add(new SubmitError
-                {
-                    DraftId = actionId,
-                    ActionId = actionId,
-                    Kind = "action",
+                    OperationId = operationId,
+                    OperationType = operation.OperationType.ToString(),
+                    FilePath = operation.FilePath,
                     Error = ex.Message,
                 });
             }
@@ -288,49 +252,73 @@ public sealed class ReviewService
         return result;
     }
 
-    private async Task SubmitDraftActionAsync(ReviewSession session, IProvider provider, string actionId, DraftAction action, CancellationToken ct)
+    private async Task SubmitDraftOperationAsync(ReviewSession session, IProvider provider, string operationId, DraftOperation operation, CancellationToken ct)
     {
-        switch (action.ActionType)
+        switch (operation.OperationType)
         {
-            case DraftActionType.ThreadStatusChange:
-                if (!action.ToThreadStatus.HasValue)
-                    throw new ReviewServiceException($"Draft action {actionId} is missing target thread status.");
-                await provider.UpdateThreadStatusAsync(session.PullRequest.Id, action.ThreadId, action.ToThreadStatus.Value, ct);
-                MarkActionSubmitted(session.Id, actionId, action.ToThreadStatus.Value);
+            case DraftOperationType.Comment:
+                await provider.CreateThreadAsync(
+                    session.PullRequest.Id,
+                    new CreateThreadRequest
+                    {
+                        FilePath = operation.FilePath,
+                        LineStart = operation.LineStart,
+                        LineEnd = operation.LineEnd,
+                        ColStart = operation.ColStart,
+                        ColEnd = operation.ColEnd,
+                        Body = operation.Body ?? "",
+                        Status = ThreadStatus.Active,
+                    },
+                    ct);
+                _sessionService.MarkSubmitted(session.Id, operationId);
                 break;
 
-            case DraftActionType.CommentReaction:
-                if (!action.CommentId.HasValue)
-                    throw new ReviewServiceException($"Draft action {actionId} is missing comment ID.");
-                if (!action.Reaction.HasValue)
-                    throw new ReviewServiceException($"Draft action {actionId} is missing reaction.");
-                await provider.SetCommentReactionAsync(session.PullRequest.Id, action.ThreadId, action.CommentId.Value, action.Reaction.Value, ct);
-                MarkActionSubmitted(session.Id, actionId);
+            case DraftOperationType.Reply:
+                if (!operation.ThreadId.HasValue)
+                    throw new ReviewServiceException($"Draft operation {operationId} is missing thread ID.");
+                await provider.ReplyToThreadAsync(session.PullRequest.Id, operation.ThreadId.Value, operation.Body ?? "", ct);
+                _sessionService.MarkSubmitted(session.Id, operationId);
                 break;
 
-            default:
-                throw new ReviewServiceException($"Unsupported draft action type: {action.ActionType}");
+            case DraftOperationType.ThreadStatusChange:
+                if (!operation.ThreadId.HasValue)
+                    throw new ReviewServiceException($"Draft operation {operationId} is missing thread ID.");
+                if (!operation.ToThreadStatus.HasValue)
+                    throw new ReviewServiceException($"Draft operation {operationId} is missing target thread status.");
+                await provider.UpdateThreadStatusAsync(session.PullRequest.Id, operation.ThreadId.Value, operation.ToThreadStatus.Value, ct);
+                MarkOperationSubmitted(session.Id, operationId, operation.ToThreadStatus.Value);
+                break;
+
+            case DraftOperationType.CommentReaction:
+                if (!operation.ThreadId.HasValue)
+                    throw new ReviewServiceException($"Draft operation {operationId} is missing thread ID.");
+                if (!operation.CommentId.HasValue)
+                    throw new ReviewServiceException($"Draft operation {operationId} is missing comment ID.");
+                if (!operation.Reaction.HasValue)
+                    throw new ReviewServiceException($"Draft operation {operationId} is missing reaction.");
+                await provider.SetCommentReactionAsync(session.PullRequest.Id, operation.ThreadId.Value, operation.CommentId.Value, operation.Reaction.Value, ct);
+                _sessionService.MarkSubmitted(session.Id, operationId);
+                break;
         }
     }
 
-    private void MarkActionSubmitted(string sessionId, string actionId, ThreadStatus? updatedThreadStatus = null)
+    private void MarkOperationSubmitted(string sessionId, string operationId, ThreadStatus updatedThreadStatus)
     {
         using var _ = _store.AcquireLock(sessionId);
         var session = _store.Load(sessionId)
-            ?? throw new ReviewServiceException($"Session disappeared during draft action submission: {sessionId}");
+            ?? throw new ReviewServiceException($"Session disappeared during draft operation submission: {sessionId}");
 
-        if (!session.DraftActions.TryGetValue(actionId, out var action))
-            throw new ReviewServiceException($"Draft action disappeared during submission: {actionId}");
+        if (!session.DraftOperations.TryGetValue(operationId, out var operation))
+            throw new ReviewServiceException($"Draft operation disappeared during submission: {operationId}");
 
-        action.Status = DraftStatus.Submitted;
-        action.UpdatedAt = Timestamp();
+        operation.Status = DraftStatus.Submitted;
+        operation.UpdatedAt = Timestamp();
 
-        if (updatedThreadStatus.HasValue)
-        {
-            var thread = session.Threads.Items.FirstOrDefault(t => t.Id == action.ThreadId);
-            if (thread != null)
-                thread.Status = updatedThreadStatus.Value;
-        }
+        var thread = operation.ThreadId.HasValue
+            ? session.Threads.Items.FirstOrDefault(t => t.Id == operation.ThreadId.Value)
+            : null;
+        if (thread != null)
+            thread.Status = updatedThreadStatus;
 
         _store.Save(session);
     }

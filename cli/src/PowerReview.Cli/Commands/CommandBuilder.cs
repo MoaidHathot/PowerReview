@@ -392,7 +392,7 @@ internal static class CommandBuilder
             try
             {
                 var sessionId = ResolveSessionId(services, url);
-                var (id, draft) = services.SessionService.CreateDraft(sessionId, new CreateDraftRequest
+                var (id, operation) = services.SessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
                 {
                     FilePath = parseResult.GetValue(filePath),
                     LineStart = parseResult.GetValue(lineStart),
@@ -406,7 +406,7 @@ internal static class CommandBuilder
                     ParentCommentId = parseResult.GetValue(parentCommentId),
                 });
 
-                CliOutput.WriteJson(new { id, draft });
+                CliOutput.WriteJson(new { id, operation });
             }
             catch (SessionServiceException ex)
             {
@@ -452,8 +452,8 @@ internal static class CommandBuilder
             try
             {
                 var sessionId = ResolveSessionId(services, url);
-                var draft = services.SessionService.EditDraft(sessionId, id, newBody);
-                CliOutput.WriteJson(new { id, draft });
+                var operation = services.SessionService.EditDraft(sessionId, id, newBody);
+                CliOutput.WriteJson(new { id, operation });
             }
             catch (SessionServiceException ex)
             {
@@ -514,8 +514,8 @@ internal static class CommandBuilder
             try
             {
                 var sessionId = ResolveSessionId(services, url);
-                var draft = services.SessionService.ApproveDraft(sessionId, id);
-                CliOutput.WriteJson(new { id, draft });
+                var operation = services.SessionService.ApproveDraft(sessionId, id);
+                CliOutput.WriteJson(new { id, operation });
             }
             catch (SessionServiceException ex)
             {
@@ -616,8 +616,8 @@ internal static class CommandBuilder
             try
             {
                 var sessionId = ResolveSessionId(services, url);
-                var draft = services.SessionService.UnapproveDraft(sessionId, id);
-                CliOutput.WriteJson(new { id, draft });
+                var operation = services.SessionService.UnapproveDraft(sessionId, id);
+                CliOutput.WriteJson(new { id, operation });
             }
             catch (SessionServiceException ex)
             {
@@ -753,7 +753,7 @@ internal static class CommandBuilder
             try
             {
                 var sessionId = ResolveSessionId(services, url);
-                var (id, draft) = services.SessionService.CreateDraft(sessionId, new CreateDraftRequest
+                var (id, operation) = services.SessionService.CreateDraftReply(sessionId, new CreateDraftOperationRequest
                 {
                     Body = replyBody,
                     ThreadId = tid,
@@ -761,7 +761,7 @@ internal static class CommandBuilder
                     AuthorName = parseResult.GetValue(authorName),
                 });
 
-                CliOutput.WriteJson(new { id, draft });
+                CliOutput.WriteJson(new { id, operation });
             }
             catch (SessionServiceException ex)
             {
@@ -1491,7 +1491,7 @@ internal static class CommandBuilder
 
     private static Command BuildAction(ServiceFactory services)
     {
-        var cmd = new Command("action", "Manage draft review actions. Draft actions require approval before submit applies them remotely.");
+        var cmd = new Command("action", "Manage non-comment draft operations. Draft operations require approval before submit applies them remotely.");
 
         cmd.Subcommands.Add(BuildActionCreateThreadStatus(services));
         cmd.Subcommands.Add(BuildActionCreateReaction(services));
@@ -1510,9 +1510,9 @@ internal static class CommandBuilder
         var status = new Option<string>("--status") { Description = "Target status: active, fixed, wontfix, closed, bydesign, pending", Required = true };
         var note = new Option<string?>("--note") { Description = "Optional rationale shown to the user" };
         var author = new Option<string?>("--author") { Description = "Author type: user or ai" };
-        var authorName = new Option<string?>("--author-name") { Description = "Display name for the action author" };
+        var authorName = new Option<string?>("--author-name") { Description = "Display name for the operation author" };
 
-        var cmd = new Command("create-thread-status", "Create a draft action to change a thread status")
+        var cmd = new Command("create-thread-status", "Create a draft operation to change a thread status")
         {
             prUrl, threadId, status, note, author, authorName
         };
@@ -1527,7 +1527,7 @@ internal static class CommandBuilder
             try
             {
                 var sessionId = ResolveSessionId(services, url);
-                var (id, action) = services.SessionService.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
+                var (id, operation) = services.SessionService.CreateDraftThreadStatusChange(sessionId, new CreateDraftOperationRequest
                 {
                     ThreadId = parseResult.GetValue(threadId),
                     ToThreadStatus = targetStatus,
@@ -1535,7 +1535,7 @@ internal static class CommandBuilder
                     Author = ParseDraftAuthor(parseResult.GetValue(author), DraftAuthor.User),
                     AuthorName = parseResult.GetValue(authorName),
                 });
-                CliOutput.WriteJson(new { id, action, note = "Draft action created. The user must approve it before submit applies it remotely." });
+                CliOutput.WriteJson(new { id, operation, note = "Draft operation created. The user must approve it before submit applies it remotely." });
             }
             catch (SessionServiceException ex)
             {
@@ -1555,9 +1555,9 @@ internal static class CommandBuilder
         var reaction = new Option<string>("--reaction") { Description = "Reaction to apply: like", Required = true };
         var note = new Option<string?>("--note") { Description = "Optional rationale shown to the user" };
         var author = new Option<string?>("--author") { Description = "Author type: user or ai" };
-        var authorName = new Option<string?>("--author-name") { Description = "Display name for the action author" };
+        var authorName = new Option<string?>("--author-name") { Description = "Display name for the operation author" };
 
-        var cmd = new Command("create-reaction", "Create a draft action to react to a thread comment")
+        var cmd = new Command("create-reaction", "Create a draft operation to react to a thread comment")
         {
             prUrl, threadId, commentId, reaction, note, author, authorName
         };
@@ -1572,7 +1572,7 @@ internal static class CommandBuilder
             try
             {
                 var sessionId = ResolveSessionId(services, url);
-                var (id, action) = services.SessionService.CreateDraftCommentReaction(sessionId, new CreateDraftActionRequest
+                var (id, operation) = services.SessionService.CreateDraftCommentReaction(sessionId, new CreateDraftOperationRequest
                 {
                     ThreadId = parseResult.GetValue(threadId),
                     CommentId = parseResult.GetValue(commentId),
@@ -1581,7 +1581,7 @@ internal static class CommandBuilder
                     Author = ParseDraftAuthor(parseResult.GetValue(author), DraftAuthor.User),
                     AuthorName = parseResult.GetValue(authorName),
                 });
-                CliOutput.WriteJson(new { id, action, note = "Draft action created. The user must approve it before submit applies it remotely." });
+                CliOutput.WriteJson(new { id, operation, note = "Draft operation created. The user must approve it before submit applies it remotely." });
             }
             catch (SessionServiceException ex)
             {
@@ -1596,17 +1596,17 @@ internal static class CommandBuilder
     private static Command BuildActionList(ServiceFactory services)
     {
         var prUrl = PrUrlOption();
-        var cmd = new Command("list", "List draft review actions") { prUrl };
+        var cmd = new Command("list", "List non-comment draft operations") { prUrl };
 
         cmd.SetAction(parseResult =>
         {
             try
             {
                 var sessionId = ResolveSessionId(services, parseResult.GetValue(prUrl)!);
-                var actions = services.SessionService.GetDraftActions(sessionId)
-                    .Select(kvp => new { id = kvp.Key, action = kvp.Value })
+                var operations = services.SessionService.GetDraftActions(sessionId)
+                    .Select(kvp => new { id = kvp.Key, operation = kvp.Value })
                     .ToList();
-                CliOutput.WriteJson(actions);
+                CliOutput.WriteJson(operations);
             }
             catch (SessionServiceException ex)
             {
@@ -1621,8 +1621,8 @@ internal static class CommandBuilder
     private static Command BuildActionApprove(ServiceFactory services)
     {
         var prUrl = PrUrlOption();
-        var actionId = new Option<string>("--action-id") { Description = "Draft action UUID", Required = true };
-        var cmd = new Command("approve", "Approve a draft action (draft -> pending)") { prUrl, actionId };
+        var actionId = new Option<string>("--action-id") { Description = "Draft operation UUID", Required = true };
+        var cmd = new Command("approve", "Approve a draft operation (draft -> pending)") { prUrl, actionId };
 
         cmd.SetAction(parseResult =>
         {
@@ -1630,8 +1630,8 @@ internal static class CommandBuilder
             {
                 var id = parseResult.GetValue(actionId)!;
                 var sessionId = ResolveSessionId(services, parseResult.GetValue(prUrl)!);
-                var action = services.SessionService.ApproveDraftAction(sessionId, id);
-                CliOutput.WriteJson(new { id, action });
+                var operation = services.SessionService.ApproveDraftAction(sessionId, id);
+                CliOutput.WriteJson(new { id, operation });
             }
             catch (SessionServiceException ex)
             {
@@ -1646,8 +1646,8 @@ internal static class CommandBuilder
     private static Command BuildActionUnapprove(ServiceFactory services)
     {
         var prUrl = PrUrlOption();
-        var actionId = new Option<string>("--action-id") { Description = "Draft action UUID", Required = true };
-        var cmd = new Command("unapprove", "Unapprove a draft action (pending -> draft)") { prUrl, actionId };
+        var actionId = new Option<string>("--action-id") { Description = "Draft operation UUID", Required = true };
+        var cmd = new Command("unapprove", "Unapprove a draft operation (pending -> draft)") { prUrl, actionId };
 
         cmd.SetAction(parseResult =>
         {
@@ -1655,8 +1655,8 @@ internal static class CommandBuilder
             {
                 var id = parseResult.GetValue(actionId)!;
                 var sessionId = ResolveSessionId(services, parseResult.GetValue(prUrl)!);
-                var action = services.SessionService.UnapproveDraftAction(sessionId, id);
-                CliOutput.WriteJson(new { id, action });
+                var operation = services.SessionService.UnapproveDraftAction(sessionId, id);
+                CliOutput.WriteJson(new { id, operation });
             }
             catch (SessionServiceException ex)
             {
@@ -1671,8 +1671,8 @@ internal static class CommandBuilder
     private static Command BuildActionDelete(ServiceFactory services)
     {
         var prUrl = PrUrlOption();
-        var actionId = new Option<string>("--action-id") { Description = "Draft action UUID", Required = true };
-        var cmd = new Command("delete", "Delete a draft action") { prUrl, actionId };
+        var actionId = new Option<string>("--action-id") { Description = "Draft operation UUID", Required = true };
+        var cmd = new Command("delete", "Delete a draft operation") { prUrl, actionId };
 
         cmd.SetAction(parseResult =>
         {

@@ -124,23 +124,23 @@ public class McpToolTests : IDisposable
         // Verify the draft was created with AI author
         var sessionId = ToolHelpers.ResolveSessionId("https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42");
         var session = _store.Load(sessionId)!;
-        var draft = session.Drafts.Values.First();
+        var draft = session.DraftOperations.Values.First();
         Assert.Equal(DraftAuthor.Ai, draft.Author);
     }
 
     // =========================================================================
-    // DraftTools: EditDraftComment resets Pending to Draft
+    // DraftTools: EditDraftOperation resets Pending to Draft
     // =========================================================================
 
     [Fact]
-    public void EditDraftComment_PendingDraft_ResetsBackToDraft()
+    public void EditDraftOperation_PendingDraft_ResetsBackToDraft()
     {
         CreateAndSaveTestSession();
         var sessionId = "azdo_testorg_testproject_testrepo_42";
         var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
 
         // Create and approve a draft
-        var (draftId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs",
             LineStart = 5,
@@ -171,18 +171,18 @@ public class McpToolTests : IDisposable
     }
 
     // =========================================================================
-    // DraftTools: DeleteDraftComment rejects non-AI-authored drafts
+    // DraftTools: DeleteDraftOperation rejects non-AI-authored drafts
     // =========================================================================
 
     [Fact]
-    public void DeleteDraftComment_UserAuthored_ReturnsError()
+    public void DeleteDraftOperation_UserAuthored_ReturnsError()
     {
         CreateAndSaveTestSession();
         var sessionId = "azdo_testorg_testproject_testrepo_42";
         var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
 
         // Create a user-authored draft
-        var (draftId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs",
             LineStart = 5,
@@ -201,14 +201,14 @@ public class McpToolTests : IDisposable
     }
 
     [Fact]
-    public void DeleteDraftComment_AiAuthored_Succeeds()
+    public void DeleteDraftOperation_AiAuthored_Succeeds()
     {
         CreateAndSaveTestSession();
         var sessionId = "azdo_testorg_testproject_testrepo_42";
         var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
 
         // Create an AI-authored draft
-        var (draftId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs",
             LineStart = 5,
@@ -254,7 +254,7 @@ public class McpToolTests : IDisposable
 
         // Verify the draft is AI-authored reply
         var session = _store.Load(sessionId)!;
-        var draft = session.Drafts.Values.First();
+        var draft = session.DraftOperations.Values.First();
         Assert.Equal(DraftAuthor.Ai, draft.Author);
         Assert.Equal("TestAgent", draft.AuthorName);
         Assert.Equal(100, draft.ThreadId);
@@ -263,7 +263,7 @@ public class McpToolTests : IDisposable
     }
 
     [Fact]
-    public void DraftThreadStatusChange_CreatesAiAuthoredDraftAction()
+    public void DraftThreadStatusChange_CreatesAiAuthoredDraftOperation()
     {
         CreateAndSaveTestSessionWithThreads();
         var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
@@ -282,8 +282,8 @@ public class McpToolTests : IDisposable
         Assert.True(json.RootElement.TryGetProperty("id", out _));
 
         var session = _store.Load(sessionId)!;
-        var action = session.DraftActions.Values.First();
-        Assert.Equal(DraftActionType.ThreadStatusChange, action.ActionType);
+        var action = session.DraftOperations.Values.First();
+        Assert.Equal(DraftOperationType.ThreadStatusChange, action.OperationType);
         Assert.Equal(DraftAuthor.Ai, action.Author);
         Assert.Equal("TestAgent", action.AuthorName);
         Assert.Equal(100, action.ThreadId);
@@ -291,7 +291,7 @@ public class McpToolTests : IDisposable
     }
 
     [Fact]
-    public void DraftCommentReaction_CreatesAiAuthoredDraftAction()
+    public void DraftOperationReaction_CreatesAiAuthoredDraftOperation()
     {
         CreateAndSaveTestSessionWithThreads();
         var prUrl = "https://dev.azure.com/testorg/testproject/_git/testrepo/pullrequest/42";
@@ -310,8 +310,8 @@ public class McpToolTests : IDisposable
         Assert.False(json.RootElement.TryGetProperty("error", out _), "Expected success but got error");
 
         var session = _store.Load(sessionId)!;
-        var action = session.DraftActions.Values.First();
-        Assert.Equal(DraftActionType.CommentReaction, action.ActionType);
+        var action = session.DraftOperations.Values.First();
+        Assert.Equal(DraftOperationType.CommentReaction, action.OperationType);
         Assert.Equal(CommentReaction.Like, action.Reaction);
         Assert.Equal(1, action.CommentId);
         Assert.Equal(DraftAuthor.Ai, action.Author);
@@ -336,16 +336,16 @@ public class McpToolTests : IDisposable
         var sessionId = "azdo_testorg_testproject_testrepo_42";
 
         // Create drafts in different states
-        var (draftId1, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId1, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs", LineStart = 1, Body = "Draft 1", Author = DraftAuthor.Ai,
         });
-        var (draftId2, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId2, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs", LineStart = 2, Body = "Draft 2", Author = DraftAuthor.Ai,
         });
         _sessionService.ApproveDraft(sessionId, draftId2);
-        var (draftId3, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId3, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs", LineStart = 3, Body = "Draft 3", Author = DraftAuthor.User,
         });
@@ -413,7 +413,7 @@ public class McpToolTests : IDisposable
         var sessionId = "azdo_testorg_testproject_testrepo_42";
 
         // Create a reply draft first
-        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 100,
             Body = "Fixed: null check added",

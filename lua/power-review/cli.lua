@@ -163,26 +163,49 @@ function M.adapt_session(cli_session)
   local review = cli_session.review or {}
   local metadata = cli_session.metadata or {}
 
-  -- Convert drafts from map {id -> draft} to array with id field
+  -- Convert draft operations from map {id -> operation} to arrays with id field.
+  -- The split `drafts`/`draft_actions` views are derived for existing UI code.
+  local draft_operations = {}
   local drafts = {}
-  local raw_drafts = cli_session.drafts or {}
-  for id, draft in pairs(raw_drafts) do
-    draft.id = id
-    table.insert(drafts, draft)
+  local draft_actions = {}
+  local raw_operations = cli_session.draft_operations or {}
+  for id, operation in pairs(raw_operations) do
+    operation.id = id
+    local operation_type = operation.operation_type or operation.action_type
+    table.insert(draft_operations, operation)
+    if
+      operation_type == "Comment"
+      or operation_type == "Reply"
+      or operation_type == "comment"
+      or operation_type == "reply"
+    then
+      table.insert(drafts, operation)
+    else
+      table.insert(draft_actions, operation)
+    end
   end
 
-  -- Sort drafts by created_at for consistent ordering
-  table.sort(drafts, function(a, b)
+  table.sort(draft_operations, function(a, b)
     return (a.created_at or "") < (b.created_at or "")
   end)
 
-  local draft_actions = {}
-  local raw_draft_actions = cli_session.draft_actions or {}
-  for id, action in pairs(raw_draft_actions) do
-    action.id = id
+  -- Backfill from legacy fields if a caller passes an old session shape directly.
+  for id, draft in pairs(cli_session.drafts or {}) do
+    draft.id = draft.id or id
+    draft.operation_type = draft.operation_type or (draft.thread_id and "Reply" or "Comment")
+    table.insert(draft_operations, draft)
+    table.insert(drafts, draft)
+  end
+  for id, action in pairs(cli_session.draft_actions or {}) do
+    action.id = action.id or id
+    action.operation_type = action.operation_type or action.action_type
+    table.insert(draft_operations, action)
     table.insert(draft_actions, action)
   end
 
+  table.sort(drafts, function(a, b)
+    return (a.created_at or "") < (b.created_at or "")
+  end)
   table.sort(draft_actions, function(a, b)
     return (a.created_at or "") < (b.created_at or "")
   end)
@@ -222,6 +245,7 @@ function M.adapt_session(cli_session)
     updated_at = cli_session.updated_at or "",
     vote = M._vote_string_to_number(cli_session.vote),
     metadata = metadata,
+    draft_operations = draft_operations,
     drafts = drafts,
     draft_actions = draft_actions,
     threads = threads_info.items or {},

@@ -45,9 +45,9 @@ User-only operations (not available as MCP tools):
 | Apply proposal | `powerreview proposal apply --pr-url <url> --proposal-id <id> [--push]` |
 | Reject proposal | `powerreview proposal reject --pr-url <url> --proposal-id <id>` |
 | View proposal diff | `powerreview proposal diff --pr-url <url> --proposal-id <id>` |
-| Approve draft action | `powerreview action approve --pr-url <url> --action-id <id>` |
-| Delete draft action | `powerreview action delete --pr-url <url> --action-id <id>` |
-| Submit replies | `powerreview submit --pr-url <url>` |
+| Approve draft operation | `powerreview action approve --pr-url <url> --action-id <id>` |
+| Delete draft operation | `powerreview action delete --pr-url <url> --action-id <id>` |
+| Submit operations | `powerreview submit --pr-url <url>` |
 
 ## Comment response workflow
 
@@ -104,7 +104,7 @@ Before choosing a code fix, consider `metadata.files` and the linked work item m
 Use when the comment raises a valid point but the current approach is intentional or the change is out of scope. Reply with an explanation, then create a draft thread-status action if the thread should be marked `wontfix` or `bydesign`.
 
 #### Action D: Acknowledge a reviewer reply
-Use when the appropriate response is a lightweight acknowledgement rather than another comment. Create a draft reaction action with `DraftCommentReaction`.
+Use when the appropriate response is a lightweight acknowledgement rather than another comment. Create a draft reaction operation with `DraftCommentReaction`.
 
 ### Step 4: Execute the action
 
@@ -127,7 +127,7 @@ Call `DraftThreadStatusChange` with:
 - `reason` -- concise rationale for the user
 - `agentName` -- your agent name (optional)
 
-The action is created as a draft. The user must approve it before `submit` applies it to the remote provider.
+The operation is created as a draft. The user must approve it before `submit` applies it to the remote provider.
 
 #### For comment reactions:
 
@@ -139,7 +139,7 @@ Call `DraftCommentReaction` with:
 - `reason` -- concise rationale for the user
 - `agentName` -- your agent name (optional)
 
-The reaction is created as a draft action. The user must approve it before `submit` applies it to the remote provider.
+The reaction is created as a draft operation. The user must approve it before `submit` applies it to the remote provider.
 
 #### For code fixes (Action B):
 
@@ -189,7 +189,7 @@ After processing all comments, provide a summary:
 - For each: what action was taken (reply, code fix, won't fix)
 - How many proposals were created (pending user approval)
 - How many draft replies were created (pending user approval)
-- How many draft actions were created (pending user approval)
+- How many draft operations were created (pending user approval)
 - Remaining active/pending thread count if available from `metadata.threads`
 - Required reviewer status if available from `metadata.reviewers`
 - Any PR state blockers such as draft/WIP or merge conflicts from `metadata.state`
@@ -202,7 +202,7 @@ These constraints are enforced by the server and cannot be bypassed:
 
 1. **All replies start as drafts.** The user must approve each draft before it can be submitted.
 2. **All proposals start as drafts.** The user must approve and explicitly apply each proposal.
-3. **Remote actions start as drafts.** Thread status changes and reactions are local draft actions until the user approves them and runs submit.
+3. **Remote actions start as drafts.** Thread status changes and reactions are local draft operations until the user approves them and runs submit.
 4. **Code changes are isolated.** The fix worktree is separate from the user's working directory. No changes affect the user's branch until explicitly applied.
 5. **AI can only modify AI-authored items.** AI cannot edit or delete user-authored drafts or proposals.
 6. **Approve, apply, and reject are user-only operations.** These are not available as MCP tools.

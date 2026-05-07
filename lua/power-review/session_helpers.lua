@@ -41,27 +41,51 @@ end
 ---@param session PowerReview.ReviewSession
 ---@return table { draft: number, pending: number, submitted: number, total: number }
 function M.get_draft_counts(session)
-  local drafts = session.drafts or {}
-  local actions = session.draft_actions or {}
+  local operations = session.draft_operations or {}
   local counts = {
     draft = 0,
     pending = 0,
     submitted = 0,
-    total = #drafts,
+    total = #operations,
+    comments_total = 0,
+    replies_total = 0,
     actions_draft = 0,
     actions_pending = 0,
     actions_submitted = 0,
-    actions_total = #actions,
+    actions_total = 0,
   }
-  for _, d in ipairs(drafts) do
-    if counts[d.status] then
-      counts[d.status] = counts[d.status] + 1
+
+  if #operations == 0 then
+    for _, d in ipairs(session.drafts or {}) do
+      table.insert(operations, d)
+    end
+    for _, a in ipairs(session.draft_actions or {}) do
+      table.insert(operations, a)
     end
   end
-  for _, a in ipairs(actions) do
-    local key = "actions_" .. (a.status or "")
-    if counts[key] then
-      counts[key] = counts[key] + 1
+
+  counts.total = #operations
+  for _, op in ipairs(operations) do
+    local status = op.status or ""
+    if counts[status] then
+      counts[status] = counts[status] + 1
+    end
+
+    local operation_type = op.operation_type or op.action_type
+    local is_comment = operation_type == "Comment"
+      or operation_type == "Reply"
+      or operation_type == "comment"
+      or operation_type == "reply"
+    if operation_type == "Comment" or operation_type == "comment" then
+      counts.comments_total = counts.comments_total + 1
+    elseif operation_type == "Reply" or operation_type == "reply" then
+      counts.replies_total = counts.replies_total + 1
+    elseif not is_comment then
+      counts.actions_total = counts.actions_total + 1
+      local key = "actions_" .. status
+      if counts[key] then
+        counts[key] = counts[key] + 1
+      end
     end
   end
   return counts
@@ -70,7 +94,8 @@ end
 ---@param action PowerReview.DraftAction
 ---@return string
 function M.draft_action_label(action)
-  if action.action_type == "thread_status_change" or action.action_type == "ThreadStatusChange" then
+  local operation_type = action.operation_type or action.action_type
+  if operation_type == "thread_status_change" or operation_type == "ThreadStatusChange" then
     return string.format(
       "Thread #%s: %s -> %s%s",
       tostring(action.thread_id or "?"),
@@ -80,7 +105,7 @@ function M.draft_action_label(action)
     )
   end
 
-  if action.action_type == "comment_reaction" or action.action_type == "CommentReaction" then
+  if operation_type == "comment_reaction" or operation_type == "CommentReaction" then
     return string.format(
       "%s comment #%s in thread #%s%s",
       tostring(action.reaction or "react"),
@@ -90,7 +115,7 @@ function M.draft_action_label(action)
     )
   end
 
-  return action.note or tostring(action.action_type or "draft action")
+  return action.note or tostring(operation_type or "draft operation")
 end
 
 ---@param session PowerReview.ReviewSession

@@ -30,7 +30,7 @@ public sealed class DraftTools
         try
         {
             var sessionId = ToolHelpers.ResolveSessionId(prUrl);
-            var (id, draft) = sessionService.CreateDraft(sessionId, new CreateDraftRequest
+            var (id, operation) = sessionService.CreateDraftComment(sessionId, new CreateDraftOperationRequest
             {
                 FilePath = filePath,
                 LineStart = lineStart,
@@ -45,7 +45,7 @@ public sealed class DraftTools
             return ToolHelpers.ToJson(new
             {
                 id,
-                draft,
+                operation,
                 note = "Draft created. The user must approve it before it can be submitted.",
             });
         }
@@ -68,13 +68,13 @@ public sealed class DraftTools
         try
         {
             var sessionId = ToolHelpers.ResolveSessionId(prUrl);
-            var draft = sessionService.EditDraft(sessionId, draftId, newBody, callerAuthor: DraftAuthor.Ai);
+            var operation = sessionService.EditDraft(sessionId, draftId, newBody, callerAuthor: DraftAuthor.Ai);
 
             return ToolHelpers.ToJson(new
             {
                 id = draftId,
-                draft,
-                note = draft.Status == DraftStatus.Draft
+                operation,
+                note = operation.Status == DraftStatus.Draft
                     ? "Draft edited. If it was previously approved, it has been reset to Draft and needs re-approval."
                     : null,
             });

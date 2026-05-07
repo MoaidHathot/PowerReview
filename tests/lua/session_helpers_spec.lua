@@ -188,6 +188,30 @@ describe("get_draft_counts", function()
     assert.equal(1, counts.actions_pending)
   end)
 
+  it("counts unified draft operations by status and kind", function()
+    local session = {
+      draft_operations = {
+        { id = "c1", operation_type = "Comment", status = "draft", author = "user" },
+        { id = "r1", operation_type = "Reply", status = "pending", author = "ai" },
+        { id = "s1", operation_type = "ThreadStatusChange", status = "submitted", author = "ai" },
+        { id = "l1", operation_type = "CommentReaction", status = "draft", author = "ai" },
+      },
+    }
+
+    local counts = helpers.get_draft_counts(session)
+
+    assert.equal(2, counts.total)
+    assert.equal(1, counts.draft)
+    assert.equal(1, counts.pending)
+    assert.equal(0, counts.submitted)
+    assert.equal(2, counts.actions_total)
+    assert.equal(1, counts.actions_draft)
+    assert.equal(0, counts.actions_pending)
+    assert.equal(1, counts.actions_submitted)
+    assert.equal(1, counts.comments_total)
+    assert.equal(1, counts.replies_total)
+  end)
+
   it("returns zero counts for empty drafts", function()
     local session = { drafts = {} }
     local counts = helpers.get_draft_counts(session)

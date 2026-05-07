@@ -90,7 +90,7 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
 
-        var (id, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (id, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs",
             LineStart = 10,
@@ -107,8 +107,8 @@ public class SessionServiceTests : IDisposable
 
         // Verify persisted
         var loaded = _store.Load(sessionId)!;
-        Assert.Single(loaded.Drafts);
-        Assert.True(loaded.Drafts.ContainsKey(id));
+        Assert.Single(loaded.DraftOperations);
+        Assert.True(loaded.DraftOperations.ContainsKey(id));
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSession();
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "comment" });
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "comment" });
 
         Assert.Equal("", draft.FilePath);
         Assert.Null(draft.LineStart);
@@ -132,7 +132,7 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSession();
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Author = DraftAuthor.Ai,
             Body = "AI suggestion",
@@ -147,7 +147,7 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSession();
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Author = DraftAuthor.Ai,
             AuthorName = "SecurityReviewer",
@@ -163,7 +163,7 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSession();
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Author = DraftAuthor.Ai,
             Body = "No name provided",
@@ -178,7 +178,7 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSession();
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Author = DraftAuthor.User,
             AuthorName = "John",
@@ -194,7 +194,7 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSession();
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             Body = "Reply text",
@@ -209,7 +209,7 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSessionWithThread();
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             Body = "Reply text",
@@ -228,7 +228,7 @@ public class SessionServiceTests : IDisposable
     {
         var sessionId = CreateAndSaveSessionWithThread();
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             FilePath = "custom/path.cs",
@@ -245,7 +245,7 @@ public class SessionServiceTests : IDisposable
     public void CreateDraft_NonexistentSession_Throws()
     {
         Assert.Throws<SessionServiceException>(() =>
-            _service.CreateDraft("nonexistent", new CreateDraftRequest()));
+            _service.CreateDraft("nonexistent", new CreateDraftOperationRequest()));
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public class SessionServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         var ex = Assert.Throws<SessionServiceException>(() =>
-            _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "" }));
+            _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "" }));
         Assert.Contains("body cannot be empty", ex.Message);
     }
 
@@ -264,7 +264,7 @@ public class SessionServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         var ex = Assert.Throws<SessionServiceException>(() =>
-            _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "   " }));
+            _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "   " }));
         Assert.Contains("body cannot be empty", ex.Message);
     }
 
@@ -274,7 +274,7 @@ public class SessionServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         var ex = Assert.Throws<SessionServiceException>(() =>
-            _service.CreateDraft(sessionId, new CreateDraftRequest { Body = null }));
+            _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = null }));
         Assert.Contains("body cannot be empty", ex.Message);
     }
 
@@ -284,7 +284,7 @@ public class SessionServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         // Replies skip body validation (the body might be intentionally empty for some workflows)
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             Body = "",
@@ -300,7 +300,7 @@ public class SessionServiceTests : IDisposable
         ]);
 
         var ex = Assert.Throws<SessionServiceException>(() =>
-            _service.CreateDraft(sessionId, new CreateDraftRequest
+            _service.CreateDraft(sessionId, new CreateDraftOperationRequest
             {
                 FilePath = "src/nonexistent.cs",
                 Body = "comment",
@@ -315,7 +315,7 @@ public class SessionServiceTests : IDisposable
             new ChangedFile { Path = "src/real-file.cs" },
         ]);
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/real-file.cs",
             Body = "looks good",
@@ -331,7 +331,7 @@ public class SessionServiceTests : IDisposable
             new ChangedFile { Path = "src/MyFile.cs" },
         ]);
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/myfile.cs",
             Body = "case insensitive match",
@@ -347,7 +347,7 @@ public class SessionServiceTests : IDisposable
             new ChangedFile { Path = "src/utils/helper.cs" },
         ]);
 
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src\\utils\\helper.cs",
             Body = "backslash path",
@@ -362,7 +362,7 @@ public class SessionServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         // PR-level comment (no file) should work even with no files in the session
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "general PR comment",
         });
@@ -376,7 +376,7 @@ public class SessionServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         // Reply to a thread should work even with a file path not in changed files
-        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (_, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             FilePath = "any/path.cs",
@@ -392,7 +392,7 @@ public class SessionServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         var ex = Assert.Throws<SessionServiceException>(() =>
-            _service.CreateDraft(sessionId, new CreateDraftRequest
+            _service.CreateDraft(sessionId, new CreateDraftOperationRequest
             {
                 FilePath = "some/file.cs",
                 Body = "comment on file",
@@ -406,7 +406,7 @@ public class SessionServiceTests : IDisposable
     public void EditDraft_UpdatesBody()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "original" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "original" });
 
         var edited = _service.EditDraft(sessionId, draftId, "updated body");
 
@@ -414,14 +414,14 @@ public class SessionServiceTests : IDisposable
 
         // Verify persisted
         var loaded = _store.Load(sessionId)!;
-        Assert.Equal("updated body", loaded.Drafts[draftId].Body);
+        Assert.Equal("updated body", loaded.DraftOperations[draftId].Body);
     }
 
     [Fact]
     public void EditDraft_PendingStatus_Throws()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "test" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "test" });
         _service.ApproveDraft(sessionId, draftId);
 
         var ex = Assert.Throws<SessionServiceException>(() =>
@@ -444,19 +444,19 @@ public class SessionServiceTests : IDisposable
     public void DeleteDraft_RemovesFromSession()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "delete me" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "delete me" });
 
         _service.DeleteDraft(sessionId, draftId);
 
         var loaded = _store.Load(sessionId)!;
-        Assert.Empty(loaded.Drafts);
+        Assert.Empty(loaded.DraftOperations);
     }
 
     [Fact]
     public void DeleteDraft_PendingStatus_Throws()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "test" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "test" });
         _service.ApproveDraft(sessionId, draftId);
 
         Assert.Throws<SessionServiceException>(() =>
@@ -469,7 +469,7 @@ public class SessionServiceTests : IDisposable
     public void ApproveDraft_TransitionsToPending()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "approve me" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "approve me" });
 
         var approved = _service.ApproveDraft(sessionId, draftId);
 
@@ -482,7 +482,7 @@ public class SessionServiceTests : IDisposable
     public void ApproveDraft_AlreadyPending_Throws()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "test" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "test" });
         _service.ApproveDraft(sessionId, draftId);
 
         Assert.Throws<SessionServiceException>(() =>
@@ -495,7 +495,7 @@ public class SessionServiceTests : IDisposable
     public void UnapproveDraft_TransitionsBackToDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "test" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "test" });
         _service.ApproveDraft(sessionId, draftId);
 
         var unapproved = _service.UnapproveDraft(sessionId, draftId);
@@ -509,7 +509,7 @@ public class SessionServiceTests : IDisposable
     public void UnapproveDraft_DraftStatus_Throws()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "test" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "test" });
 
         Assert.Throws<SessionServiceException>(() =>
             _service.UnapproveDraft(sessionId, draftId));
@@ -521,9 +521,9 @@ public class SessionServiceTests : IDisposable
     public void ApproveAllDrafts_ApprovesOnlyDraftStatus()
     {
         var sessionId = CreateAndSaveSession();
-        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft 1" });
-        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft 2" });
-        var (id3, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft 3" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "draft 1" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "draft 2" });
+        var (id3, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "draft 3" });
         _service.ApproveDraft(sessionId, id3); // Already pending
 
         var count = _service.ApproveAllDrafts(sessionId);
@@ -531,7 +531,7 @@ public class SessionServiceTests : IDisposable
         Assert.Equal(2, count);
 
         var loaded = _store.Load(sessionId)!;
-        Assert.All(loaded.Drafts.Values, d => Assert.Equal(DraftStatus.Pending, d.Status));
+        Assert.All(loaded.DraftOperations.Values, d => Assert.Equal(DraftStatus.Pending, d.Status));
     }
 
     [Fact]
@@ -548,7 +548,7 @@ public class SessionServiceTests : IDisposable
     public void GetDraft_ExistingDraft_ReturnsDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "find me" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "find me" });
 
         var result = _service.GetDraft(sessionId, draftId);
 
@@ -574,9 +574,9 @@ public class SessionServiceTests : IDisposable
             new ChangedFile { Path = "a.cs" },
             new ChangedFile { Path = "b.cs" },
         ]);
-        _service.CreateDraft(sessionId, new CreateDraftRequest { FilePath = "a.cs", Body = "1" });
-        _service.CreateDraft(sessionId, new CreateDraftRequest { FilePath = "b.cs", Body = "2" });
-        _service.CreateDraft(sessionId, new CreateDraftRequest { FilePath = "a.cs", Body = "3" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { FilePath = "a.cs", Body = "1" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { FilePath = "b.cs", Body = "2" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { FilePath = "a.cs", Body = "3" });
 
         var result = _service.GetDrafts(sessionId, "a.cs");
 
@@ -588,7 +588,7 @@ public class SessionServiceTests : IDisposable
     public void GetDrafts_PathNormalization()
     {
         var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
-        _service.CreateDraft(sessionId, new CreateDraftRequest { FilePath = "src\\main.cs", Body = "1" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { FilePath = "src\\main.cs", Body = "1" });
 
         var result = _service.GetDrafts(sessionId, "src/main.cs");
 
@@ -601,8 +601,8 @@ public class SessionServiceTests : IDisposable
     public void GetDraftCounts_ReturnsCorrectCounts()
     {
         var sessionId = CreateAndSaveSession();
-        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft" });
-        var (id2, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "pending" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "draft" });
+        var (id2, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "pending" });
         _service.ApproveDraft(sessionId, id2);
 
         var counts = _service.GetDraftCounts(sessionId);
@@ -619,7 +619,7 @@ public class SessionServiceTests : IDisposable
     public void EditDraft_AiCallerCannotEditUserDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "user draft",
             Author = DraftAuthor.User,
@@ -634,7 +634,7 @@ public class SessionServiceTests : IDisposable
     public void EditDraft_UserCallerCannotEditAiDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "ai draft",
             Author = DraftAuthor.Ai,
@@ -649,7 +649,7 @@ public class SessionServiceTests : IDisposable
     public void EditDraft_AiCallerCanEditOwnDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "ai original",
             Author = DraftAuthor.Ai,
@@ -663,7 +663,7 @@ public class SessionServiceTests : IDisposable
     public void EditDraft_AiCallerEditsPendingDraft_ResetsToNewDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "ai draft",
             Author = DraftAuthor.Ai,
@@ -680,7 +680,7 @@ public class SessionServiceTests : IDisposable
     public void EditDraft_NoCallerAuthor_AllowsEditingAnyDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "ai draft",
             Author = DraftAuthor.Ai,
@@ -697,7 +697,7 @@ public class SessionServiceTests : IDisposable
     public void DeleteDraft_AiCallerCannotDeleteUserDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "user draft",
             Author = DraftAuthor.User,
@@ -712,7 +712,7 @@ public class SessionServiceTests : IDisposable
     public void DeleteDraft_UserCallerCannotDeleteAiDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "ai draft",
             Author = DraftAuthor.Ai,
@@ -727,7 +727,7 @@ public class SessionServiceTests : IDisposable
     public void DeleteDraft_AiCallerCanDeleteOwnDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "ai draft",
             Author = DraftAuthor.Ai,
@@ -736,14 +736,14 @@ public class SessionServiceTests : IDisposable
         _service.DeleteDraft(sessionId, draftId, callerAuthor: DraftAuthor.Ai);
 
         var loaded = _store.Load(sessionId)!;
-        Assert.Empty(loaded.Drafts);
+        Assert.Empty(loaded.DraftOperations);
     }
 
     [Fact]
     public void DeleteDraft_NoCallerAuthor_AllowsDeletingAnyDraft()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             Body = "ai draft",
             Author = DraftAuthor.Ai,
@@ -752,7 +752,7 @@ public class SessionServiceTests : IDisposable
         // No callerAuthor = no guard
         _service.DeleteDraft(sessionId, draftId);
         var loaded = _store.Load(sessionId)!;
-        Assert.Empty(loaded.Drafts);
+        Assert.Empty(loaded.DraftOperations);
     }
 
     // --- GetDraftsByStatus ---
@@ -761,9 +761,9 @@ public class SessionServiceTests : IDisposable
     public void GetDraftsByStatus_FiltersDraftStatus()
     {
         var sessionId = CreateAndSaveSession();
-        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft1" });
-        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft2" });
-        var (pendingId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "pending1" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "draft1" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "draft2" });
+        var (pendingId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "pending1" });
         _service.ApproveDraft(sessionId, pendingId);
 
         var drafts = _service.GetDraftsByStatus(sessionId, DraftStatus.Draft);
@@ -775,8 +775,8 @@ public class SessionServiceTests : IDisposable
     public void GetDraftsByStatus_FiltersPendingStatus()
     {
         var sessionId = CreateAndSaveSession();
-        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft1" });
-        var (pendingId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "pending1" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "draft1" });
+        var (pendingId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "pending1" });
         _service.ApproveDraft(sessionId, pendingId);
 
         var pending = _service.GetDraftsByStatus(sessionId, DraftStatus.Pending);
@@ -795,7 +795,7 @@ public class SessionServiceTests : IDisposable
     public void GetDraftsByStatus_ReturnsEmptyWhenNoneMatch()
     {
         var sessionId = CreateAndSaveSession();
-        _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "draft" });
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "draft" });
 
         var result = _service.GetDraftsByStatus(sessionId, DraftStatus.Submitted);
         Assert.Empty(result);
@@ -804,11 +804,11 @@ public class SessionServiceTests : IDisposable
     // --- Draft actions ---
 
     [Fact]
-    public void CreateDraftThreadStatusChange_CreatesDraftAction()
+    public void CreateDraftThreadStatusChange_CreatesDraftOperation()
     {
         var sessionId = CreateAndSaveSessionWithThread();
 
-        var (id, action) = _service.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
+        var (id, action) = _service.CreateDraftThreadStatusChange(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             ToThreadStatus = ThreadStatus.WontFix,
@@ -818,7 +818,7 @@ public class SessionServiceTests : IDisposable
         });
 
         Assert.NotEmpty(id);
-        Assert.Equal(DraftActionType.ThreadStatusChange, action.ActionType);
+        Assert.Equal(DraftOperationType.ThreadStatusChange, action.OperationType);
         Assert.Equal(DraftStatus.Draft, action.Status);
         Assert.Equal(ThreadStatus.Active, action.FromThreadStatus);
         Assert.Equal(ThreadStatus.WontFix, action.ToThreadStatus);
@@ -826,18 +826,18 @@ public class SessionServiceTests : IDisposable
         Assert.Equal(DraftAuthor.Ai, action.Author);
 
         var loaded = _store.Load(sessionId)!;
-        Assert.True(loaded.DraftActions.ContainsKey(id));
+        Assert.True(loaded.DraftOperations.ContainsKey(id));
     }
 
     [Fact]
-    public void CreateDraftCommentReaction_CreatesDraftAction()
+    public void CreateDraftOperationReaction_CreatesDraftOperation()
     {
         var sessionId = CreateAndSaveSessionWithThread();
         var session = _store.Load(sessionId)!;
         session.Threads.Items[0].Comments = [new Comment { Id = 7, ThreadId = 42, Body = "You are wrong" }];
         _store.Save(session);
 
-        var (_, action) = _service.CreateDraftCommentReaction(sessionId, new CreateDraftActionRequest
+        var (_, action) = _service.CreateDraftCommentReaction(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             CommentId = 7,
@@ -845,34 +845,34 @@ public class SessionServiceTests : IDisposable
             Author = DraftAuthor.Ai,
         });
 
-        Assert.Equal(DraftActionType.CommentReaction, action.ActionType);
+        Assert.Equal(DraftOperationType.CommentReaction, action.OperationType);
         Assert.Equal(7, action.CommentId);
         Assert.Equal(CommentReaction.Like, action.Reaction);
         Assert.Equal(DraftStatus.Draft, action.Status);
     }
 
     [Fact]
-    public void ApproveAndUnapproveDraftAction_TransitionsStatus()
+    public void ApproveAndUnapproveDraftOperation_TransitionsStatus()
     {
         var sessionId = CreateAndSaveSessionWithThread();
-        var (id, _) = _service.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
+        var (id, _) = _service.CreateDraftThreadStatusChange(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             ToThreadStatus = ThreadStatus.Fixed,
         });
 
-        var approved = _service.ApproveDraftAction(sessionId, id);
+        var approved = _service.ApproveDraft(sessionId, id);
         Assert.Equal(DraftStatus.Pending, approved.Status);
 
-        var unapproved = _service.UnapproveDraftAction(sessionId, id);
+        var unapproved = _service.UnapproveDraft(sessionId, id);
         Assert.Equal(DraftStatus.Draft, unapproved.Status);
     }
 
     [Fact]
-    public void DeleteDraftAction_AuthorGuardPreventsAiDeletingUserAction()
+    public void DeleteDraftOperation_AuthorGuardPreventsAiDeletingUserAction()
     {
         var sessionId = CreateAndSaveSessionWithThread();
-        var (id, _) = _service.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
+        var (id, _) = _service.CreateDraftThreadStatusChange(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             ToThreadStatus = ThreadStatus.Fixed,
@@ -880,7 +880,7 @@ public class SessionServiceTests : IDisposable
         });
 
         var ex = Assert.Throws<SessionServiceException>(() =>
-            _service.DeleteDraftAction(sessionId, id, callerAuthor: DraftAuthor.Ai));
+            _service.DeleteDraft(sessionId, id, callerAuthor: DraftAuthor.Ai));
         Assert.Contains("author mismatch", ex.Message);
     }
 
@@ -890,14 +890,14 @@ public class SessionServiceTests : IDisposable
     public void MarkSubmitted_TransitionsToSubmitted()
     {
         var sessionId = CreateAndSaveSession();
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest { Body = "test" });
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest { Body = "test" });
         _service.ApproveDraft(sessionId, draftId);
 
         // MarkSubmitted is internal, but accessible within the same assembly for testing
         _service.MarkSubmitted(sessionId, draftId);
 
         var loaded = _store.Load(sessionId)!;
-        Assert.Equal(DraftStatus.Submitted, loaded.Drafts[draftId].Status);
+        Assert.Equal(DraftStatus.Submitted, loaded.DraftOperations[draftId].Status);
     }
 
     [Fact]
@@ -946,7 +946,7 @@ public class SessionServiceTests : IDisposable
         var sessionId = CreateAndSaveSession([new ChangedFile { Path = "test.cs" }]);
 
         // Create
-        var (draftId, draft) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, draft) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "test.cs",
             LineStart = 5,
@@ -974,7 +974,7 @@ public class SessionServiceTests : IDisposable
 
         // Delete
         _service.DeleteDraft(sessionId, draftId);
-        Assert.Empty(_store.Load(sessionId)!.Drafts);
+        Assert.Empty(_store.Load(sessionId)!.DraftOperations);
     }
 
     // --- DeleteAllDrafts ---
@@ -983,11 +983,11 @@ public class SessionServiceTests : IDisposable
     public void DeleteAllDrafts_DeletesAllDraftStatus()
     {
         var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
-        _service.CreateDraft(sessionId, new CreateDraftRequest
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs", Body = "Comment 1", Author = DraftAuthor.Ai,
         });
-        _service.CreateDraft(sessionId, new CreateDraftRequest
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs", Body = "Comment 2", Author = DraftAuthor.User,
         });
@@ -995,18 +995,18 @@ public class SessionServiceTests : IDisposable
         var count = _service.DeleteAllDrafts(sessionId);
 
         Assert.Equal(2, count);
-        Assert.Empty(_store.Load(sessionId)!.Drafts);
+        Assert.Empty(_store.Load(sessionId)!.DraftOperations);
     }
 
     [Fact]
     public void DeleteAllDrafts_FilterByAiAuthor_OnlyDeletesAiDrafts()
     {
         var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
-        _service.CreateDraft(sessionId, new CreateDraftRequest
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs", Body = "AI comment", Author = DraftAuthor.Ai,
         });
-        _service.CreateDraft(sessionId, new CreateDraftRequest
+        _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs", Body = "User comment", Author = DraftAuthor.User,
         });
@@ -1014,7 +1014,7 @@ public class SessionServiceTests : IDisposable
         var count = _service.DeleteAllDrafts(sessionId, DraftAuthor.Ai);
 
         Assert.Equal(1, count);
-        var remaining = _store.Load(sessionId)!.Drafts;
+        var remaining = _store.Load(sessionId)!.DraftOperations;
         Assert.Single(remaining);
         Assert.Equal(DraftAuthor.User, remaining.Values.First().Author);
     }
@@ -1023,7 +1023,7 @@ public class SessionServiceTests : IDisposable
     public void DeleteAllDrafts_SkipsPendingDrafts()
     {
         var sessionId = CreateAndSaveSession([new ChangedFile { Path = "src/main.cs" }]);
-        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftRequest
+        var (draftId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             FilePath = "src/main.cs", Body = "Comment", Author = DraftAuthor.Ai,
         });
@@ -1032,7 +1032,7 @@ public class SessionServiceTests : IDisposable
         var count = _service.DeleteAllDrafts(sessionId);
 
         Assert.Equal(0, count); // Pending status is not deletable
-        Assert.Single(_store.Load(sessionId)!.Drafts);
+        Assert.Single(_store.Load(sessionId)!.DraftOperations);
     }
 
     [Fact]

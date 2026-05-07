@@ -36,13 +36,8 @@ public static class SessionMigration
             session.Metadata = ReviewMetadata.FromSession(session);
         }
 
-        // v6 -> v7: Add DraftActions for approval-gated non-comment review actions.
-        if (session.Version < 7)
-        {
-            session.DraftActions ??= new Dictionary<string, DraftAction>();
-        }
-
         session.Version = ReviewSession.CurrentVersion;
+        session.DraftOperations ??= new Dictionary<string, DraftOperation>();
         session.Metadata = ReviewMetadata.FromSession(session);
         return session;
     }

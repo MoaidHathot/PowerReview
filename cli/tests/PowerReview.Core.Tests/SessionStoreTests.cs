@@ -61,7 +61,7 @@ public class SessionStoreTests : IDisposable
     public void SaveAndLoad_RoundTrips()
     {
         var session = CreateTestSession();
-        session.Drafts["draft-1"] = new DraftComment
+        session.DraftOperations["draft-1"] = new DraftOperation
         {
             FilePath = "src/main.cs",
             LineStart = 10,
@@ -82,9 +82,9 @@ public class SessionStoreTests : IDisposable
         Assert.Equal("testorg", loaded.Provider.Organization);
         Assert.Equal(42, loaded.PullRequest.Id);
         Assert.Equal("Test PR", loaded.PullRequest.Title);
-        Assert.Single(loaded.Drafts);
-        Assert.True(loaded.Drafts.ContainsKey("draft-1"));
-        Assert.Equal("Fix this", loaded.Drafts["draft-1"].Body);
+        Assert.Single(loaded.DraftOperations);
+        Assert.True(loaded.DraftOperations.ContainsKey("draft-1"));
+        Assert.Equal("Fix this", loaded.DraftOperations["draft-1"].Body);
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public class SessionStoreTests : IDisposable
     // --- Migration ---
 
     [Fact]
-    public void Load_MigratesV4ToCurrent_AddsProposalsFixWorktreeMetadataAndDraftActions()
+    public void Load_MigratesV4ToCurrent_AddsProposalsFixWorktreeMetadataAndDraftOperations()
     {
         // Create a v4-style session (manually set version to 4)
         var now = DateTime.UtcNow.ToString("o");
@@ -221,8 +221,8 @@ public class SessionStoreTests : IDisposable
         Assert.Equal(ReviewSession.CurrentVersion, loaded.Version);
         Assert.NotNull(loaded.Proposals);
         Assert.Empty(loaded.Proposals);
-        Assert.NotNull(loaded.DraftActions);
-        Assert.Empty(loaded.DraftActions);
+        Assert.NotNull(loaded.DraftOperations);
+        Assert.Empty(loaded.DraftOperations);
         Assert.Null(loaded.FixWorktree);
         Assert.NotNull(loaded.Metadata);
         Assert.Equal(0, loaded.Metadata.Files.Total);

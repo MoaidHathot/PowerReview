@@ -180,4 +180,26 @@ return {
       assert_eq(session.pr_id, 99, "pr_id")
     end,
   },
+
+  -- 13. v7 draft_operations adapt in real Neovim
+  {
+    name = "cli.adapt_session handles v7 draft_operations",
+    fn = function()
+      local cli = require("power-review.cli")
+      local session = cli.adapt_session({
+        id = "draft-operations-test",
+        pull_request = { id = 99, title = "Test PR", author = { display_name = "Tester" } },
+        provider = { type = "github", organization = "o", project = "p", repository = "r" },
+        draft_operations = {
+          ["comment"] = { operation_type = "Comment", body = "comment", created_at = "2025-01-01" },
+          ["status"] = { operation_type = "ThreadStatusChange", thread_id = 99, created_at = "2025-01-02" },
+        },
+      })
+      assert_eq(#session.draft_operations, 2, "operation count")
+      assert_eq(#session.drafts, 1, "comment/reply derived count")
+      assert_eq(session.drafts[1].id, "comment", "derived draft id")
+      assert_eq(#session.draft_actions, 1, "action derived count")
+      assert_eq(session.draft_actions[1].id, "status", "derived action id")
+    end,
+  },
 }

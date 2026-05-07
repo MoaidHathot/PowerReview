@@ -147,7 +147,7 @@ public class ProposalServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         // Create a reply draft first
-        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             Body = "Fixed: null check added",
@@ -323,7 +323,7 @@ public class ProposalServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         // Create reply draft
-        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42,
             Body = "Fixed: null check added",
@@ -344,7 +344,7 @@ public class ProposalServiceTests : IDisposable
 
         // Verify the linked draft was auto-approved
         var loaded = _store.Load(sessionId)!;
-        Assert.Equal(DraftStatus.Pending, loaded.Drafts[replyId].Status);
+        Assert.Equal(DraftStatus.Pending, loaded.DraftOperations[replyId].Status);
     }
 
     [Fact]
@@ -802,7 +802,7 @@ public class ProposalServiceTests : IDisposable
         var sessionId = CreateAndSaveSession();
 
         // Create reply draft
-        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftRequest
+        var (replyId, _) = _sessionService.CreateDraft(sessionId, new CreateDraftOperationRequest
         {
             ThreadId = 42, Body = "Fixed", Author = DraftAuthor.Ai,
         });
@@ -817,7 +817,7 @@ public class ProposalServiceTests : IDisposable
         _service.ApproveAllProposals(sessionId);
 
         var loaded = _store.Load(sessionId)!;
-        Assert.Equal(DraftStatus.Pending, loaded.Drafts[replyId].Status);
+        Assert.Equal(DraftStatus.Pending, loaded.DraftOperations[replyId].Status);
     }
 
     // --- RejectAllProposals ---

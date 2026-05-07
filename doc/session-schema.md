@@ -53,8 +53,7 @@ The v7 format uses a nested structure with logical groupings.
 | `git`          | `GitInfo`                        | yes      | Git workspace state.                                  |
 | `files`        | `ChangedFile[]`                  | yes      | List of files changed in the PR.                      |
 | `threads`      | `ThreadsInfo`                    | yes      | Remote comment threads.                               |
-| `drafts`       | `object`                         | yes      | Local draft comments. Map of `{uuid: DraftComment}`.  |
-| `draft_actions`| `object`                         | yes      | Local draft review actions. Map of `{uuid: DraftAction}`. |
+| `draft_operations` | `object`                    | yes      | Local approval-gated operations. Map of `{uuid: DraftOperation}`. |
 | `proposals`    | `object`                         | yes      | Proposed code fixes. Map of `{uuid: ProposedFix}`.    |
 | `fix_worktree` | `FixWorktreeInfo \| null`        | no       | Fix worktree info for AI code changes, or `null`.     |
 | `metadata`     | `ReviewMetadata`                 | yes      | Derived metadata summaries for UI and AI agents.      |
@@ -73,7 +72,7 @@ Derived counts and normalized labels useful for UI and AI agents. Recomputed by 
 | `reviewers`  | `object` | Reviewer totals by required/vote state.          |
 | `files`      | `object` | Changed-file totals by change type.              |
 | `threads`    | `object` | Thread totals by status and location level.      |
-| `drafts`     | `object` | Draft comment and draft action totals by status and author type. |
+| `drafts`     | `object` | Draft operation totals by status, author type, and operation kind. |
 | `work_items` | `object` | Work item totals by type/state.                  |
 | `review`     | `object` | File review progress counts.                     |
 | `iteration`  | `object` | Current and reviewed iteration commit metadata.  |
@@ -84,21 +83,21 @@ Derived counts and normalized labels useful for UI and AI agents. Recomputed by 
 
 | Field               | Type     | Description                                      |
 |---------------------|----------|--------------------------------------------------|
-| `total`             | `number` | Total draft comments.                            |
-| `draft`             | `number` | Draft comments still awaiting approval.          |
-| `pending`           | `number` | Draft comments approved for submit.              |
-| `submitted`         | `number` | Draft comments already submitted.                |
-| `ai_authored`       | `number` | Draft comments created by AI agents.             |
-| `user_authored`     | `number` | Draft comments created by the user.              |
-| `actions_total`     | `number` | Total draft actions.                             |
-| `actions_draft`     | `number` | Draft actions still awaiting approval.           |
-| `actions_pending`   | `number` | Draft actions approved for submit.               |
-| `actions_submitted` | `number` | Draft actions already submitted.                 |
+| `total`                   | `number` | Total comment/reply draft operations.            |
+| `draft`                   | `number` | Draft operations still awaiting approval.        |
+| `pending`                 | `number` | Draft operations approved for submit.            |
+| `submitted`               | `number` | Draft operations already submitted.              |
+| `ai_authored`             | `number` | Draft operations created by AI agents.           |
+| `user_authored`           | `number` | Draft operations created by the user.            |
+| `comments`                | `number` | New-comment operations.                          |
+| `replies`                 | `number` | Reply operations.                                |
+| `thread_status_changes`   | `number` | Thread status change operations.                 |
+| `comment_reactions`       | `number` | Comment reaction operations.                     |
 
 ### String Formats
 
 - **Timestamps**: ISO 8601 UTC format `YYYY-MM-DDTHH:MM:SSZ`.
-- **UUIDs** (draft, draft action, and proposal keys): Version 4 UUID, e.g. `"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"`.
+- **UUIDs** (draft operation and proposal keys): Version 4 UUID, e.g. `"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"`.
 - **Commit SHAs**: Full 40-character hex SHA.
 - **Enums**: Serialized as lowercase strings (e.g. `"approved"`, `"active"`, `"worktree"`).
 - **Nulls**: Omitted from serialized output.
@@ -400,30 +399,45 @@ A single comment within a `CommentThread`.
 
 ---
 
-## `DraftComment` Object
+## `DraftOperation` Object
 
-A locally-created comment not yet submitted to the provider. Stored as values in the `drafts` map, keyed by UUID.
+A locally-created operation not yet applied to the remote provider. Stored as values in the `draft_operations` map, keyed by UUID.
 
-Drafts follow a strict lifecycle: `draft` -> `pending` -> `submitted`.
+Draft operations follow a strict lifecycle: `draft` -> `pending` -> `submitted`.
 
-| Field               | Type             | Required | Description                                                                  |
-|---------------------|------------------|----------|------------------------------------------------------------------------------|
-| `file_path`         | `string`         | yes      | Relative file path the comment targets.                                      |
-| `line_start`        | `number`         | yes      | Start line number (1-indexed).                                               |
-| `line_end`          | `number \| null` | yes      | End line for multi-line range comments.                                      |
-| `col_start`         | `number \| null` | yes      | Start column (1-indexed byte offset).                                        |
-| `col_end`           | `number \| null` | yes      | End column (1-indexed byte offset).                                          |
-| `body`              | `string`         | yes      | Comment content (markdown).                                                  |
-| `status`            | `string`         | yes      | Draft lifecycle status. See Draft Status Values.                             |
-| `author`            | `string`         | yes      | Who created the draft. See Draft Author Values.                              |
-| `author_name`       | `string \| null` | no       | Display name of the agent or person (e.g. "SecurityReviewer").               |
-| `thread_id`         | `number \| null` | yes      | Remote thread ID when replying, or `null` for new threads.                   |
-| `parent_comment_id` | `number \| null` | yes      | Specific comment being replied to, or `null`.                                |
-| `created_at`        | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
-| `updated_at`        | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
+| Field                | Type             | Required | Description                                                                  |
+|----------------------|------------------|----------|------------------------------------------------------------------------------|
+| `operation_type`     | `string`         | yes      | Operation kind. See Draft Operation Type Values.                             |
+| `file_path`          | `string`         | no       | Relative file path for `Comment` and `Reply` operations.                     |
+| `line_start`         | `number \| null` | no       | Start line number (1-indexed).                                               |
+| `line_end`           | `number \| null` | no       | End line for multi-line range comments.                                      |
+| `col_start`          | `number \| null` | no       | Start column (1-indexed byte offset).                                        |
+| `col_end`            | `number \| null` | no       | End column (1-indexed byte offset).                                          |
+| `body`               | `string \| null` | no       | Comment or reply content (markdown).                                         |
+| `status`             | `string`         | yes      | Draft lifecycle status. See Draft Status Values.                             |
+| `author`             | `string`         | yes      | Who created the operation. See Draft Author Values.                          |
+| `author_name`        | `string \| null` | no       | Display name of the agent or person (e.g. "SecurityReviewer").              |
+| `thread_id`          | `number \| null` | no       | Remote thread ID for replies and remote actions.                             |
+| `parent_comment_id`  | `number \| null` | no       | Specific comment being replied to, or `null`.                                |
+| `comment_id`         | `number \| null` | no       | Remote comment ID for comment reactions.                                     |
+| `from_thread_status` | `string \| null` | no       | Thread status captured when the operation was created.                       |
+| `to_thread_status`   | `string \| null` | no       | Target thread status for `ThreadStatusChange`.                               |
+| `reaction`           | `string \| null` | no       | Target reaction for `CommentReaction`. Currently `Like`.                     |
+| `note`               | `string \| null` | no       | Rationale shown to the user before approval.                                 |
+| `created_at`         | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
+| `updated_at`         | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
 
-> **Note**: The draft's UUID is the *key* in the `drafts` map, not a field in the object itself.
-> The Neovim adapter adds it as `draft.id` when converting to the flat array format.
+> **Note**: The operation's UUID is the *key* in the `draft_operations` map, not a field in the object itself.
+> The Neovim adapter adds it as `operation.id` when converting to the flat array format.
+
+### Draft Operation Type Values
+
+| Value                  | Description                                                   |
+|------------------------|---------------------------------------------------------------|
+| `"Comment"`            | Create a new remote comment thread after submit.              |
+| `"Reply"`              | Reply to an existing remote thread after submit.              |
+| `"ThreadStatusChange"` | Apply a new status to a remote comment thread after submit.   |
+| `"CommentReaction"`    | Apply a reaction to a remote comment after submit.            |
 
 ### Draft Status Values
 
@@ -442,11 +456,12 @@ Drafts follow a strict lifecycle: `draft` -> `pending` -> `submitted`.
 
 ### Example
 
-In the `drafts` map:
+In the `draft_operations` map:
 
 ```json
 {
   "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d": {
+    "operation_type": "Comment",
     "file_path": "src/main.lua",
     "line_start": 42,
     "body": "This function should be refactored to reduce complexity.",
@@ -460,51 +475,20 @@ In the `drafts` map:
 
 ---
 
-## `DraftAction` Object
-
-A locally-created non-comment review action not yet applied to the remote provider. Stored as values in the `draft_actions` map, keyed by UUID.
-
-Draft actions follow the same lifecycle as draft comments: `draft` -> `pending` -> `submitted`.
-
-| Field                | Type             | Required | Description                                                                  |
-|----------------------|------------------|----------|------------------------------------------------------------------------------|
-| `action_type`        | `string`         | yes      | Action kind. See Draft Action Type Values.                                   |
-| `status`             | `string`         | yes      | Draft lifecycle status. See Draft Status Values.                             |
-| `author`             | `string`         | yes      | Who created the action. See Draft Author Values.                             |
-| `author_name`        | `string \| null` | no       | Display name of the agent or person.                                         |
-| `thread_id`          | `number`         | yes      | Remote thread ID the action targets.                                         |
-| `comment_id`         | `number \| null` | no       | Remote comment ID for comment reactions.                                     |
-| `from_thread_status` | `string \| null` | no       | Thread status captured when the action was created.                          |
-| `to_thread_status`   | `string \| null` | no       | Target thread status for `ThreadStatusChange`.                               |
-| `reaction`           | `string \| null` | no       | Target reaction for `CommentReaction`. Currently `Like`.                     |
-| `note`               | `string \| null` | no       | Rationale shown to the user before approval.                                 |
-| `created_at`         | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
-| `updated_at`         | `string`         | yes      | ISO 8601 UTC timestamp.                                                      |
-
-> **Note**: The action's UUID is the *key* in the `draft_actions` map, not a field in the object itself.
-> The Neovim adapter adds it as `action.id` when converting to the flat array format.
-
-### Draft Action Type Values
-
-| Value                  | Description                                                   |
-|------------------------|---------------------------------------------------------------|
-| `"ThreadStatusChange"` | Apply a new status to a remote comment thread after submit.   |
-| `"CommentReaction"`    | Apply a reaction to a remote comment after submit.            |
-
 ### Comment Reaction Values
 
 | Value    | Description                          |
 |----------|--------------------------------------|
 | `"Like"` | Like the targeted remote comment.    |
 
-### Example
+### Remote Action Example
 
-In the `draft_actions` map:
+In the `draft_operations` map:
 
 ```json
 {
   "e7f8a9b0-c1d2-4e3f-9a0b-1c2d3e4f5a6b": {
-    "action_type": "ThreadStatusChange",
+    "operation_type": "ThreadStatusChange",
     "status": "draft",
     "author": "ai",
     "author_name": "CodeFixer",
@@ -744,8 +728,9 @@ A complete v7 session file:
     ],
     "synced_at": "2026-03-27T12:00:00Z"
   },
-  "drafts": {
+  "draft_operations": {
     "f47ac10b-58cc-4372-a567-0e02b2c3d479": {
+      "operation_type": "Comment",
       "file_path": "src/validators/user.lua",
       "line_start": 15,
       "line_end": 28,
@@ -756,6 +741,7 @@ A complete v7 session file:
       "updated_at": "2026-03-27T12:00:00Z"
     },
     "9c4d8e2f-1a3b-4c5d-8e7f-6a5b4c3d2e1f": {
+      "operation_type": "Reply",
       "file_path": "src/handlers/register.lua",
       "line_start": 18,
       "body": "Agreed, rate limiting would be important for this endpoint.",
@@ -767,6 +753,7 @@ A complete v7 session file:
       "updated_at": "2026-03-27T12:45:00Z"
     },
     "d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a": {
+      "operation_type": "Reply",
       "body": "Fixed: added null check for user input as requested.",
       "status": "draft",
       "author": "ai",
@@ -774,11 +761,9 @@ A complete v7 session file:
       "thread_id": 100,
       "created_at": "2026-03-27T13:00:00Z",
       "updated_at": "2026-03-27T13:00:00Z"
-    }
-  },
-  "draft_actions": {
+    },
     "e7f8a9b0-c1d2-4e3f-9a0b-1c2d3e4f5a6b": {
-      "action_type": "ThreadStatusChange",
+      "operation_type": "ThreadStatusChange",
       "status": "draft",
       "author": "ai",
       "author_name": "CodeFixer",
@@ -827,17 +812,17 @@ A complete v7 session file:
 - The `git` object records the strategy and worktree path.
 - The `files` array shows three types of changes: edit, add, and delete. Null fields are omitted.
 - The `threads.items` array contains one file-level thread (with a reply using `parent_comment_id`) and one PR-level thread (`file_path` is omitted/null).
-- The `drafts` is a **map** keyed by UUID, not an array. Each draft's UUID is the key.
-  - First draft: new standalone comment (status `"draft"`, no `thread_id`).
-  - Second draft: reply to existing thread (status `"pending"`, `thread_id` and `parent_comment_id` set).
-  - Third draft: AI-authored reply linked to a proposal (`author` is `"ai"`, `author_name` identifies the agent).
+- The `draft_operations` object is a **map** keyed by UUID, not an array. Each operation's UUID is the key.
+  - First operation: new standalone comment (status `"draft"`, no `thread_id`).
+  - Second operation: reply to existing thread (status `"pending"`, `thread_id` and `parent_comment_id` set).
+  - Third operation: AI-authored reply linked to a proposal (`author` is `"ai"`, `author_name` identifies the agent).
+  - Fourth operation: AI-authored thread status change that remains local until approved and submitted.
 - The `proposals` map contains one proposed code fix by an AI agent. The proposal:
   - Responds to thread 100 (`thread_id` = 100).
   - Has committed changes on branch `powerreview/fix/thread-100`.
   - Links to the third draft reply via `reply_draft_id` (when approved, the reply is auto-approved too).
   - Is in `"draft"` status, awaiting user review and approval.
 - The `fix_worktree` records the isolated worktree where the AI agent made its code changes.
-- The `draft_actions` map contains one AI-authored thread status change. It remains local until approved and submitted.
 
 ---
 
@@ -875,8 +860,7 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v7 format
 | `review.reviewed_files` | `reviewed_files` |
 | `review.changed_since_review` | `changed_since_review` |
 | `threads.items` | `threads` (array) |
-| `drafts` (map) | `drafts` (array, sorted by `created_at`, `id` field added) |
-| `draft_actions` (map) | `draft_actions` (array, sorted by `created_at`, `id` field added) |
+| `draft_operations` (map) | `draft_operations` (array, sorted by `created_at`, `id` field added) |
 | `vote` (string enum) | `vote` (number: approved=10, approved_with_suggestions=5, no_vote=0, wait_for_author=-5, rejected=-10) |
 
 ---
@@ -903,9 +887,9 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v7 format
 
 ### v6 -> v7
 
-- Added the `draft_actions` object (type `Map<UUID, DraftAction>`) for approval-gated thread status changes and comment reactions.
-- Existing v6 sessions are migrated automatically: `draft_actions` defaults to an empty map `{}`.
-- Draft metadata now includes action counts: `actions_total`, `actions_draft`, `actions_pending`, and `actions_submitted`.
+- Replaced separate `drafts` and `draft_actions` maps with `draft_operations` (type `Map<UUID, DraftOperation>`).
+- Draft operations cover comments, replies, thread status changes, and comment reactions under one approval/submission lifecycle.
+- Draft metadata now includes operation-kind counts: `comments`, `replies`, `thread_status_changes`, and `comment_reactions`.
 
 ---
 
@@ -917,7 +901,7 @@ When a session is refreshed (`dnx PowerReview -- open --pr-url ...` on an existi
 - **Files** are fully replaced with the latest iteration's changed files. Iteration metadata is updated.
 - **Threads** are fully replaced with fresh data from the provider.
 - **Review state** undergoes smart reset: if the iteration changed, files that were modified between iterations lose their "reviewed" mark; unchanged files retain it. `changed_since_review` is recomputed.
-- **Drafts** and **draft actions** are preserved. They are never affected by refresh operations.
+- **Draft operations** are preserved. They are never affected by refresh operations.
 - **Proposals** and **fix worktree** are preserved. They are never affected by refresh operations.
 
 When only threads are synced (`dnx PowerReview -- sync --pr-url ...`):

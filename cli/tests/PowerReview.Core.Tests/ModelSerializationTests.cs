@@ -54,9 +54,9 @@ public class ModelSerializationTests
     }
 
     [Fact]
-    public void DraftComment_SerializesWithCorrectPropertyNames()
+    public void DraftOperation_RemoteActionSerializesWithCorrectPropertyNames()
     {
-        var draft = new DraftComment
+        var draft = new DraftOperation
         {
             FilePath = "src/main.cs",
             LineStart = 10,
@@ -89,9 +89,9 @@ public class ModelSerializationTests
     }
 
     [Fact]
-    public void DraftComment_ComputedPropertiesNotSerialized()
+    public void DraftOperation_ComputedPropertiesNotSerialized()
     {
-        var draft = new DraftComment
+        var draft = new DraftOperation
         {
             Status = DraftStatus.Draft,
             CreatedAt = "2024-01-01T00:00:00Z",
@@ -111,9 +111,9 @@ public class ModelSerializationTests
     }
 
     [Fact]
-    public void DraftComment_ComputedProperties_Draft()
+    public void DraftOperation_ComputedProperties_Draft()
     {
-        var draft = new DraftComment { Status = DraftStatus.Draft, Author = DraftAuthor.User };
+        var draft = new DraftOperation { Status = DraftStatus.Draft, Author = DraftAuthor.User };
         Assert.True(draft.CanEdit);
         Assert.True(draft.CanDelete);
         Assert.False(draft.IsReply);
@@ -121,24 +121,24 @@ public class ModelSerializationTests
     }
 
     [Fact]
-    public void DraftComment_ComputedProperties_Pending()
+    public void DraftOperation_ComputedProperties_Pending()
     {
-        var draft = new DraftComment { Status = DraftStatus.Pending };
+        var draft = new DraftOperation { Status = DraftStatus.Pending };
         Assert.False(draft.CanEdit);
         Assert.False(draft.CanDelete);
     }
 
     [Fact]
-    public void DraftComment_ComputedProperties_Reply()
+    public void DraftOperation_ComputedProperties_Reply()
     {
-        var draft = new DraftComment { ThreadId = 1 };
+        var draft = new DraftOperation { ThreadId = 1 };
         Assert.True(draft.IsReply);
     }
 
     [Fact]
-    public void DraftComment_ComputedProperties_AiAuthored()
+    public void DraftOperation_ComputedProperties_AiAuthored()
     {
-        var draft = new DraftComment { Author = DraftAuthor.Ai };
+        var draft = new DraftOperation { Author = DraftAuthor.Ai };
         Assert.True(draft.IsAiAuthored);
     }
 
@@ -188,15 +188,18 @@ public class ModelSerializationTests
                     }
                 ],
             },
-            Drafts = new Dictionary<string, DraftComment>
+            DraftOperations = new Dictionary<string, DraftOperation>
             {
-                ["d1"] = new DraftComment { Body = "draft 1", CreatedAt = "2024-01-01T00:00:00Z", UpdatedAt = "2024-01-01T00:00:00Z" },
-            },
-            DraftActions = new Dictionary<string, DraftAction>
-            {
-                ["a1"] = new DraftAction
+                ["d1"] = new DraftOperation
                 {
-                    ActionType = DraftActionType.ThreadStatusChange,
+                    OperationType = DraftOperationType.Comment,
+                    Body = "draft 1",
+                    CreatedAt = "2024-01-01T00:00:00Z",
+                    UpdatedAt = "2024-01-01T00:00:00Z",
+                },
+                ["a1"] = new DraftOperation
+                {
+                    OperationType = DraftOperationType.ThreadStatusChange,
                     ThreadId = 1,
                     ToThreadStatus = ThreadStatus.WontFix,
                     CreatedAt = "2024-01-01T00:00:00Z",
@@ -219,19 +222,18 @@ public class ModelSerializationTests
         Assert.Equal(ChangeType.Edit, deserialized.Files[0].ChangeType);
         Assert.Single(deserialized.Threads.Items);
         Assert.Single(deserialized.Threads.Items[0].Comments);
-        Assert.Single(deserialized.Drafts);
-        Assert.Equal("draft 1", deserialized.Drafts["d1"].Body);
-        Assert.Single(deserialized.DraftActions);
-        Assert.Equal(ThreadStatus.WontFix, deserialized.DraftActions["a1"].ToThreadStatus);
+        Assert.Equal(2, deserialized.DraftOperations.Count);
+        Assert.Equal("draft 1", deserialized.DraftOperations["d1"].Body);
+        Assert.Equal(ThreadStatus.WontFix, deserialized.DraftOperations["a1"].ToThreadStatus);
         Assert.Equal(VoteValue.Approve, deserialized.Vote);
     }
 
     [Fact]
-    public void DraftAction_SerializesWithCorrectPropertyNames()
+    public void DraftOperation_SerializesWithCorrectPropertyNames()
     {
-        var action = new DraftAction
+        var action = new DraftOperation
         {
-            ActionType = DraftActionType.CommentReaction,
+            OperationType = DraftOperationType.CommentReaction,
             Status = DraftStatus.Draft,
             Author = DraftAuthor.Ai,
             AuthorName = "Agent",
@@ -245,7 +247,7 @@ public class ModelSerializationTests
 
         var json = JsonSerializer.Serialize(action, JsonOptions);
 
-        Assert.Contains("\"action_type\"", json);
+        Assert.Contains("\"operation_type\"", json);
         Assert.Contains("\"thread_id\"", json);
         Assert.Contains("\"comment_id\"", json);
         Assert.Contains("\"reaction\"", json);
@@ -288,15 +290,12 @@ public class ModelSerializationTests
                     new CommentThread { Id = 2, Status = ThreadStatus.Fixed },
                 ],
             },
-            Drafts = new Dictionary<string, DraftComment>
+            DraftOperations = new Dictionary<string, DraftOperation>
             {
-                ["d1"] = new() { Status = DraftStatus.Draft, Author = DraftAuthor.Ai },
-                ["d2"] = new() { Status = DraftStatus.Pending, Author = DraftAuthor.User },
-            },
-            DraftActions = new Dictionary<string, DraftAction>
-            {
-                ["a1"] = new() { Status = DraftStatus.Draft, ActionType = DraftActionType.ThreadStatusChange, ThreadId = 1, ToThreadStatus = ThreadStatus.Fixed },
-                ["a2"] = new() { Status = DraftStatus.Pending, ActionType = DraftActionType.CommentReaction, ThreadId = 2, CommentId = 1, Reaction = CommentReaction.Like },
+                ["d1"] = new() { OperationType = DraftOperationType.Comment, Status = DraftStatus.Draft, Author = DraftAuthor.Ai },
+                ["d2"] = new() { OperationType = DraftOperationType.Reply, Status = DraftStatus.Pending, Author = DraftAuthor.User },
+                ["a1"] = new() { Status = DraftStatus.Draft, OperationType = DraftOperationType.ThreadStatusChange, ThreadId = 1, ToThreadStatus = ThreadStatus.Fixed },
+                ["a2"] = new() { Status = DraftStatus.Pending, OperationType = DraftOperationType.CommentReaction, ThreadId = 2, CommentId = 1, Reaction = CommentReaction.Like },
             },
             Review = new ReviewState
             {
@@ -319,10 +318,12 @@ public class ModelSerializationTests
         Assert.Equal(2, metadata.Threads.Total);
         Assert.Equal(1, metadata.Threads.Active);
         Assert.Equal(1, metadata.Threads.LineLevel);
-        Assert.Equal(2, metadata.Drafts.Total);
-        Assert.Equal(1, metadata.Drafts.AiAuthored);
-        Assert.Equal(2, metadata.Drafts.ActionsTotal);
-        Assert.Equal(1, metadata.Drafts.ActionsPending);
+        Assert.Equal(2, metadata.DraftOperations.Total);
+        Assert.Equal(1, metadata.DraftOperations.AiAuthored);
+        Assert.Equal(1, metadata.DraftOperations.Comments);
+        Assert.Equal(1, metadata.DraftOperations.Replies);
+        Assert.Equal(1, metadata.DraftOperations.ThreadStatusChanges);
+        Assert.Equal(1, metadata.DraftOperations.CommentReactions);
         Assert.Equal(2, metadata.WorkItems.Total);
         Assert.Equal(1, metadata.WorkItems.ByType["Bug"]);
         Assert.Equal(1, metadata.Review.ReviewedFiles);
@@ -357,9 +358,9 @@ public class ModelSerializationTests
     }
 
     [Fact]
-    public void DraftComment_AuthorName_RoundTrips()
+    public void DraftOperation_AuthorName_RoundTrips()
     {
-        var draft = new DraftComment
+        var draft = new DraftOperation
         {
             Body = "test",
             Author = DraftAuthor.Ai,
@@ -372,14 +373,14 @@ public class ModelSerializationTests
         Assert.Contains("\"author_name\"", json);
         Assert.Contains("SecurityReviewer", json);
 
-        var deserialized = JsonSerializer.Deserialize<DraftComment>(json, JsonOptions)!;
+        var deserialized = JsonSerializer.Deserialize<DraftOperation>(json, JsonOptions)!;
         Assert.Equal("SecurityReviewer", deserialized.AuthorName);
     }
 
     [Fact]
-    public void DraftComment_AuthorName_OmittedWhenNull()
+    public void DraftOperation_AuthorName_OmittedWhenNull()
     {
-        var draft = new DraftComment
+        var draft = new DraftOperation
         {
             Body = "test",
             Author = DraftAuthor.Ai,

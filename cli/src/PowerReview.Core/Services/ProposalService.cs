@@ -50,7 +50,8 @@ public sealed class ProposalService
         // Validate linked reply draft if specified
         if (request.ReplyDraftId != null)
         {
-            if (!session.Drafts.ContainsKey(request.ReplyDraftId))
+            if (!session.DraftOperations.TryGetValue(request.ReplyDraftId, out var linkedDraft)
+                || linkedDraft.OperationType != DraftOperationType.Reply)
                 throw new ProposalServiceException(
                     $"Linked reply draft not found: {request.ReplyDraftId}");
         }
@@ -101,7 +102,8 @@ public sealed class ProposalService
 
         // Auto-approve linked reply draft
         if (proposal.ReplyDraftId != null
-            && session.Drafts.TryGetValue(proposal.ReplyDraftId, out var linkedDraft)
+            && session.DraftOperations.TryGetValue(proposal.ReplyDraftId, out var linkedDraft)
+            && linkedDraft.OperationType == DraftOperationType.Reply
             && linkedDraft.Status == DraftStatus.Draft)
         {
             linkedDraft.Status = DraftStatus.Pending;
@@ -367,7 +369,8 @@ public sealed class ProposalService
 
             // Auto-approve linked reply draft
             if (proposal.ReplyDraftId != null
-                && session.Drafts.TryGetValue(proposal.ReplyDraftId, out var linkedDraft)
+                && session.DraftOperations.TryGetValue(proposal.ReplyDraftId, out var linkedDraft)
+                && linkedDraft.OperationType == DraftOperationType.Reply
                 && linkedDraft.Status == DraftStatus.Draft)
             {
                 linkedDraft.Status = DraftStatus.Pending;

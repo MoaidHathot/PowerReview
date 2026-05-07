@@ -100,15 +100,14 @@ local function build_nodes(session)
 
   local filter_label = M._filter == "ai" and " [AI only]" or ""
   local summary_text = string.format(
-    "Drafts: %d comments + %d actions (%d draft, %d pending, %d submitted; actions %d/%d/%d) | AI: %d%s",
+    "Draft operations: %d total (%d comments, %d replies, %d actions; %d draft, %d pending, %d submitted) | AI: %d%s",
     all_counts.total,
+    all_counts.comments_total,
+    all_counts.replies_total,
     all_counts.actions_total,
     all_counts.draft,
     all_counts.pending,
     all_counts.submitted,
-    all_counts.actions_draft,
-    all_counts.actions_pending,
-    all_counts.actions_submitted,
     ai_count,
     filter_label
   )
@@ -645,7 +644,7 @@ function M._setup_keymaps(split, tree, session)
   split:map("n", "A", function()
     local helpers = require("power-review.session_helpers")
     local counts = helpers.get_draft_counts(session)
-    local total_draft = counts.draft + counts.actions_draft
+    local total_draft = counts.draft
     if total_draft == 0 then
       log.info("No drafts to approve")
       return
@@ -656,18 +655,7 @@ function M._setup_keymaps(split, tree, session)
     }, function(input)
       if input == "y" or input == "Y" then
         local count = pr.api.approve_all_drafts()
-        local action_count = 0
-        for _, a in ipairs((pr.get_current_session() or session).draft_actions or {}) do
-          if a.status == "draft" then
-            local ok_a, err_a = pr.api.approve_draft_action(a.id)
-            if ok_a then
-              action_count = action_count + 1
-            else
-              log.warn("Failed to approve action %s: %s", a.id, err_a or "unknown")
-            end
-          end
-        end
-        log.info("Approved %d draft(s) and %d action(s)", count, action_count)
+        log.info("Approved %d draft operation(s)", count)
         local current = pr.get_current_session() or session
         session = current
         M.refresh(current)
@@ -795,7 +783,7 @@ function M._setup_keymaps(split, tree, session)
     elseif action then
       local lines = {
         string.format("Draft action: %s", action.id),
-        string.format("Type: %s", action.action_type),
+        string.format("Type: %s", action.operation_type or action.action_type),
         string.format("Status: %s", action.status),
         string.format(
           "Author: %s",

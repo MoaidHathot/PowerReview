@@ -34,9 +34,11 @@ public enum DraftAuthor
 /// <summary>
 /// Type of non-comment review action that can be drafted for user approval.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<DraftActionType>))]
-public enum DraftActionType
+[JsonConverter(typeof(JsonStringEnumConverter<DraftOperationType>))]
+public enum DraftOperationType
 {
+    Comment,
+    Reply,
     ThreadStatusChange,
     CommentReaction,
 }

@@ -24,7 +24,7 @@ public sealed class ThreadTools
         try
         {
             var sessionId = ToolHelpers.ResolveSessionId(prUrl);
-            var (id, draft) = sessionService.CreateDraft(sessionId, new CreateDraftRequest
+            var (id, operation) = sessionService.CreateDraftReply(sessionId, new CreateDraftOperationRequest
             {
                 Body = body,
                 ThreadId = threadId,
@@ -35,7 +35,7 @@ public sealed class ThreadTools
             return ToolHelpers.ToJson(new
             {
                 id,
-                draft,
+                operation,
                 note = "Draft reply created. The user must approve it before it can be submitted.",
             });
         }
@@ -46,7 +46,7 @@ public sealed class ThreadTools
     }
 
     [McpServerTool, Description(
-        "Create a draft action to update a comment thread status after user approval. " +
+        "Create a draft operation to update a comment thread status after user approval. " +
         "This does not update the remote provider directly. " +
         "Valid statuses: active, fixed, wontfix, closed, bydesign, pending.")]
     public static string DraftThreadStatusChange(
@@ -61,7 +61,7 @@ public sealed class ThreadTools
         {
             var threadStatus = ParseThreadStatus(status);
             var sessionId = ToolHelpers.ResolveSessionId(prUrl);
-            var (id, action) = sessionService.CreateDraftThreadStatusChange(sessionId, new CreateDraftActionRequest
+            var (id, operation) = sessionService.CreateDraftThreadStatusChange(sessionId, new CreateDraftOperationRequest
             {
                 ThreadId = threadId,
                 ToThreadStatus = threadStatus,
@@ -73,8 +73,8 @@ public sealed class ThreadTools
             return ToolHelpers.ToJson(new
             {
                 id,
-                action,
-                note = "Draft action created. The user must approve it before submit applies it remotely.",
+                operation,
+                note = "Draft operation created. The user must approve it before submit applies it remotely.",
             });
         }
         catch (SessionServiceException ex)
@@ -88,7 +88,7 @@ public sealed class ThreadTools
     }
 
     [McpServerTool, Description(
-        "Create a draft action to react to a comment after user approval. " +
+        "Create a draft operation to react to a comment after user approval. " +
         "This does not update the remote provider directly. Currently supported reaction: like.")]
     public static string DraftCommentReaction(
         SessionService sessionService,
@@ -108,7 +108,7 @@ public sealed class ThreadTools
             };
 
             var sessionId = ToolHelpers.ResolveSessionId(prUrl);
-            var (id, action) = sessionService.CreateDraftCommentReaction(sessionId, new CreateDraftActionRequest
+            var (id, operation) = sessionService.CreateDraftCommentReaction(sessionId, new CreateDraftOperationRequest
             {
                 ThreadId = threadId,
                 CommentId = commentId,
@@ -121,8 +121,8 @@ public sealed class ThreadTools
             return ToolHelpers.ToJson(new
             {
                 id,
-                action,
-                note = "Draft action created. The user must approve it before submit applies it remotely.",
+                operation,
+                note = "Draft operation created. The user must approve it before submit applies it remotely.",
             });
         }
         catch (SessionServiceException ex)

@@ -43,6 +43,7 @@ public sealed class SessionStore
     /// </summary>
     public void Save(ReviewSession session)
     {
+        session.NormalizeDraftOperations();
         session.UpdatedAt = DateTime.UtcNow.ToString("o");
         session.Metadata = ReviewMetadata.FromSession(session);
 
@@ -143,7 +144,7 @@ public sealed class SessionStore
                     Organization = session.Provider.Organization,
                     Project = session.Provider.Project,
                     Repository = session.Provider.Repository,
-                    DraftCount = session.Drafts.Count,
+                    DraftCount = session.DraftOperations.Count,
                     CreatedAt = session.CreatedAt,
                     UpdatedAt = session.UpdatedAt,
                 });

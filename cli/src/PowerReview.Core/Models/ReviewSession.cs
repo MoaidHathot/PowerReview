@@ -42,17 +42,11 @@ public sealed class ReviewSession
     public ThreadsInfo Threads { get; set; } = new();
 
     /// <summary>
-    /// Draft comments keyed by UUID. Map for O(1) lookups.
+    /// Approval-gated draft operations keyed by UUID. Operations can create comments,
+    /// reply to threads, change thread status, or apply reactions.
     /// </summary>
-    [JsonPropertyName("drafts")]
-    public Dictionary<string, DraftComment> Drafts { get; set; } = new();
-
-    /// <summary>
-    /// Non-comment review actions keyed by UUID. These are proposed remote actions
-    /// that require user approval before submission.
-    /// </summary>
-    [JsonPropertyName("draft_actions")]
-    public Dictionary<string, DraftAction> DraftActions { get; set; } = new();
+    [JsonPropertyName("draft_operations")]
+    public Dictionary<string, DraftOperation> DraftOperations { get; set; } = new();
 
     /// <summary>
     /// Proposed code fixes keyed by UUID. Each proposal represents an AI-suggested
@@ -96,6 +90,8 @@ public sealed class ReviewSession
         // Replace anything that's not alphanumeric, hyphen, or underscore
         return System.Text.RegularExpressions.Regex.Replace(sanitized, @"[^a-z0-9\-_]", "_");
     }
+
+    public void NormalizeDraftOperations() { }
 }
 
 /// <summary>

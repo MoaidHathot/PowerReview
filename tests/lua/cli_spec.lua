@@ -251,6 +251,50 @@ describe("adapt_session", function()
     assert.equal("thread_status_change", s.draft_actions[1].action_type)
   end)
 
+  it("converts draft_operations from map and derives legacy UI views", function()
+    local input = make_cli_session()
+    input.drafts = nil
+    input.draft_actions = nil
+    input.draft_operations = {
+      ["op-reply"] = {
+        operation_type = "Reply",
+        body = "reply body",
+        thread_id = 100,
+        status = "pending",
+        created_at = "2025-06-01T01:00:00Z",
+      },
+      ["op-status"] = {
+        operation_type = "ThreadStatusChange",
+        thread_id = 100,
+        to_thread_status = "Fixed",
+        status = "draft",
+        created_at = "2025-06-01T02:00:00Z",
+      },
+      ["op-comment"] = {
+        operation_type = "Comment",
+        body = "comment body",
+        file_path = "src/foo.lua",
+        status = "draft",
+        created_at = "2025-06-01T00:00:00Z",
+      },
+    }
+
+    local s = cli.adapt_session(input)
+
+    assert.is_table(s.draft_operations)
+    assert.equal(3, #s.draft_operations)
+    assert.equal("op-comment", s.draft_operations[1].id)
+    assert.equal("op-reply", s.draft_operations[2].id)
+    assert.equal("op-status", s.draft_operations[3].id)
+
+    assert.equal(2, #s.drafts)
+    assert.equal("op-comment", s.drafts[1].id)
+    assert.equal("op-reply", s.drafts[2].id)
+
+    assert.equal(1, #s.draft_actions)
+    assert.equal("op-status", s.draft_actions[1].id)
+  end)
+
   it("returns already-flat sessions unchanged", function()
     local flat = make_flat_session()
     local s = cli.adapt_session(flat)

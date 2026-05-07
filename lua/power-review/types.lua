@@ -135,13 +135,20 @@
 ---@field created_at string ISO timestamp
 ---@field updated_at string ISO timestamp
 
----@class PowerReview.DraftAction
+---@class PowerReview.DraftOperation
 ---@field id string Local UUID
----@field action_type "thread_status_change"|"comment_reaction"|"ThreadStatusChange"|"CommentReaction"
+---@field operation_type "Comment"|"Reply"|"ThreadStatusChange"|"CommentReaction"|"comment"|"reply"|"thread_status_change"|"comment_reaction"
+---@field action_type? "thread_status_change"|"comment_reaction"|"ThreadStatusChange"|"CommentReaction"
 ---@field status PowerReview.DraftStatus
 ---@field author PowerReview.DraftAuthor
 ---@field author_name? string Display name of the agent or person
----@field thread_id number Remote thread ID
+---@field file_path? string Relative file path
+---@field line_start? number 1-indexed line number
+---@field line_end? number End line for range comments
+---@field col_start? number 1-indexed start column
+---@field col_end? number 1-indexed end column
+---@field body? string Markdown content
+---@field thread_id? number Remote thread ID
 ---@field comment_id? number Remote comment ID for reactions
 ---@field from_thread_status? PowerReview.ThreadStatus
 ---@field to_thread_status? PowerReview.ThreadStatus Target status for thread status changes
@@ -183,8 +190,9 @@
 ---@field created_at string ISO timestamp
 ---@field updated_at string ISO timestamp
 ---@field vote? PowerReview.ReviewVote
+---@field draft_operations PowerReview.DraftOperation[]
 ---@field drafts PowerReview.DraftComment[]
----@field draft_actions PowerReview.DraftAction[]
+---@field draft_actions PowerReview.DraftOperation[]
 ---@field threads PowerReview.CommentThread[]
 ---@field files PowerReview.ChangedFile[]
 ---@field metadata? PowerReview.ReviewMetadata Derived metadata summaries for UI and AI agents
