@@ -172,6 +172,8 @@
 ---@field threads PowerReview.CommentThread[]
 ---@field files PowerReview.ChangedFile[]
 ---@field metadata? PowerReview.ReviewMetadata Derived metadata summaries for UI and AI agents
+---@field _open_action? "opened"|"refreshed" Result action from `powerreview open`
+---@field _session_file_path? string Session file path returned by `powerreview open` or `refresh`
 
 ---@class PowerReview.SessionSummary
 ---@field id string

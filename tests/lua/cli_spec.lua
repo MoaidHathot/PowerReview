@@ -301,6 +301,26 @@ describe("adapt_session", function()
 end)
 
 -- ============================================================================
+-- _adapt_session_result
+-- ============================================================================
+
+describe("_adapt_session_result", function()
+  it("attaches open action and session file path", function()
+    local result = {
+      action = "refreshed",
+      session_file_path = "/tmp/powerreview/session.json",
+      session = make_cli_session(),
+    }
+
+    local s = cli._adapt_session_result(result)
+
+    assert.equal("refreshed", s._open_action)
+    assert.equal("/tmp/powerreview/session.json", s._session_file_path)
+    assert.equal(42, s.pr_id)
+  end)
+end)
+
+-- ============================================================================
 -- _adapt_session_summaries
 -- ============================================================================
 

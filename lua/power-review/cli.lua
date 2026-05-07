@@ -224,8 +224,9 @@ end
 -- ============================================================================
 
 --- Open a review for a PR URL.
---- The CLI returns `{ session_file_path, session }`. The session_file_path is
---- attached to the adapted session as `_session_file_path` for the watcher.
+--- The CLI returns `{ action, session_file_path, session }`. The session_file_path is
+--- attached to the adapted session as `_session_file_path` for the watcher, and
+--- action is attached as `_open_action` (`opened` or `refreshed`).
 ---@param pr_url string
 ---@param repo_path? string
 ---@param callback fun(err?: string, session?: PowerReview.ReviewSession)
@@ -241,13 +242,20 @@ function M.open(pr_url, repo_path, callback)
       callback(err)
       return
     end
-    -- CLI wraps the response: { session_file_path: "...", session: { ... } }
-    local session_file_path = result.session_file_path
-    local raw_session = result.session or result
-    local session = M.adapt_session(raw_session)
-    session._session_file_path = session_file_path
-    callback(nil, session)
+    callback(nil, M._adapt_session_result(result))
   end, { timeout = config.get().cli.timeouts.open }) -- open can be slow (git fetch, API calls)
+end
+
+---@private
+---@param result table Raw `powerreview open` or `refresh` result
+---@return PowerReview.ReviewSession session
+function M._adapt_session_result(result)
+  local session_file_path = result.session_file_path
+  local raw_session = result.session or result
+  local session = M.adapt_session(raw_session)
+  session._session_file_path = session_file_path
+  session._open_action = result.action
+  return session
 end
 
 --- Get session info for a PR URL.
@@ -491,11 +499,7 @@ function M.refresh(pr_url, callback)
       callback(err)
       return
     end
-    local session_file_path = result.session_file_path
-    local raw_session = result.session or result
-    local session = M.adapt_session(raw_session)
-    session._session_file_path = session_file_path
-    callback(nil, session)
+    callback(nil, M._adapt_session_result(result))
   end, { timeout = config.get().cli.timeouts.open })
 end
 

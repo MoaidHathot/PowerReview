@@ -157,4 +157,24 @@ return {
       assert_eq(session.drafts[1].id, "x", "draft id")
     end,
   },
+
+  -- 12. open/refresh result adapter preserves session metadata
+  {
+    name = "cli._adapt_session_result preserves open action and session path",
+    fn = function()
+      local cli = require("power-review.cli")
+      local session = cli._adapt_session_result({
+        action = "refreshed",
+        session_file_path = "/tmp/powerreview/session.json",
+        session = {
+          id = "integration-test",
+          pull_request = { id = 99, title = "Test PR", author = { display_name = "Tester" } },
+          provider = { type = "github", organization = "o", project = "p", repository = "r" },
+        },
+      })
+      assert_eq(session._open_action, "refreshed", "open action")
+      assert_eq(session._session_file_path, "/tmp/powerreview/session.json", "session path")
+      assert_eq(session.pr_id, 99, "pr_id")
+    end,
+  },
 }

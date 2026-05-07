@@ -1,15 +1,14 @@
 using PowerReview.Core.Auth;
 using PowerReview.Core.Configuration;
 using PowerReview.Core.Models;
+using PowerReview.Core.Providers;
 using PowerReview.Core.Services;
 using PowerReview.Core.Store;
 
 namespace PowerReview.Core.Tests;
 
 /// <summary>
-/// Tests for ReviewService — focusing on pure-local read methods
-/// (GetSession, GetFiles, GetFileDiff, GetThreads) that don't require
-/// a remote provider or authentication.
+/// Tests for ReviewService lifecycle and local read methods.
 /// </summary>
 public class ReviewServiceTests : IDisposable
 {
@@ -184,6 +183,21 @@ public class ReviewServiceTests : IDisposable
         return session;
     }
 
+    private ReviewService CreateService(FakeProvider provider)
+    {
+        var config = new PowerReviewConfig();
+        config.Auth.AzDo.Method = "pat";
+        config.Auth.AzDo.PatEnvVar = "POWERREVIEW_TEST_PAT";
+        Environment.SetEnvironmentVariable(config.Auth.AzDo.PatEnvVar, "test-token");
+
+        return new ReviewService(
+            _store,
+            _sessionService,
+            config,
+            new AuthResolver(config.Auth),
+            providerFactory: (_, _) => provider);
+    }
+
     private static async Task<string> RunGitAsync(string[] args, string workingDirectory)
     {
         var psi = new System.Diagnostics.ProcessStartInfo
@@ -210,6 +224,97 @@ public class ReviewServiceTests : IDisposable
             throw new InvalidOperationException($"git {string.Join(' ', args)} failed: {stderr}");
 
         return stdout.Trim();
+    }
+
+    // ========================================================================
+    // OpenAsync
+    // ========================================================================
+
+    [Fact]
+    public async Task OpenAsync_ExistingSession_RefreshesWithoutGitSetup()
+    {
+        var existing = CreateAndSaveSession();
+        existing.Git.RepoPath = "old-repo";
+        existing.Git.WorktreePath = "old-worktree";
+        existing.Drafts["draft-1"] = new DraftComment
+        {
+            FilePath = "src/main.cs",
+            Body = "preserve me",
+        };
+        existing.Vote = VoteValue.Approve;
+        existing.Review.ReviewedFiles = ["src/main.cs"];
+        existing.Proposals["proposal-1"] = new ProposedFix
+        {
+            ThreadId = 101,
+            Description = "preserve proposal",
+            BranchName = "powerreview/fix/thread-101",
+        };
+        existing.FixWorktree = new FixWorktreeInfo { Path = "fix-worktree", BaseBranch = "feature/test" };
+        _store.Save(existing);
+
+        var provider = new FakeProvider
+        {
+            PullRequest = new PullRequest
+            {
+                Id = 42,
+                Url = TestPrUrl,
+                Title = "Refreshed PR",
+                Description = "Refreshed description",
+                TargetBranch = "main",
+            },
+            Files = [new ChangedFile { Path = "src/refreshed.cs", ChangeType = ChangeType.Add }],
+            Iteration = new IterationMeta { Id = 2, SourceCommit = "new-source", TargetCommit = "new-target" },
+            Threads = [new CommentThread { Id = 201, FilePath = "src/refreshed.cs", Status = ThreadStatus.Active }],
+        };
+        var service = CreateService(provider);
+
+        var result = await service.OpenAsync(TestPrUrl, repoPath: Path.Combine(_tempDir, "not-a-repo"));
+
+        Assert.Equal("refreshed", result.Action);
+        Assert.Equal("Refreshed PR", result.Session.PullRequest.Title);
+        Assert.Equal("old-repo", result.Session.Git.RepoPath);
+        Assert.Equal("old-worktree", result.Session.Git.WorktreePath);
+        Assert.True(result.Session.Drafts.ContainsKey("draft-1"));
+        Assert.Equal(VoteValue.Approve, result.Session.Vote);
+        Assert.Contains("src/main.cs", result.Session.Review.ReviewedFiles);
+        Assert.True(result.Session.Proposals.ContainsKey("proposal-1"));
+        Assert.Equal("fix-worktree", result.Session.FixWorktree?.Path);
+        Assert.Equal(1, provider.GetPullRequestCalls);
+        Assert.Equal(1, provider.GetChangedFilesCalls);
+        Assert.Equal(1, provider.GetThreadsCalls);
+        Assert.Equal(0, provider.CreateThreadCalls);
+        Assert.Single(result.Session.Files);
+        Assert.Equal("src/refreshed.cs", result.Session.Files[0].Path);
+        Assert.Single(result.Session.Threads.Items);
+        Assert.Equal(201, result.Session.Threads.Items[0].Id);
+    }
+
+    [Fact]
+    public async Task OpenAsync_NewSession_ReturnsOpenedAction()
+    {
+        var provider = new FakeProvider
+        {
+            PullRequest = new PullRequest
+            {
+                Id = 42,
+                Url = TestPrUrl,
+                Title = "New PR",
+                Description = "New description",
+                TargetBranch = "main",
+            },
+            Files = [new ChangedFile { Path = "src/new.cs", ChangeType = ChangeType.Add }],
+            Iteration = new IterationMeta { Id = 1, SourceCommit = "source", TargetCommit = "target" },
+            Threads = [new CommentThread { Id = 301, FilePath = "src/new.cs", Status = ThreadStatus.Active }],
+        };
+        var service = CreateService(provider);
+
+        var result = await service.OpenAsync(TestPrUrl);
+
+        Assert.Equal("opened", result.Action);
+        Assert.Equal("New PR", result.Session.PullRequest.Title);
+        Assert.Null(result.Session.Git.RepoPath);
+        Assert.Single(result.Session.Files);
+        Assert.Equal("src/new.cs", result.Session.Files[0].Path);
     }
 
     // ========================================================================
@@ -492,5 +597,92 @@ public class ReviewServiceTests : IDisposable
         var threads = _service.GetThreads(
             "https://dev.azure.com/noorg/noproj/_git/norepo/pullrequest/999");
         Assert.Null(threads);
+    }
+
+    private sealed class FakeProvider : IProvider
+    {
+        public ProviderType ProviderType => ProviderType.AzDo;
+
+        public PullRequest PullRequest { get; set; } = new();
+        public List<ChangedFile> Files { get; set; } = [];
+        public IterationMeta Iteration { get; set; } = new();
+        public List<CommentThread> Threads { get; set; } = [];
+        public int GetPullRequestCalls { get; private set; }
+        public int GetChangedFilesCalls { get; private set; }
+        public int GetThreadsCalls { get; private set; }
+        public int CreateThreadCalls { get; private set; }
+
+        public Task<PullRequest> GetPullRequestAsync(int prId, CancellationToken ct = default)
+        {
+            GetPullRequestCalls++;
+            return Task.FromResult(PullRequest);
+        }
+
+        public Task<(List<ChangedFile> Files, IterationMeta Iteration)> GetChangedFilesAsync(int prId, CancellationToken ct = default)
+        {
+            GetChangedFilesCalls++;
+            return Task.FromResult((Files, Iteration));
+        }
+
+        public Task<List<CommentThread>> GetThreadsAsync(int prId, CancellationToken ct = default)
+        {
+            GetThreadsCalls++;
+            return Task.FromResult(Threads);
+        }
+
+        public Task<CommentThread> CreateThreadAsync(int prId, CreateThreadRequest request, CancellationToken ct = default)
+        {
+            CreateThreadCalls++;
+            return Task.FromResult(new CommentThread
+            {
+                Id = CreateThreadCalls,
+                FilePath = request.FilePath,
+                LineStart = request.LineStart,
+                LineEnd = request.LineEnd,
+                ColStart = request.ColStart,
+                ColEnd = request.ColEnd,
+                Status = request.Status,
+            });
+        }
+
+        public Task<Comment> ReplyToThreadAsync(int prId, int threadId, string body, CancellationToken ct = default)
+        {
+            return Task.FromResult(new Comment { Id = 1, ThreadId = threadId, Body = body });
+        }
+
+        public Task<Comment> UpdateCommentAsync(int prId, int threadId, int commentId, string body, CancellationToken ct = default)
+        {
+            return Task.FromResult(new Comment { Id = commentId, ThreadId = threadId, Body = body });
+        }
+
+        public Task DeleteCommentAsync(int prId, int threadId, int commentId, CancellationToken ct = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task SetVoteAsync(int prId, string reviewerId, int vote, CancellationToken ct = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<string> GetFileContentAsync(string filePath, string branch, CancellationToken ct = default)
+        {
+            return Task.FromResult("");
+        }
+
+        public Task<string> GetCurrentReviewerIdAsync(CancellationToken ct = default)
+        {
+            return Task.FromResult("reviewer-1");
+        }
+
+        public Task<CommentThread> UpdateThreadStatusAsync(int prId, int threadId, ThreadStatus status, CancellationToken ct = default)
+        {
+            return Task.FromResult(new CommentThread { Id = threadId, Status = status });
+        }
+
+        public Task UpdatePullRequestDescriptionAsync(int prId, string description, CancellationToken ct = default)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

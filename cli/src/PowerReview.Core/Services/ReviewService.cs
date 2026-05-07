@@ -18,19 +18,22 @@ public sealed class ReviewService
     private readonly PowerReviewConfig _config;
     private readonly AuthResolver _authResolver;
     private readonly FixWorktreeService? _fixWorktreeService;
+    private readonly Func<ParsedUrl, string, IProvider> _providerFactory;
 
     public ReviewService(
         SessionStore store,
         SessionService sessionService,
         PowerReviewConfig config,
         AuthResolver authResolver,
-        FixWorktreeService? fixWorktreeService = null)
+        FixWorktreeService? fixWorktreeService = null,
+        Func<ParsedUrl, string, IProvider>? providerFactory = null)
     {
         _store = store;
         _sessionService = sessionService;
         _config = config;
         _authResolver = authResolver;
         _fixWorktreeService = fixWorktreeService;
+        _providerFactory = providerFactory ?? CreateProvider;
     }
 
     /// <summary>
@@ -41,32 +44,46 @@ public sealed class ReviewService
     /// <param name="repoPath">Optional path to an existing local repo (required for "cwd" strategy).</param>
     /// <param name="autoClone">If true, clone the repo automatically when the repo path doesn't exist.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The opened (or resumed) review session.</returns>
-    public async Task<ReviewSession> OpenAsync(string prUrl, string? repoPath = null, bool autoClone = false, CancellationToken ct = default)
+    /// <returns>The opened or refreshed review session.</returns>
+    public async Task<OpenReviewResult> OpenAsync(string prUrl, string? repoPath = null, bool autoClone = false, CancellationToken ct = default)
     {
         // Step 1: Parse the URL
         var parsed = UrlParser.Parse(prUrl)
             ?? throw new ReviewServiceException($"Could not parse PR URL: {prUrl}");
 
-        // Step 2: Authenticate
-        var authHeader = await _authResolver.GetAuthHeaderAsync(parsed.ProviderType, ct);
-
-        // Step 3: Create provider
-        var provider = ProviderFactory.Create(
+        // Step 2: Compute session ID and check for existing session before any git setup.
+        var sessionId = ReviewSession.ComputeId(
             parsed.ProviderType,
             parsed.Organization,
             parsed.Project,
             parsed.Repository,
-            authHeader,
-            _config.Providers.AzDo.ApiVersion);
+            parsed.PrId);
 
-        // Step 4: Fetch PR metadata
+        var existing = _store.Load(sessionId);
+
+        // Step 3: Authenticate
+        var authHeader = await _authResolver.GetAuthHeaderAsync(parsed.ProviderType, ct);
+
+        // Step 4: Create provider
+        var provider = _providerFactory(parsed, authHeader);
+
+        if (existing != null)
+        {
+            var refreshed = await RefreshExistingSessionAsync(existing, provider, ct);
+            return new OpenReviewResult
+            {
+                Action = "refreshed",
+                Session = refreshed,
+            };
+        }
+
+        // Step 5: Fetch PR metadata
         var pr = await provider.GetPullRequestAsync(parsed.PrId, ct);
 
-        // Step 5: Fetch changed files
+        // Step 6: Fetch changed files
         var (files, iteration) = await provider.GetChangedFilesAsync(parsed.PrId, ct);
 
-        // Step 6: Fetch threads (non-critical)
+        // Step 7: Fetch threads (non-critical)
         List<CommentThread> threads;
         try
         {
@@ -76,16 +93,6 @@ public sealed class ReviewService
         {
             threads = [];
         }
-
-        // Step 7: Compute session ID and check for existing session
-        var sessionId = ReviewSession.ComputeId(
-            parsed.ProviderType,
-            parsed.Organization,
-            parsed.Project,
-            parsed.Repository,
-            parsed.PrId);
-
-        var existing = _store.Load(sessionId);
 
         // Step 8: Git setup
         string? resolvedRepoPath = repoPath ?? _config.Git.RepoBasePath;
@@ -169,42 +176,18 @@ public sealed class ReviewService
                 SyncedAt = now,
                 Items = threads,
             },
-            CreatedAt = existing?.CreatedAt ?? now,
+            CreatedAt = now,
             UpdatedAt = now,
         };
-
-        // Step 10: Preserve drafts from existing session
-        if (existing?.Drafts.Count > 0)
-        {
-            session.Drafts = existing.Drafts;
-        }
-
-        // Preserve vote from existing session
-        if (existing?.Vote != null)
-        {
-            session.Vote = existing.Vote;
-        }
-
-        // Preserve review state from existing session
-        if (existing?.Review != null)
-        {
-            session.Review = existing.Review;
-        }
-
-        // Preserve proposals and fix worktree from existing session
-        if (existing?.Proposals?.Count > 0)
-        {
-            session.Proposals = existing.Proposals;
-        }
-        if (existing?.FixWorktree != null)
-        {
-            session.FixWorktree = existing.FixWorktree;
-        }
 
         // Step 11: Save session
         _store.Save(session);
 
-        return session;
+        return new OpenReviewResult
+        {
+            Action = "opened",
+            Session = session,
+        };
     }
 
     /// <summary>
@@ -555,6 +538,12 @@ public sealed class ReviewService
     public async Task<ReviewSession> RefreshAsync(string prUrl, CancellationToken ct = default)
     {
         var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
+        return await RefreshExistingSessionAsync(session, provider, ct);
+    }
+
+    private async Task<ReviewSession> RefreshExistingSessionAsync(ReviewSession session, IProvider provider, CancellationToken ct = default)
+    {
+        var now = Timestamp();
 
         // Refresh PR metadata (non-critical)
         try
@@ -598,7 +587,7 @@ public sealed class ReviewService
             var threads = await provider.GetThreadsAsync(session.PullRequest.Id, ct);
             session.Threads = new ThreadsInfo
             {
-                SyncedAt = Timestamp(),
+                SyncedAt = now,
                 Items = threads,
             };
         }
@@ -1023,15 +1012,20 @@ public sealed class ReviewService
         // Authenticate
         var authHeader = await _authResolver.GetAuthHeaderAsync(parsed.ProviderType, ct);
 
-        var provider = ProviderFactory.Create(
+        var provider = _providerFactory(parsed, authHeader);
+
+        return (session, provider);
+    }
+
+    private IProvider CreateProvider(ParsedUrl parsed, string authHeader)
+    {
+        return ProviderFactory.Create(
             parsed.ProviderType,
             parsed.Organization,
             parsed.Project,
             parsed.Repository,
             authHeader,
             _config.Providers.AzDo.ApiVersion);
-
-        return (session, provider);
     }
 
     /// <summary>
@@ -1158,6 +1152,18 @@ public sealed class SessionQueryResult
 
     /// <summary>Full filesystem path to the session JSON file.</summary>
     public string Path { get; set; } = "";
+}
+
+/// <summary>
+/// Result of opening or refreshing a review session through the open command.
+/// </summary>
+public sealed class OpenReviewResult
+{
+    /// <summary>`opened` for a new session, `refreshed` for an existing session.</summary>
+    public string Action { get; set; } = "opened";
+
+    /// <summary>The current review session.</summary>
+    public ReviewSession Session { get; set; } = null!;
 }
 
 /// <summary>

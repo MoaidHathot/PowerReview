@@ -526,6 +526,8 @@ powerreview mcp
 
 All commands output JSON to stdout, errors to stderr. Exit codes: 0 = success, 1 = error, 2 = usage error.
 
+`powerreview open` is idempotent. It returns `{ "action": "opened" | "refreshed", "session_file_path": "...", "session": ... }`; existing sessions are refreshed in place without creating another git worktree.
+
 `powerreview diff` defaults to `--format patch` and returns `{ "file": ..., "diff": "..." }` with unified diff text generated from the local PR worktree. Use `--format metadata` to return only the changed-file record.
 
 ## MCP Server

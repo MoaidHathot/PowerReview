@@ -115,7 +115,8 @@ function M.start_review(pr_url, callback)
     -- Refresh UI
     require("power-review.ui").refresh_neotree()
 
-    progress.done(handle, string.format("Review opened: PR #%d", session.pr_id))
+    local action = session._open_action == "refreshed" and "refreshed" or "opened"
+    progress.done(handle, string.format("Review %s: PR #%d", action, session.pr_id))
     log.info(
       "Review session started: %s (PR #%d: %s) - %d remote threads",
       session.id,

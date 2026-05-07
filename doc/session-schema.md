@@ -808,7 +808,7 @@ The Neovim plugin's `cli.adapt_session()` function converts the nested v4 format
 
 ## Refresh Semantics
 
-When a session is refreshed (`dnx PowerReview -- open --pr-url ...` on existing session):
+When a session is refreshed (`dnx PowerReview -- open --pr-url ...` on an existing session, or `dnx PowerReview -- refresh --pr-url ...`):
 
 - **PR metadata** is re-fetched: title, description, status, is_draft, closed_at, merge_status, reviewers, labels, work_items.
 - **Files** are fully replaced with the latest iteration's changed files. Iteration metadata is updated.

@@ -85,9 +85,9 @@ internal static class CommandBuilder
 
             try
             {
-                var session = await services.ReviewService.OpenAsync(url, repo, clone, ct);
-                var sessionFilePath = services.Store.GetSessionPath(session.Id);
-                CliOutput.WriteJson(new { session_file_path = sessionFilePath, session });
+                var result = await services.ReviewService.OpenAsync(url, repo, clone, ct);
+                var sessionFilePath = services.Store.GetSessionPath(result.Session.Id);
+                CliOutput.WriteJson(new { action = result.Action, session_file_path = sessionFilePath, session = result.Session });
             }
             catch (ReviewServiceException ex)
             {

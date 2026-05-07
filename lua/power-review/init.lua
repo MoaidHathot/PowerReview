@@ -49,7 +49,8 @@ function M.setup_keymaps()
       if err then
         vim.notify("[PowerReview] " .. err, vim.log.levels.ERROR)
       elseif session then
-        vim.notify("[PowerReview] Review started: " .. session.pr_title, vim.log.levels.INFO)
+        local action = session._open_action == "refreshed" and "refreshed" or "started"
+        vim.notify("[PowerReview] Review " .. action .. ": " .. session.pr_title, vim.log.levels.INFO)
       end
     end)
   end, "Open/resume review")
