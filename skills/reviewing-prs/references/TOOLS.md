@@ -62,12 +62,22 @@ Get PR review session metadata.
     "changed_since_review": ["src/other.cs"]
   },
   "files": [...],
-  "drafts": { "uuid-1": { ... }, "uuid-2": { ... } },
+  "draft_operations": { "uuid-1": { ... }, "uuid-2": { ... } },
   "metadata": {
     "reviewers": { "total": 3, "required": 1, "required_pending": 1, "rejected": 0 },
     "files": { "total": 5, "added": 1, "edited": 3, "deleted": 0, "renamed": 1 },
     "threads": { "total": 4, "active": 2, "pending": 0, "line_level": 3, "pr_level": 1 },
-    "drafts": { "total": 2, "draft": 2, "pending": 0, "ai_authored": 2 },
+    "draft_operations": {
+      "total": 2,
+      "draft": 2,
+      "pending": 0,
+      "submitted": 0,
+      "ai_authored": 2,
+      "comments": 1,
+      "replies": 1,
+      "thread_status_changes": 0,
+      "comment_reactions": 0
+    },
     "work_items": { "total": 1, "by_type": { "Bug": 1 }, "by_state": { "Active": 1 } },
     "review": { "reviewed_files": 1, "changed_since_review": 0, "unreviewed_files": 4, "total_files": 5 },
     "iteration": { "id": 3, "source_commit": "abc123...", "target_commit": "def456..." },
@@ -185,7 +195,7 @@ The `diff` field contains the full unified diff output generated from the local 
 
 ## ListCommentThreads
 
-List all remote comment threads and local draft comments, optionally filtered by file.
+List all remote comment threads and local draft operations, optionally filtered by file.
 
 **Parameters:**
 
@@ -218,10 +228,11 @@ List all remote comment threads and local draft comments, optionally filtered by
       ]
     }
   ],
-  "drafts": [
+  "draft_operations": [
     {
       "id": "uuid-1",
-      "draft": {
+      "operation": {
+        "operation_type": "Comment",
         "file_path": "src/main.cs",
         "line_start": 50,
         "body": "This could throw...",

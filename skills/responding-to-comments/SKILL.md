@@ -101,7 +101,7 @@ Use when the comment identifies an actual code issue that should be fixed. The A
 Before choosing a code fix, consider `metadata.files` and the linked work item metadata. If the comment is broader than the PR scope or conflicts with the work item type/state, prefer asking a clarifying question or drafting a scoped explanation.
 
 #### Action C: Won't fix / By design
-Use when the comment raises a valid point but the current approach is intentional or the change is out of scope. Reply with an explanation, then create a draft thread-status action if the thread should be marked `wontfix` or `bydesign`.
+Use when the comment raises a valid point but the current approach is intentional or the change is out of scope. Reply with an explanation, then create a draft thread-status operation if the thread should be marked `wontfix` or `bydesign`.
 
 #### Action D: Acknowledge a reviewer reply
 Use when the appropriate response is a lightweight acknowledgement rather than another comment. Create a draft reaction operation with `DraftCommentReaction`.
