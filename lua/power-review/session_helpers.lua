@@ -37,16 +37,15 @@ function M.get_draft(session, draft_id)
   return nil
 end
 
---- Get draft counts by status.
+--- Get draft comment/reply counts by status, with action counts separate.
 ---@param session PowerReview.ReviewSession
 ---@return table { draft: number, pending: number, submitted: number, total: number }
 function M.get_draft_counts(session)
-  local operations = session.draft_operations or {}
   local counts = {
     draft = 0,
     pending = 0,
     submitted = 0,
-    total = #operations,
+    total = 0,
     comments_total = 0,
     replies_total = 0,
     actions_draft = 0,
@@ -55,37 +54,50 @@ function M.get_draft_counts(session)
     actions_total = 0,
   }
 
-  if #operations == 0 then
-    for _, d in ipairs(session.drafts or {}) do
-      table.insert(operations, d)
-    end
-    for _, a in ipairs(session.draft_actions or {}) do
-      table.insert(operations, a)
-    end
-  end
-
-  counts.total = #operations
-  for _, op in ipairs(operations) do
+  local function count_draft(op)
     local status = op.status or ""
+    counts.total = counts.total + 1
     if counts[status] then
       counts[status] = counts[status] + 1
     end
 
     local operation_type = op.operation_type or op.action_type
-    local is_comment = operation_type == "Comment"
-      or operation_type == "Reply"
-      or operation_type == "comment"
-      or operation_type == "reply"
-    if operation_type == "Comment" or operation_type == "comment" then
-      counts.comments_total = counts.comments_total + 1
-    elseif operation_type == "Reply" or operation_type == "reply" then
+    if operation_type == "Reply" or operation_type == "reply" then
       counts.replies_total = counts.replies_total + 1
-    elseif not is_comment then
-      counts.actions_total = counts.actions_total + 1
-      local key = "actions_" .. status
-      if counts[key] then
-        counts[key] = counts[key] + 1
+    else
+      counts.comments_total = counts.comments_total + 1
+    end
+  end
+
+  local function count_action(op)
+    local status = op.status or ""
+    counts.actions_total = counts.actions_total + 1
+    local key = "actions_" .. status
+    if counts[key] then
+      counts[key] = counts[key] + 1
+    end
+  end
+
+  local operations = session.draft_operations or {}
+  if #operations > 0 then
+    for _, op in ipairs(operations) do
+      local operation_type = op.operation_type or op.action_type
+      local is_comment = operation_type == "Comment"
+        or operation_type == "Reply"
+        or operation_type == "comment"
+        or operation_type == "reply"
+      if is_comment then
+        count_draft(op)
+      else
+        count_action(op)
       end
+    end
+  else
+    for _, d in ipairs(session.drafts or {}) do
+      count_draft(d)
+    end
+    for _, a in ipairs(session.draft_actions or {}) do
+      count_action(a)
     end
   end
   return counts
