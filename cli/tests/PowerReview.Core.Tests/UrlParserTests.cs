@@ -15,6 +15,9 @@ public class UrlParserTests
     [InlineData(
         "dev.azure.com/myorg/myproject/_git/myrepo/pullrequest/789",
         ProviderType.AzDo, "myorg", "myproject", "myrepo", 789)]
+    [InlineData(
+        "https://dev.azure.com/myorg/DefaultCollection/myproject/_git/myrepo/pullrequest/321",
+        ProviderType.AzDo, "myorg", "myproject", "myrepo", 321)]
     public void Parse_AzDoDevUrl_ReturnsCorrectResult(
         string url, ProviderType expectedType, string org, string project, string repo, int prId)
     {
@@ -32,6 +35,9 @@ public class UrlParserTests
     [InlineData(
         "https://myorg.visualstudio.com/myproject/_git/myrepo/pullrequest/42",
         ProviderType.AzDo, "myorg", "myproject", "myrepo", 42)]
+    [InlineData(
+        "https://msazure.visualstudio.com/DefaultCollection/One/_git/ZTS/pullrequest/14976407",
+        ProviderType.AzDo, "msazure", "One", "ZTS", 14976407)]
     public void Parse_AzDoVisualStudioUrl_ReturnsCorrectResult(
         string url, ProviderType expectedType, string org, string project, string repo, int prId)
     {

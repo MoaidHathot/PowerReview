@@ -13,14 +13,17 @@ public static partial class UrlParser
     // 1. https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}
     // 2. https://{org}.visualstudio.com/{project}/_git/{repo}/pullrequest/{id}
     // 3. Lenient: dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id} (no protocol)
+    // 4. Legacy "collection" segment (e.g. DefaultCollection) between org/host and project:
+    //    https://dev.azure.com/{org}/{collection}/{project}/_git/{repo}/pullrequest/{id}
+    //    https://{org}.visualstudio.com/{collection}/{project}/_git/{repo}/pullrequest/{id}
 
     [GeneratedRegex(
-        @"(?:https?://)?dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/]+)/pullrequest/(\d+)",
+        @"(?:https?://)?dev\.azure\.com/([^/]+)/(?:[^/]+/)?([^/]+)/_git/([^/]+)/pullrequest/(\d+)",
         RegexOptions.IgnoreCase)]
     private static partial Regex AzDoDevPattern();
 
     [GeneratedRegex(
-        @"(?:https?://)?([^.]+)\.visualstudio\.com/([^/]+)/_git/([^/]+)/pullrequest/(\d+)",
+        @"(?:https?://)?([^.]+)\.visualstudio\.com/(?:[^/]+/)?([^/]+)/_git/([^/]+)/pullrequest/(\d+)",
         RegexOptions.IgnoreCase)]
     private static partial Regex AzDoVsPattern();
 
