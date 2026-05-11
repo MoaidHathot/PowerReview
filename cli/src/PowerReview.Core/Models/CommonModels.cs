@@ -18,6 +18,40 @@ public sealed class PersonIdentity
 }
 
 /// <summary>
+/// Locally-resolved identity of the authenticated user for the current session.
+/// Captured once on session open (via the provider's "current user" endpoint) so
+/// new-reply detection can classify comments as authored by me vs. others
+/// without re-hitting the remote on every sync.
+/// </summary>
+public sealed class LocalIdentity
+{
+    /// <summary>
+    /// Provider-assigned identity id (e.g. AzDO user GUID).
+    /// This is the primary key for "is this comment mine?" comparisons.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    /// <summary>
+    /// Display name as reported by the provider, when available.
+    /// </summary>
+    [JsonPropertyName("display_name")]
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// Unique name (typically email/UPN) as reported by the provider, when available.
+    /// </summary>
+    [JsonPropertyName("unique_name")]
+    public string? UniqueName { get; set; }
+
+    /// <summary>
+    /// ISO timestamp when this identity was resolved.
+    /// </summary>
+    [JsonPropertyName("resolved_at")]
+    public string ResolvedAt { get; set; } = "";
+}
+
+/// <summary>
 /// A reviewer on a pull request.
 /// </summary>
 public sealed class Reviewer

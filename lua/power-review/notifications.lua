@@ -116,4 +116,60 @@ function M.ai_drafts_changed(old_count, new_count)
   end
 end
 
+-- ============================================================================
+-- New replies (post-sync deltas)
+-- ============================================================================
+
+--- Notify about new replies addressed at the local user (or AI on their behalf).
+--- Surfaces replies in `last_deltas.reply_to_ai` + `last_deltas.reply_to_human`.
+---@param to_ai_count number Count of replies in threads where AI participated
+---@param to_human_count number Count of replies in threads where the human user participated
+function M.replies_to_me(to_ai_count, to_human_count)
+  if not category_enabled("replies_to_me") then
+    return
+  end
+  local total = (to_ai_count or 0) + (to_human_count or 0)
+  if total <= 0 then
+    return
+  end
+  -- Distinguish "AI thread" vs "human thread" because these usually warrant
+  -- different responses (AI can auto-draft a follow-up; human probably wants to handle their own).
+  local parts = {}
+  if to_ai_count and to_ai_count > 0 then
+    table.insert(parts, string.format("%d on AI thread(s)", to_ai_count))
+  end
+  if to_human_count and to_human_count > 0 then
+    table.insert(parts, string.format("%d on your thread(s)", to_human_count))
+  end
+  vim.notify(
+    string.format("[PowerReview] %d new reply/replies — %s", total, table.concat(parts, ", ")),
+    vim.log.levels.INFO
+  )
+end
+
+--- Notify about new replies / new threads on the PR that don't directly
+--- involve the local user or AI. Useful for full-PR awareness; off by default.
+---@param replies_count number Count from `last_deltas.reply_in_others_thread`
+---@param new_threads_count number Count from `last_deltas.new_thread_others`
+function M.replies_to_others(replies_count, new_threads_count)
+  if not category_enabled("replies_to_others") then
+    return
+  end
+  local total = (replies_count or 0) + (new_threads_count or 0)
+  if total <= 0 then
+    return
+  end
+  local parts = {}
+  if replies_count and replies_count > 0 then
+    table.insert(parts, string.format("%d new reply/replies", replies_count))
+  end
+  if new_threads_count and new_threads_count > 0 then
+    table.insert(parts, string.format("%d new thread(s)", new_threads_count))
+  end
+  vim.notify(
+    string.format("[PowerReview] PR activity: %s (no direct involvement)", table.concat(parts, ", ")),
+    vim.log.levels.INFO
+  )
+end
+
 return M

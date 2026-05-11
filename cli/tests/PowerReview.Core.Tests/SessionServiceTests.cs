@@ -1044,4 +1044,134 @@ public class SessionServiceTests : IDisposable
 
         Assert.Equal(0, count);
     }
+
+    // ========================================================================
+    // AcknowledgeReplies + SetLocalIdentity (new-replies feature)
+    // ========================================================================
+
+    private string CreateSessionWithRepliesContext()
+    {
+        // Session with one thread of 3 comments + a snapshot of all 3 +
+        // LastDeltas already containing the 3rd comment as a "reply_in_others_thread".
+        var now = DateTime.UtcNow.ToString("o");
+        var session = new ReviewSession
+        {
+            Id = "ack-session",
+            Provider = new ProviderInfo { Type = ProviderType.AzDo, Organization = "o", Project = "p", Repository = "r" },
+            PullRequest = new PullRequestInfo { Id = 1, Title = "T" },
+            Files = [new ChangedFile { Path = "a.cs" }],
+            Threads = new ThreadsInfo
+            {
+                SyncedAt = now,
+                Items =
+                [
+                    new CommentThread
+                    {
+                        Id = 1,
+                        FilePath = "a.cs",
+                        LineStart = 1,
+                        Comments =
+                        [
+                            new Comment { Id = 100, ThreadId = 1, Author = new PersonIdentity { Id = "other" }, UpdatedAt = "t" },
+                            new Comment { Id = 101, ThreadId = 1, Author = new PersonIdentity { Id = "other" }, UpdatedAt = "t" },
+                            new Comment { Id = 102, ThreadId = 1, Author = new PersonIdentity { Id = "other" }, UpdatedAt = "t" },
+                        ],
+                    },
+                ],
+                PreviousSyncSnapshot =
+                [
+                    new() { ThreadId = 1, CommentId = 100, UpdatedAt = "t" },
+                    new() { ThreadId = 1, CommentId = 101, UpdatedAt = "t" },
+                    // 102 not in snapshot -> classifier will treat it as "new"
+                ],
+            },
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        _store.Save(session);
+        return session.Id;
+    }
+
+    [Fact]
+    public void AcknowledgeReplies_AdvancesWatermark_AndRecomputesDeltas()
+    {
+        var sessionId = CreateSessionWithRepliesContext();
+
+        var changed = _service.AcknowledgeReplies(
+            sessionId,
+            new[] { (1, 102) },
+            ackedBy: "ai");
+
+        Assert.Equal(1, changed);
+
+        var session = _store.Load(sessionId)!;
+        Assert.Equal(102, session.Threads.ThreadAcks["1"].ThroughCommentId);
+        Assert.Equal("ai", session.Threads.ThreadAcks["1"].AckedBy);
+        Assert.NotNull(session.Threads.LastDeltas);
+        // The previously-new comment (102) should now be suppressed.
+        Assert.Empty(session.Threads.LastDeltas!.ReplyInOthersThread);
+    }
+
+    [Fact]
+    public void AcknowledgeReplies_IsMonotonic_LowerWatermarkIsNoOp()
+    {
+        var sessionId = CreateSessionWithRepliesContext();
+
+        _service.AcknowledgeReplies(sessionId, new[] { (1, 102) });
+        var changed = _service.AcknowledgeReplies(sessionId, new[] { (1, 50) });
+
+        Assert.Equal(0, changed);
+        var session = _store.Load(sessionId)!;
+        Assert.Equal(102, session.Threads.ThreadAcks["1"].ThroughCommentId);
+    }
+
+    [Fact]
+    public void AcknowledgeReplies_EmptyList_IsNoOp()
+    {
+        var sessionId = CreateSessionWithRepliesContext();
+        var changed = _service.AcknowledgeReplies(sessionId, Array.Empty<(int, int)>());
+        Assert.Equal(0, changed);
+    }
+
+    [Fact]
+    public void SetLocalIdentity_PersistsIdentity()
+    {
+        var sessionId = CreateAndSaveSession();
+        var identity = new LocalIdentity
+        {
+            Id = "guid-123",
+            DisplayName = "Test User",
+            UniqueName = "test@example.com",
+            ResolvedAt = "2026-05-11T00:00:00Z",
+        };
+
+        _service.SetLocalIdentity(sessionId, identity);
+
+        var session = _store.Load(sessionId)!;
+        Assert.NotNull(session.LocalIdentity);
+        Assert.Equal("guid-123", session.LocalIdentity!.Id);
+        Assert.Equal("Test User", session.LocalIdentity.DisplayName);
+    }
+
+    [Fact]
+    public void MarkSubmitted_CapturesPublishedIds()
+    {
+        var sessionId = CreateAndSaveSession([new ChangedFile { Path = "x.cs" }]);
+        var (opId, _) = _service.CreateDraft(sessionId, new CreateDraftOperationRequest
+        {
+            FilePath = "x.cs",
+            LineStart = 1,
+            Body = "comment",
+        });
+
+        // Simulate the submit-side capture.
+        _service.GetType()
+            .GetMethod("MarkSubmitted", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(_service, new object?[] { sessionId, opId, 555, 999 });
+
+        var session = _store.Load(sessionId)!;
+        Assert.Equal(DraftStatus.Submitted, session.DraftOperations[opId].Status);
+        Assert.Equal(555, session.DraftOperations[opId].PublishedThreadId);
+        Assert.Equal(999, session.DraftOperations[opId].PublishedCommentId);
+    }
 }

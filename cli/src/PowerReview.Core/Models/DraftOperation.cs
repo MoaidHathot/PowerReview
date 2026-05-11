@@ -50,6 +50,25 @@ public class DraftOperation
     [JsonPropertyName("comment_id")]
     public int? CommentId { get; set; }
 
+    /// <summary>
+    /// Provider-assigned thread id of the thread that was published as a result
+    /// of this draft operation. Set on submit for <see cref="DraftOperationType.Comment"/>
+    /// (which creates a new thread). Used by reply-classification to recognize
+    /// our own server-side comments without ambiguity.
+    /// </summary>
+    [JsonPropertyName("published_thread_id")]
+    public int? PublishedThreadId { get; set; }
+
+    /// <summary>
+    /// Provider-assigned comment id of the comment that was published as a
+    /// result of this draft operation. Set on submit for
+    /// <see cref="DraftOperationType.Comment"/> (the first comment of the new thread)
+    /// and <see cref="DraftOperationType.Reply"/>. Used by reply-classification to
+    /// recognize our own server-side comments and to suppress them as "self echo".
+    /// </summary>
+    [JsonPropertyName("published_comment_id")]
+    public int? PublishedCommentId { get; set; }
+
     [JsonPropertyName("from_thread_status")]
     public ThreadStatus? FromThreadStatus { get; set; }
 

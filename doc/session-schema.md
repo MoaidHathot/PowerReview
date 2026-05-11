@@ -1,9 +1,9 @@
-# PowerReview Session File Schema (v7)
+# PowerReview Session File Schema (v8)
 
 This document defines the JSON schema for PowerReview session state files as stored by the CLI tool.
 External tools that create or consume these files **must** conform to this specification.
 
-> **Neovim adapter**: The CLI outputs v7 (nested) JSON. The Neovim plugin's `cli.adapt_session()` converts
+> **Neovim adapter**: The CLI outputs v8 (nested) JSON. The Neovim plugin's `cli.adapt_session()` converts
 > this to a flat v2-compatible shape for UI code. See `lua/power-review/cli.lua` for the mapping.
 
 ## File Location
@@ -44,15 +44,16 @@ The v7 format uses a nested structure with logical groupings.
 
 | Field          | Type                             | Required | Description                                           |
 |----------------|----------------------------------|----------|-------------------------------------------------------|
-| `version`      | `number`                         | yes      | Schema version. Must be `7`.                          |
+| `version`      | `number`                         | yes      | Schema version. Must be `8`.                          |
 | `id`           | `string`                         | yes      | Session identifier.                                   |
 | `provider`     | `ProviderInfo`                   | yes      | Provider metadata.                                    |
+| `local_identity` | `LocalIdentity \| null`        | no       | Locally-resolved identity of the authenticated user. Captured on session open; null on legacy sessions until next sync or `pr identity --refresh`. |
 | `pull_request` | `PullRequestInfo`                | yes      | PR metadata.                                          |
 | `iteration`    | `IterationMeta`                  | no       | Iteration tracking for incremental sync.              |
 | `review`       | `ReviewState`                    | no       | Per-file review tracking and iteration change state.  |
 | `git`          | `GitInfo`                        | yes      | Git workspace state.                                  |
 | `files`        | `ChangedFile[]`                  | yes      | List of files changed in the PR.                      |
-| `threads`      | `ThreadsInfo`                    | yes      | Remote comment threads.                               |
+| `threads`      | `ThreadsInfo`                    | yes      | Remote comment threads + reply-classification state.  |
 | `draft_operations` | `object`                    | yes      | Local approval-gated operations. Map of `{uuid: DraftOperation}`. |
 | `proposals`    | `object`                         | yes      | Proposed code fixes. Map of `{uuid: ProposedFix}`.    |
 | `fix_worktree` | `FixWorktreeInfo \| null`        | no       | Fix worktree info for AI code changes, or `null`.     |
@@ -60,6 +61,25 @@ The v7 format uses a nested structure with logical groupings.
 | `vote`         | `string \| null`                 | yes      | Review vote enum string, or `null`.                   |
 | `created_at`   | `string`                         | yes      | ISO 8601 UTC timestamp of session creation.           |
 | `updated_at`   | `string`                         | yes      | ISO 8601 UTC timestamp of last modification.          |
+
+---
+
+## `LocalIdentity` Object (v8+)
+
+Identity of the locally-authenticated user, captured once on session open via the
+provider's "current user" endpoint. Used by the reply-classifier to distinguish
+"comments authored by me" from "comments authored by others" without needing a
+network call on every sync.
+
+| Field          | Type     | Required | Description                                                     |
+|----------------|----------|----------|-----------------------------------------------------------------|
+| `id`           | `string` | yes      | Provider-assigned user id (e.g. AzDO GUID).                     |
+| `display_name` | `string` | no       | Display name as reported by the provider, when available.       |
+| `unique_name`  | `string` | no       | Unique name (typically email/UPN) as reported by the provider.  |
+| `resolved_at`  | `string` | yes      | ISO 8601 UTC timestamp when this identity was resolved.         |
+
+Use `dnx PowerReview -- identity refresh --pr-url <url>` to re-resolve (e.g.
+after PAT rotation to a different user).
 
 ---
 
@@ -230,10 +250,83 @@ Files that were not modified between iterations retain their "reviewed" mark.
 
 ## `ThreadsInfo` Object
 
-| Field           | Type               | Required | Description                              |
-|-----------------|--------------------|----------|------------------------------------------|
-| `items`         | `CommentThread[]`  | yes      | Array of remote comment threads.         |
-| `synced_at`     | `string \| null`   | no       | ISO 8601 UTC timestamp of last sync.     |
+| Field                     | Type                                | Required | Description                                                     |
+|---------------------------|-------------------------------------|----------|-----------------------------------------------------------------|
+| `items`                   | `CommentThread[]`                   | yes      | Array of remote comment threads.                                |
+| `synced_at`               | `string \| null`                    | no       | ISO 8601 UTC timestamp of last sync.                            |
+| `previous_sync_snapshot`  | `CommentSnapshotEntry[]`            | no (v8+) | Compact snapshot of comments from the previous sync, used by the reply-classifier to detect new/edited comments. Empty list = "no prior snapshot" (silent priming on next sync). |
+| `thread_acks`             | `object`                            | no (v8+) | Per-thread acknowledgement watermarks. Keyed by thread id (as string). |
+| `last_deltas`             | `ReplyDeltas \| null`               | no (v8+) | Reply-classification result computed on the most recent sync. Null after silent priming. |
+
+### `CommentSnapshotEntry` Object (v8+)
+
+Compact entry kept on disk so the next sync can diff. Field names are
+intentionally short to keep the snapshot small on PRs with many comments.
+
+| Field | Type                | Description                              |
+|-------|---------------------|------------------------------------------|
+| `t`   | `number`            | Thread id.                               |
+| `c`   | `number`            | Comment id.                              |
+| `u`   | `string \| null`    | Comment's `updated_at` at snapshot time. |
+
+### `ThreadAckEntry` Object (v8+)
+
+| Field                | Type            | Description                                       |
+|----------------------|-----------------|---------------------------------------------------|
+| `through_comment_id` | `number`        | Highest acked comment id on this thread.          |
+| `at`                 | `string`        | ISO 8601 UTC timestamp the ack was recorded.      |
+| `acked_by`           | `"ai"\|"human"` | Who acknowledged.                                 |
+
+Watermarks are monotonic: setting a value lower than the existing one is a no-op.
+
+### `ReplyDeltas` Object (v8+)
+
+Output of `ReplyClassifier`, recomputed on every sync. Consumers (MCP `GetNewReplies`,
+the Lua watcher, panel renderers) read this to surface new replies without
+re-running classification themselves.
+
+| Field                      | Type              | Description                                                                          |
+|----------------------------|-------------------|--------------------------------------------------------------------------------------|
+| `computed_at`              | `string`          | ISO 8601 UTC timestamp.                                                              |
+| `reply_to_ai`              | `DeltaComment[]`  | New/edited comments in threads where AI participated (highest priority).             |
+| `reply_to_human`           | `DeltaComment[]`  | New/edited comments in threads where the local user participated, AI did not.        |
+| `reply_in_others_thread`   | `DeltaComment[]`  | New/edited comments in threads neither participant interacted with.                  |
+| `new_thread_others`        | `DeltaComment[]`  | Brand-new threads opened by someone other than the local user/AI.                    |
+| `self_echo`                | `DeltaComment[]`  | Our own published drafts reflected back from the server. UI suppresses these.        |
+
+### `DeltaComment` Object (v8+)
+
+Self-contained snapshot of a classified new comment. Includes everything a
+consumer needs without re-joining against `threads.items`.
+
+| Field                | Type              | Description                                                            |
+|----------------------|-------------------|------------------------------------------------------------------------|
+| `thread_id`          | `number`          | Provider thread id.                                                    |
+| `comment_id`         | `number`          | Provider comment id.                                                   |
+| `parent_comment_id`  | `number \| null`  | Parent comment id, if set.                                             |
+| `change`             | `"new"\|"edited"` | "new" if id wasn't in prior snapshot; "edited" if updated_at changed.  |
+| `file_path`          | `string \| null`  | Thread's file path.                                                    |
+| `line_start`         | `number \| null`  | Thread's start line.                                                   |
+| `line_end`           | `number \| null`  | Thread's end line.                                                     |
+| `author`             | `PersonIdentity`  | Comment author identity (id, name, unique_name).                       |
+| `created_at`         | `string`          | Comment creation timestamp.                                            |
+| `updated_at`         | `string`          | Comment last-update timestamp.                                         |
+| `body_preview`       | `string`          | First 200 chars of body, single-line.                                  |
+| `ai_participated`    | `boolean`         | True if any AI-authored published draft exists in the thread.          |
+| `human_participated` | `boolean`         | True if any comment matching the local identity exists in the thread.  |
+
+---
+
+## `DraftOperation` (v8+ additions)
+
+The following fields were added in v8 to support reply classification:
+
+| Field                  | Type             | Description                                                                                |
+|------------------------|------------------|--------------------------------------------------------------------------------------------|
+| `published_thread_id`  | `number \| null` | Server-assigned thread id captured on submit (Comment ops, which open a new thread).       |
+| `published_comment_id` | `number \| null` | Server-assigned comment id captured on submit (Comment + Reply ops). Used by the classifier to recognize our own server-side comments and suppress them as `self_echo`. |
+
+Both are `null` for legacy submitted drafts; new submissions populate them automatically.
 
 ---
 

@@ -535,6 +535,30 @@ public sealed class AzDoProvider : IProvider
             ?? throw new InvalidOperationException("Could not determine current reviewer ID from connection data.");
     }
 
+    public async Task<LocalIdentity> GetCurrentUserIdentityAsync(CancellationToken ct = default)
+    {
+        var url = $"https://dev.azure.com/{Uri.EscapeDataString(_org)}/_apis/connectionData?api-version={_apiVersion}";
+        var response = await _http.GetAsync(url, ct);
+        response.EnsureSuccessStatusCode();
+
+        var data = await response.Content.ReadFromJsonAsync<AzDoApiModels.ConnectionDataResponse>(JsonOptions, ct);
+        var user = data?.AuthenticatedUser
+            ?? throw new InvalidOperationException("Could not determine current user from connection data.");
+
+        if (string.IsNullOrEmpty(user.Id))
+            throw new InvalidOperationException("Connection data did not include an authenticated user id.");
+
+        return new LocalIdentity
+        {
+            Id = user.Id,
+            DisplayName = !string.IsNullOrWhiteSpace(user.CustomDisplayName)
+                ? user.CustomDisplayName
+                : user.ProviderDisplayName,
+            UniqueName = user.UniqueName,
+            ResolvedAt = DateTime.UtcNow.ToString("o"),
+        };
+    }
+
     // =========================================================================
     // Update Thread Status
     // =========================================================================

@@ -298,6 +298,9 @@ public sealed class ReviewTools
     [McpServerTool, Description(
         "Sync comment threads from the remote provider (e.g., Azure DevOps). " +
         "Updates the local session with the latest threads and checks for new iterations. " +
+        "Also computes a reply-classification delta against the previous sync's snapshot " +
+        "and returns a summary in `deltas`. Use `GetNewReplies` to fetch the full list " +
+        "of new replies after this call. " +
         "Call this before reading threads to ensure you have the most up-to-date data.")]
     public static async Task<string> SyncThreads(
         ReviewService reviewService,
@@ -312,12 +315,113 @@ public sealed class ReviewTools
                 synced = true,
                 thread_count = result.ThreadCount,
                 iteration_check = result.IterationCheck,
+                // Counts only — call GetNewReplies to fetch the actual entries.
+                // `null` deltas means this was the first sync after upgrade
+                // ("silent priming"); no actionable replies were computed.
+                deltas = result.Deltas == null ? null : new
+                {
+                    silent_priming = false,
+                    reply_to_ai = result.Deltas.ReplyToAi.Count,
+                    reply_to_human = result.Deltas.ReplyToHuman.Count,
+                    reply_in_others_thread = result.Deltas.ReplyInOthersThread.Count,
+                    new_thread_others = result.Deltas.NewThreadOthers.Count,
+                },
+                silent_priming = result.Deltas == null,
             });
         }
         catch (ReviewServiceException ex)
         {
             return ToolHelpers.ToJson(new { error = ex.Message });
         }
+    }
+
+    [McpServerTool, Description(
+        "Get the new/edited comments since the previous sync, classified by who " +
+        "they're addressed to. Always reads from the cached `last_deltas` " +
+        "(populated by `SyncThreads`); does NOT hit the remote. " +
+        "Scope values: " +
+        "`to_ai` = replies on threads where AI participated (most relevant for AI follow-up); " +
+        "`to_me` = `to_ai` + replies on threads the human user participated in (default); " +
+        "`to_others` = replies and new threads with no local participation; " +
+        "`all` = everything except self-echo; " +
+        "`self_echo` = our own published drafts reflected back (debug). " +
+        "Comments already covered by an `AcknowledgeReplies` watermark are suppressed.")]
+    public static string GetNewReplies(
+        ReviewService reviewService,
+        [Description("The pull request URL")] string prUrl,
+        [Description("Filter scope: to_ai, to_me (default), to_others, all, self_echo")] string? scope = null,
+        [Description("Optional: limit to a single thread id")] int? threadId = null)
+    {
+        try
+        {
+            var result = reviewService.GetNewReplies(prUrl, scope ?? "to_me", threadId);
+            return ToolHelpers.ToJson(result);
+        }
+        catch (ReviewServiceException ex)
+        {
+            return ToolHelpers.ToJson(new { error = ex.Message });
+        }
+    }
+
+    [McpServerTool, Description(
+        "Mark replies as acknowledged by advancing per-thread watermarks. " +
+        "Comments with id <= through_comment_id on a given thread will be " +
+        "suppressed from `GetNewReplies` and from the `deltas` summary on " +
+        "subsequent syncs. Watermarks are monotonic — calling this with a " +
+        "lower id than the existing watermark is a no-op for that thread. " +
+        "Use this after the AI has either drafted a follow-up reply or has " +
+        "explicitly decided to ignore the reply, so the same comment doesn't " +
+        "keep appearing in `GetNewReplies` forever.")]
+    public static string AcknowledgeReplies(
+        SessionService sessionService,
+        [Description("The pull request URL")] string prUrl,
+        [Description("Pairs of thread id + through-comment id to acknowledge. " +
+                     "Format: 'threadId:throughCommentId' separated by commas, " +
+                     "e.g. '123:789,456:1011'. The `through_comment_id` is " +
+                     "the highest comment id you have processed on that thread.")]
+            string acks,
+        [Description("Who is acknowledging: 'ai' (default for MCP) or 'human'")] string? ackedBy = null)
+    {
+        try
+        {
+            var sessionId = ToolHelpers.ResolveSessionId(prUrl);
+            var parsed = ParseAckPairs(acks);
+            if (parsed.Count == 0)
+                return ToolHelpers.ToJson(new { error = "No valid ack pairs provided. Format: 'threadId:throughCommentId,threadId:throughCommentId'" });
+
+            var changed = sessionService.AcknowledgeReplies(sessionId, parsed, ackedBy ?? "ai");
+            return ToolHelpers.ToJson(new
+            {
+                acknowledged = changed,
+                requested = parsed.Count,
+                acked_by = ackedBy ?? "ai",
+            });
+        }
+        catch (Exception ex)
+        {
+            return ToolHelpers.ToJson(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Parse "threadId:throughCommentId,threadId:throughCommentId" into a list.
+    /// Skips malformed pairs silently (best-effort parsing for the MCP wire
+    /// format, which is a string for portability across MCP clients).
+    /// </summary>
+    private static List<(int ThreadId, int ThroughCommentId)> ParseAckPairs(string raw)
+    {
+        var result = new List<(int, int)>();
+        if (string.IsNullOrWhiteSpace(raw)) return result;
+
+        foreach (var pair in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = pair.Split(':');
+            if (parts.Length != 2) continue;
+            if (!int.TryParse(parts[0].Trim(), out var threadId)) continue;
+            if (!int.TryParse(parts[1].Trim(), out var through)) continue;
+            result.Add((threadId, through));
+        }
+        return result;
     }
 
     [McpServerTool, Description(

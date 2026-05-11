@@ -36,6 +36,23 @@ public static class SessionMigration
             session.Metadata = ReviewMetadata.FromSession(session);
         }
 
+        // v7 -> v8: Add LocalIdentity, ThreadAcks/PreviousSyncSnapshot/LastDeltas
+        // (on ThreadsInfo), and PublishedCommentId/PublishedThreadId on draft
+        // operations for the new-replies detection feature.
+        // - LocalIdentity stays null until populated by the next sync (or by
+        //   `pr identity --refresh`).
+        // - PreviousSyncSnapshot stays empty so the next sync silently primes it
+        //   (no flood of "new replies" on first upgrade).
+        // - ThreadAcks/LastDeltas use defaulted values from ThreadsInfo.
+        // - DraftOperation.PublishedCommentId/Thread are nullable; legacy drafts
+        //   simply have null values until they're re-submitted.
+        if (session.Version < 8)
+        {
+            session.Threads ??= new ThreadsInfo();
+            session.Threads.PreviousSyncSnapshot ??= [];
+            session.Threads.ThreadAcks ??= new();
+        }
+
         session.Version = ReviewSession.CurrentVersion;
         session.DraftOperations ??= new Dictionary<string, DraftOperation>();
         session.Metadata = ReviewMetadata.FromSession(session);

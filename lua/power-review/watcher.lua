@@ -85,6 +85,20 @@ function M.stop()
   end
 end
 
+--- Sum the lengths of the four actionable buckets in `last_deltas`.
+--- Returns counts for: to_ai, to_human (sum = "to me"), in_others_thread, new_thread_others.
+---@param deltas table|nil
+---@return number to_ai, number to_human, number in_others, number new_threads
+local function delta_counts(deltas)
+  if type(deltas) ~= "table" then
+    return 0, 0, 0, 0
+  end
+  return #(deltas.reply_to_ai or {}),
+    #(deltas.reply_to_human or {}),
+    #(deltas.reply_in_others_thread or {}),
+    #(deltas.new_thread_others or {})
+end
+
 --- Handle a detected file change: reload session and refresh UI.
 ---@param pr_url string
 function M._on_change(pr_url)
@@ -110,6 +124,11 @@ function M._on_change(pr_url)
       old_ai_count = old_ai_count + 1
     end
   end
+  -- Capture the previous deltas signature so we only fire `replies_to_*`
+  -- notifications when the *current* deltas differ from what we last saw.
+  -- Without this, every session-file write (e.g. an AI draft creation that
+  -- doesn't touch threads) would re-announce the same replies.
+  local prev_deltas = current.last_deltas
 
   -- Reload the session from disk via CLI
   local cli = require("power-review.cli")
@@ -144,6 +163,19 @@ function M._on_change(pr_url)
     end
     if new_ai_count ~= old_ai_count then
       notifications.ai_drafts_changed(old_ai_count, new_ai_count)
+    end
+
+    -- Check for new replies (CLI-computed deltas in `last_deltas`).
+    -- Only fire if the deltas object actually changed since last reload —
+    -- otherwise unrelated session writes (draft creates, acks) would
+    -- re-announce the same replies repeatedly.
+    local prev_computed = prev_deltas and prev_deltas.computed_at or nil
+    local new_deltas = updated.last_deltas
+    local new_computed = new_deltas and new_deltas.computed_at or nil
+    if new_computed and new_computed ~= prev_computed then
+      local to_ai, to_human, in_others, new_threads = delta_counts(new_deltas)
+      notifications.replies_to_me(to_ai, to_human)
+      notifications.replies_to_others(in_others, new_threads)
     end
 
     log.debug("Watcher: session reloaded (%d drafts, %d threads)", #(updated.drafts or {}), #(updated.threads or {}))

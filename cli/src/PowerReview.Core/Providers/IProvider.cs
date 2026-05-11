@@ -70,6 +70,23 @@ public interface IProvider
     Task<string> GetCurrentReviewerIdAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Get the current authenticated user as a <see cref="LocalIdentity"/> (id +
+    /// display/unique name when available). Used to persist the local user identity
+    /// on the session so reply classification doesn't need a network round-trip.
+    /// Default implementation falls back to a minimal identity built from
+    /// <see cref="GetCurrentReviewerIdAsync"/>.
+    /// </summary>
+    async Task<LocalIdentity> GetCurrentUserIdentityAsync(CancellationToken ct = default)
+    {
+        var id = await GetCurrentReviewerIdAsync(ct);
+        return new LocalIdentity
+        {
+            Id = id,
+            ResolvedAt = DateTime.UtcNow.ToString("o"),
+        };
+    }
+
+    /// <summary>
     /// Update the status of an existing comment thread (e.g., resolve, reactivate).
     /// </summary>
     Task<CommentThread> UpdateThreadStatusAsync(int prId, int threadId, ThreadStatus status, CancellationToken ct = default);

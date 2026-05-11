@@ -250,6 +250,12 @@ function M.adapt_session(cli_session)
     draft_actions = draft_actions,
     threads = threads_info.items or {},
     files = cli_session.files or {},
+    -- New-replies feature: surface the CLI-computed reply state to Lua so the
+    -- UI can render NEW badges and the watcher can fire targeted notifications
+    -- without recomputing anything.
+    local_identity = cli_session.local_identity,
+    thread_acks = threads_info.thread_acks or {},
+    last_deltas = threads_info.last_deltas,
   }
 
   return session
@@ -782,6 +788,50 @@ end
 ---@return PowerReview.ReviewSession|nil session, string|nil error
 function M.reload_session(pr_url)
   return M.get_session_sync(pr_url)
+end
+
+-- ============================================================================
+-- New-replies (Phase 3 of new-replies feature)
+-- ============================================================================
+
+--- Acknowledge replies on a single thread (advances the per-thread watermark).
+--- Synchronous; intended to be called from a UI keymap handler.
+---@param pr_url string
+---@param thread_id number
+---@param through_comment_id? number Optional. Defaults to the highest comment id on the thread.
+---@param acked_by? "human"|"ai" Default: "human"
+---@return table|nil result, string|nil error
+function M.ack_thread(pr_url, thread_id, through_comment_id, acked_by)
+  local args = { "ack", "--pr-url", pr_url, "--thread-id", tostring(thread_id) }
+  if through_comment_id then
+    table.insert(args, "--through")
+    table.insert(args, tostring(through_comment_id))
+  end
+  if acked_by then
+    table.insert(args, "--by")
+    table.insert(args, acked_by)
+  end
+  return M.run(args)
+end
+
+--- Get the cached new-replies for the current session, optionally filtered.
+--- Reads from `last_deltas` populated by the most recent sync — does NOT
+--- hit the remote.
+---@param pr_url string
+---@param scope? string "to_ai"|"to_me" (default)|"to_others"|"all"|"self_echo"
+---@param thread_id? number Optional: limit to one thread
+---@return table|nil result, string|nil error
+function M.get_new_replies(pr_url, scope, thread_id)
+  local args = { "replies", "--pr-url", pr_url }
+  if scope then
+    table.insert(args, "--scope")
+    table.insert(args, scope)
+  end
+  if thread_id then
+    table.insert(args, "--thread-id")
+    table.insert(args, tostring(thread_id))
+  end
+  return M.run(args)
 end
 
 --- Map numeric vote value to CLI vote string.

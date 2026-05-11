@@ -37,6 +37,9 @@ M.status_icons = {
 function M.build(item, session)
   local lines = {}
   local hls = {}
+  -- Precompute new-reply lookup so we can mark unacked replies inline.
+  local helpers = require("power-review.session_helpers")
+  local new_lookup = helpers.get_new_replies_lookup(session)
 
   --- Helper to add a highlighted line
   local function add(text, hl_group)
@@ -92,12 +95,22 @@ function M.build(item, session)
           local role = ci == 1 and "Author" or "Reply"
           local time_str = M.format_time(comment.created_at)
           local time_label = time_str ~= "" and ("  " .. time_str) or ""
+          local new_marker = helpers.is_new_reply(new_lookup, comment.id) and " [NEW]" or ""
 
           if ci > 1 then
             add("  " .. string.rep("╌", 56), "Comment")
             add("")
           end
-          add(string.format("  %s  %s%s", role == "Reply" and "" or "", comment.author, time_label), "Title")
+          add(
+            string.format(
+              "  %s  %s%s%s",
+              role == "Reply" and "" or "",
+              comment.author,
+              time_label,
+              new_marker
+            ),
+            new_marker ~= "" and "DiagnosticWarn" or "Title"
+          )
           if ci > 1 then
             add("  (reply)", "Comment")
           end
@@ -180,6 +193,8 @@ end
 ---@param get_all_threads fun(session: PowerReview.ReviewSession): table[]
 ---@return table[] items
 function M.build_items(session, get_all_threads)
+  local helpers = require("power-review.session_helpers")
+  local new_lookup = helpers.get_new_replies_lookup(session)
   local all_threads = get_all_threads(session)
   local items = {}
 
@@ -190,6 +205,7 @@ function M.build_items(session, get_all_threads)
       local author = first and first.author or "unknown"
       local body = first and first.body or ""
       local reply_count = thread.comments and math.max(0, #thread.comments - 1) or 0
+      local new_count = helpers.count_new_replies_on_thread(new_lookup, thread)
       table.insert(items, {
         kind = "thread",
         file_path = thread.file_path,
@@ -199,6 +215,7 @@ function M.build_items(session, get_all_threads)
         author = author,
         body = body,
         reply_count = reply_count,
+        new_reply_count = new_count,
         thread_id = thread.id,
         created_at = first and first.created_at or "",
       })
@@ -217,6 +234,7 @@ function M.build_items(session, get_all_threads)
       author_name = draft.author_name,
       body = draft.body,
       reply_count = 0,
+      new_reply_count = 0,
       thread_id = draft.thread_id,
       draft_id = draft.id,
       created_at = draft.created_at or "",
@@ -239,7 +257,12 @@ function M.format_display(item)
   else
     range = string.format(":%d", item.line_start)
   end
-  local reply_badge = item.reply_count > 0 and string.format(" (%d)", item.reply_count) or ""
+  local reply_badge = ""
+  if (item.new_reply_count or 0) > 0 then
+    reply_badge = string.format(" (%d/%d new)", item.new_reply_count, item.reply_count)
+  elseif item.reply_count > 0 then
+    reply_badge = string.format(" (%d)", item.reply_count)
+  end
   local author_display = item.author
   if item.author_name then
     author_display = author_display .. ":" .. item.author_name

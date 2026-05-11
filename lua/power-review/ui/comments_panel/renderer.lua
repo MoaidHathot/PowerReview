@@ -215,6 +215,10 @@ function M.build_sections(session, panel_width, collapsed)
   local counts = helpers.get_draft_counts(session)
   local all_threads = review.get_all_threads(session)
 
+  -- Precompute the new-replies lookup once per render so all thread/comment
+  -- iterations can use it without re-scanning last_deltas.
+  local new_lookup = helpers.get_new_replies_lookup(session)
+
   local remote_count = 0
   for _, t in ipairs(all_threads) do
     if t.type ~= "draft" then
@@ -340,11 +344,17 @@ function M.build_sections(session, panel_width, collapsed)
         local is_thread_collapsed = collapsed["thread:" .. thread.id]
         local t_expander = is_thread_collapsed and "  " or "  "
 
+        -- New-replies count for this thread (excluding self_echo).
+        local new_count = helpers.count_new_replies_on_thread(new_lookup, thread)
+
         local count_badge = ""
-        if comment_count > 1 or reply_draft_count > 0 then
+        if comment_count > 1 or reply_draft_count > 0 or new_count > 0 then
           local parts = {}
           if comment_count > 1 then
             table.insert(parts, (comment_count - 1) .. " replies")
+          end
+          if new_count > 0 then
+            table.insert(parts, new_count .. " new")
           end
           if reply_draft_count > 0 then
             table.insert(parts, reply_draft_count .. " draft reply(ies)")
@@ -360,6 +370,16 @@ function M.build_sections(session, panel_width, collapsed)
           hls,
           { line = #lines, col_start = #t_expander, col_end = #t_expander + #status_icon_str, hl_group = status_hl }
         )
+        if new_count > 0 then
+          -- Highlight the trailing "(... N new ...)" badge specifically. We
+          -- approximate by highlighting from the start of count_badge to the
+          -- end of the line so the user can see the unread state at a glance.
+          local badge_start = #header - #count_badge
+          table.insert(
+            hls,
+            { line = #lines, col_start = badge_start, col_end = -1, hl_group = HL.NEW_REPLY_BADGE }
+          )
+        end
 
         if not is_thread_collapsed then
           -- Code context snippet
@@ -383,16 +403,37 @@ function M.build_sections(session, panel_width, collapsed)
             if not comment.is_deleted then
               local indent = ci == 1 and "    " or "      "
               local reply_marker = ci > 1 and " " or ""
+              -- Mark unacked new/edited replies with a [NEW] tag (suppresses
+              -- self_echo entries via session_helpers.is_new_reply).
+              local new_marker = ""
+              if helpers.is_new_reply(new_lookup, comment.id) then
+                new_marker = "[NEW] "
+              end
 
-              local author_line =
-                string.format("%s%s%s  %s", indent, reply_marker, comment.author, M.format_time(comment.created_at))
+              local author_line = string.format(
+                "%s%s%s%s  %s",
+                indent,
+                reply_marker,
+                new_marker,
+                comment.author,
+                M.format_time(comment.created_at)
+              )
               table.insert(lines, author_line)
               table.insert(hls, {
                 line = #lines,
                 col_start = 0,
-                col_end = #indent + #reply_marker + #comment.author,
+                col_end = #indent + #reply_marker + #new_marker + #comment.author,
                 hl_group = HL.REMOTE_AUTHOR,
               })
+              if #new_marker > 0 then
+                local marker_start = #indent + #reply_marker
+                table.insert(hls, {
+                  line = #lines,
+                  col_start = marker_start,
+                  col_end = marker_start + #new_marker,
+                  hl_group = HL.NEW_REPLY_BADGE,
+                })
+              end
               table.insert(hls, {
                 line = #lines,
                 col_start = #author_line - #M.format_time(comment.created_at),
@@ -449,6 +490,13 @@ function M.build_sections(session, panel_width, collapsed)
             thread_id = thread.id,
             thread_status = thread.status,
             reply_draft_ids = reply_draft_ids,
+            -- New-replies feature: max comment id on the thread (for ack
+            -- watermark) and count of unacked replies (for "is this thread
+            -- ack-worthy?" decisions in the keymap).
+            max_comment_id = thread.comments and #thread.comments > 0
+                and thread.comments[#thread.comments].id
+              or nil,
+            new_reply_count = new_count,
             collapsible = true,
             collapse_key = "thread:" .. thread.id,
           },

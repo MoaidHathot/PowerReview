@@ -166,6 +166,81 @@ function M.get_threads_for_file(session, file_path)
 end
 
 -- ============================================================================
+-- New-replies helpers (Phase 3 of new-replies feature)
+-- ============================================================================
+
+--- Build a fast lookup of "comment_id -> bucket" from `last_deltas`.
+--- Used by UI surfaces (comments panel, files panel, neo-tree, comment_preview)
+--- to mark new replies without re-running classification logic.
+---
+--- Buckets:
+---   "to_ai"          -> reply_to_ai
+---   "to_human"       -> reply_to_human
+---   "in_others"      -> reply_in_others_thread
+---   "new_thread"     -> new_thread_others
+---   "self_echo"      -> self_echo (NOT shown as NEW; suppressed by UI)
+---@param session PowerReview.ReviewSession
+---@return table<number, string> bucket_by_comment_id Empty if no deltas / silent priming.
+function M.get_new_replies_lookup(session)
+  local lookup = {}
+  local deltas = session.last_deltas
+  if type(deltas) ~= "table" then
+    return lookup
+  end
+  local function fill(list, bucket)
+    for _, entry in ipairs(list or {}) do
+      if entry.comment_id then
+        lookup[entry.comment_id] = bucket
+      end
+    end
+  end
+  fill(deltas.reply_to_ai, "to_ai")
+  fill(deltas.reply_to_human, "to_human")
+  fill(deltas.reply_in_others_thread, "in_others")
+  fill(deltas.new_thread_others, "new_thread")
+  fill(deltas.self_echo, "self_echo")
+  return lookup
+end
+
+--- Predicate for "this comment is a new/unacked reply we should mark NEW in the UI".
+--- Excludes self_echo entries.
+---@param lookup table<number, string> from `get_new_replies_lookup`
+---@param comment_id number
+---@return boolean
+function M.is_new_reply(lookup, comment_id)
+  local bucket = lookup[comment_id]
+  return bucket ~= nil and bucket ~= "self_echo"
+end
+
+--- Count new replies on a single thread (excludes self_echo).
+---@param lookup table<number, string>
+---@param thread PowerReview.CommentThread
+---@return number
+function M.count_new_replies_on_thread(lookup, thread)
+  local count = 0
+  for _, c in ipairs(thread.comments or {}) do
+    if M.is_new_reply(lookup, c.id) then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+--- Count new replies across all threads on a file (excludes self_echo).
+---@param session PowerReview.ReviewSession
+---@param file_path string
+---@param lookup? table<number, string> Optional precomputed lookup
+---@return number
+function M.count_new_replies_for_file(session, file_path, lookup)
+  lookup = lookup or M.get_new_replies_lookup(session)
+  local total = 0
+  for _, t in ipairs(M.get_threads_for_file(session, file_path)) do
+    total = total + M.count_new_replies_on_thread(lookup, t)
+  end
+  return total
+end
+
+-- ============================================================================
 -- Vote helpers (replaces review/status.lua)
 -- ============================================================================
 

@@ -258,3 +258,77 @@ describe("ai_drafts_changed", function()
     assert.equal(0, #mock._notifications)
   end)
 end)
+
+-- ============================================================================
+-- replies_to_me / replies_to_others (new-replies feature)
+-- ============================================================================
+
+describe("replies_to_me", function()
+  before_each(reset)
+
+  it("notifies with combined count when both buckets non-zero", function()
+    notifications.replies_to_me(2, 1)
+    assert.equal(1, #mock._notifications)
+    -- Total of 3 replies: 2 on AI thread(s) + 1 on your thread(s)
+    assert.truthy(mock._notifications[1].msg:find("3 new reply"))
+    assert.truthy(mock._notifications[1].msg:find("2 on AI thread"))
+    assert.truthy(mock._notifications[1].msg:find("1 on your thread"))
+  end)
+
+  it("notifies with only AI fragment when human count is zero", function()
+    notifications.replies_to_me(2, 0)
+    assert.equal(1, #mock._notifications)
+    assert.truthy(mock._notifications[1].msg:find("2 on AI thread"))
+    -- Should NOT mention 'on your thread' since count is 0
+    assert.is_nil(mock._notifications[1].msg:find("on your thread"))
+  end)
+
+  it("does not notify when both counts are zero", function()
+    notifications.replies_to_me(0, 0)
+    assert.equal(0, #mock._notifications)
+  end)
+
+  it("is on by default per design (replies_to_me defaults to true)", function()
+    config.setup({})  -- defaults
+    notifications.replies_to_me(1, 0)
+    assert.equal(1, #mock._notifications)
+  end)
+
+  it("respects explicit category disable", function()
+    config.setup({ notifications = { enabled = true, replies_to_me = false } })
+    notifications.replies_to_me(5, 5)
+    assert.equal(0, #mock._notifications)
+  end)
+end)
+
+describe("replies_to_others", function()
+  before_each(reset)
+
+  it("is OFF by default (replies_to_others defaults to false)", function()
+    config.setup({})  -- defaults
+    notifications.replies_to_others(3, 1)
+    assert.equal(0, #mock._notifications)
+  end)
+
+  it("notifies when explicitly enabled", function()
+    config.setup({ notifications = { enabled = true, replies_to_others = true } })
+    notifications.replies_to_others(3, 1)
+    assert.equal(1, #mock._notifications)
+    -- 3 new replies + 1 new thread
+    assert.truthy(mock._notifications[1].msg:find("3 new reply"))
+    assert.truthy(mock._notifications[1].msg:find("1 new thread"))
+    assert.truthy(mock._notifications[1].msg:find("PR activity"))
+  end)
+
+  it("does not notify when both counts are zero (even when enabled)", function()
+    config.setup({ notifications = { enabled = true, replies_to_others = true } })
+    notifications.replies_to_others(0, 0)
+    assert.equal(0, #mock._notifications)
+  end)
+
+  it("does not notify when globally disabled even if category enabled", function()
+    config.setup({ notifications = { enabled = false, replies_to_others = true } })
+    notifications.replies_to_others(5, 5)
+    assert.equal(0, #mock._notifications)
+  end)
+end)

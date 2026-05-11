@@ -144,6 +144,15 @@ local function defaults()
       ai_activity = true, -- Notify when AI creates/edits/deletes drafts
       sync_complete = true, -- Notify when thread sync completes
       watcher = true, -- Notify when session file changes externally (e.g. AI agent via MCP)
+      -- New-replies categories (Phase 3 of new-replies feature):
+      -- replies_to_me fires when reviewers reply on threads where you (or AI on
+      -- your behalf) participated. On by default — high-signal events.
+      replies_to_me = true,
+      -- replies_to_others fires for replies on threads neither you nor the AI
+      -- participated in (full-PR awareness). Off by default to avoid toast
+      -- noise on busy PRs; the visual badges in the panels still render
+      -- regardless of this toggle.
+      replies_to_others = false,
     },
 
     -- Keymaps
@@ -174,6 +183,12 @@ local function defaults()
       iteration_diff = "<leader>pn",
       next_unreviewed = "]u",
       prev_unreviewed = "[u",
+      -- New-replies feature (Phase 3 of new-replies feature). Set to a string
+      -- (e.g. "<C-r>") to enable the keybind in the comments panel, or leave
+      -- nil/false for no binding (the user can still call the underlying API
+      -- directly via :PowerReview ack ...). Per the design decision, no key
+      -- is hardcoded.
+      ack_thread = nil,
     },
 
     -- Logging

@@ -82,6 +82,8 @@ local function build_nodes(session)
   local helpers = require("power-review.session_helpers")
   local counts = helpers.get_draft_counts(session)
   local review_progress = helpers.get_review_progress(session)
+  -- Precompute once so per-file lookup is O(1).
+  local new_lookup = helpers.get_new_replies_lookup(session)
 
   -- Group files by directory
   local dirs = {} ---@type table<string, PowerReview.ChangedFile[]>
@@ -124,6 +126,7 @@ local function build_nodes(session)
             deletions = file.deletions,
             draft_count = #file_drafts,
             thread_count = #file_threads,
+            new_reply_count = helpers.count_new_replies_for_file(session, file.path, new_lookup),
             review_status = review_status,
             review_icon = review_icon,
           })
@@ -148,6 +151,7 @@ local function build_nodes(session)
             deletions = file.deletions,
             draft_count = #file_drafts,
             thread_count = #file_threads,
+            new_reply_count = helpers.count_new_replies_for_file(session, file.path, new_lookup),
             review_status = review_status,
             review_icon = review_icon,
           })
@@ -255,10 +259,16 @@ local function prepare_node(node)
     -- Comment count badge (LEFT of filename so it's always visible even when truncated)
     local thread_n = node.thread_count or 0
     local draft_n = node.draft_count or 0
-    if thread_n > 0 or draft_n > 0 then
+    local new_n = node.new_reply_count or 0
+    if thread_n > 0 or draft_n > 0 or new_n > 0 then
       local badge_parts = {}
       if thread_n > 0 then
         table.insert(badge_parts, { text = string.format(" %d", thread_n), hl = HL.THREAD_COUNT })
+      end
+      if new_n > 0 then
+        -- Reuse REVIEW_CHANGED highlight for "needs attention" since this
+        -- panel doesn't have its own NEW colour. Fine for a count badge.
+        table.insert(badge_parts, { text = string.format(" %d", new_n), hl = HL.REVIEW_CHANGED })
       end
       if draft_n > 0 then
         table.insert(badge_parts, { text = string.format(" %d", draft_n), hl = HL.DRAFT_COUNT })

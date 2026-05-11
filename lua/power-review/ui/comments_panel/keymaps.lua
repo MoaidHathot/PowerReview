@@ -315,6 +315,63 @@ function M.setup(split, session, panel_module)
       end)
     end)
   end, { noremap = true })
+
+  -- Optional: ack thread under cursor (advances new-replies watermark).
+  -- The keybind is read from config.keymaps.ack_thread; when nil/false, no
+  -- mapping is set (per the design decision: nothing is hardcoded).
+  local cfg = require("power-review.config").get()
+  local ack_key = cfg.keymaps and cfg.keymaps.ack_thread
+  if type(ack_key) == "string" and ack_key ~= "" then
+    split:map("n", ack_key, function()
+      local line = vim.api.nvim_win_get_cursor(0)[1]
+      local section = section_at_line(panel_module._sections, line)
+      if not section or not section.data.thread_id then
+        log.info("No thread under cursor")
+        return
+      end
+      local cur_session = panel_module._session or session
+      if not cur_session or not cur_session.pr_url then
+        log.error("No active session")
+        return
+      end
+
+      local cli = require("power-review.cli")
+      local result, err = cli.ack_thread(
+        cur_session.pr_url,
+        section.data.thread_id,
+        section.data.max_comment_id,
+        "human"
+      )
+      if err then
+        log.error("Failed to ack thread #%d: %s", section.data.thread_id, err)
+        return
+      end
+
+      if (result and result.acknowledged or 0) > 0 then
+        log.info(
+          "Thread #%d acknowledged through comment #%d",
+          section.data.thread_id,
+          (result and result.through_comment_id) or section.data.max_comment_id or 0
+        )
+      else
+        log.info("Thread #%d already acknowledged", section.data.thread_id)
+      end
+
+      -- Reload session so the NEW badges disappear immediately. The watcher
+      -- will also fire from the file change, but reloading here keeps the UI
+      -- snappy and avoids a debounce window.
+      vim.schedule(function()
+        local pr = require("power-review")
+        local updated = cli.reload_session(cur_session.pr_url)
+        if updated then
+          pr._set_current_session(updated)
+          panel_module._render(updated)
+          require("power-review.ui.signs").refresh()
+          require("power-review.ui").refresh_neotree()
+        end
+      end)
+    end, { noremap = true, desc = "PowerReview: ack thread under cursor" })
+  end
 end
 
 return M

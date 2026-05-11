@@ -248,6 +248,25 @@ internal static class AzDoApiModels
     {
         [JsonPropertyName("id")]
         public string? Id { get; set; }
+
+        /// <summary>
+        /// Display name, e.g. "Moaid Hathot".
+        /// AzDO connectionData typically returns this under <c>providerDisplayName</c>
+        /// (and sometimes <c>customDisplayName</c>); we accept either.
+        /// </summary>
+        [JsonPropertyName("providerDisplayName")]
+        public string? ProviderDisplayName { get; set; }
+
+        [JsonPropertyName("customDisplayName")]
+        public string? CustomDisplayName { get; set; }
+
+        /// <summary>
+        /// Unique account name (typically email/UPN). When not present at the top level,
+        /// AzDO sometimes nests it under <c>properties.Account</c>; we don't read that
+        /// nested form to keep this lightweight.
+        /// </summary>
+        [JsonPropertyName("uniqueName")]
+        public string? UniqueName { get; set; }
     }
 
     // =========================================================================

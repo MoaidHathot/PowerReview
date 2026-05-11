@@ -94,6 +94,19 @@ public sealed class ReviewService
             threads = [];
         }
 
+        // Step 7b: Resolve local identity (non-critical). One extra HTTP call;
+        // failure here only means new-reply classification will be a bit less
+        // accurate until the next successful sync / `pr identity --refresh`.
+        LocalIdentity? localIdentity = null;
+        try
+        {
+            localIdentity = await provider.GetCurrentUserIdentityAsync(ct);
+        }
+        catch
+        {
+            // Non-fatal — leave LocalIdentity null and let SyncAsync retry later.
+        }
+
         // Step 8: Git setup
         string? resolvedRepoPath = repoPath ?? _config.Git.RepoBasePath;
         string? worktreePath = null;
@@ -145,6 +158,7 @@ public sealed class ReviewService
                 Project = parsed.Project,
                 Repository = parsed.Repository,
             },
+            LocalIdentity = localIdentity,
             PullRequest = new PullRequestInfo
             {
                 Id = pr.Id,
@@ -257,7 +271,7 @@ public sealed class ReviewService
         switch (operation.OperationType)
         {
             case DraftOperationType.Comment:
-                await provider.CreateThreadAsync(
+                var createdThread = await provider.CreateThreadAsync(
                     session.PullRequest.Id,
                     new CreateThreadRequest
                     {
@@ -270,14 +284,28 @@ public sealed class ReviewService
                         Status = ThreadStatus.Active,
                     },
                     ct);
-                _sessionService.MarkSubmitted(session.Id, operationId);
+                // Capture the server-assigned ids so reply-classification can
+                // identify this server comment as ours and so the AI/UI can link
+                // back to the published thread.
+                var firstComment = createdThread.Comments.FirstOrDefault();
+                _sessionService.MarkSubmitted(
+                    session.Id,
+                    operationId,
+                    publishedThreadId: createdThread.Id,
+                    publishedCommentId: firstComment?.Id);
                 break;
 
             case DraftOperationType.Reply:
                 if (!operation.ThreadId.HasValue)
                     throw new ReviewServiceException($"Draft operation {operationId} is missing thread ID.");
-                await provider.ReplyToThreadAsync(session.PullRequest.Id, operation.ThreadId.Value, operation.Body ?? "", ct);
-                _sessionService.MarkSubmitted(session.Id, operationId);
+                var publishedReply = await provider.ReplyToThreadAsync(session.PullRequest.Id, operation.ThreadId.Value, operation.Body ?? "", ct);
+                // Same as above: capture so we can suppress this comment from
+                // "new replies" on the next sync.
+                _sessionService.MarkSubmitted(
+                    session.Id,
+                    operationId,
+                    publishedThreadId: operation.ThreadId.Value,
+                    publishedCommentId: publishedReply.Id);
                 break;
 
             case DraftOperationType.ThreadStatusChange:
@@ -331,6 +359,21 @@ public sealed class ReviewService
     {
         var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
 
+        // Lazy-populate the local identity so reply-classification has a
+        // chance of working on the very first sync after upgrading from a
+        // pre-v8 session.
+        if (session.LocalIdentity == null)
+        {
+            try
+            {
+                session.LocalIdentity = await provider.GetCurrentUserIdentityAsync(ct);
+            }
+            catch
+            {
+                // Non-fatal.
+            }
+        }
+
         var threads = await provider.GetThreadsAsync(session.PullRequest.Id, ct);
 
         // Check for new iteration (non-critical)
@@ -362,11 +405,7 @@ public sealed class ReviewService
                     await ApplySmartResetAsync(session, oldSourceCommit, latestIteration.SourceCommit);
                 }
 
-                session.Threads = new ThreadsInfo
-                {
-                    SyncedAt = Timestamp(),
-                    Items = threads,
-                };
+                ApplyClassifiedSync(session, threads);
                 _store.Save(session);
 
                 iterationCheck.ChangedFiles = session.Review.ChangedSinceReview.ToList();
@@ -376,6 +415,7 @@ public sealed class ReviewService
                 {
                     ThreadCount = threads.Count,
                     IterationCheck = iterationCheck,
+                    Deltas = session.Threads.LastDeltas,
                 };
             }
         }
@@ -390,17 +430,45 @@ public sealed class ReviewService
         session = _store.Load(session.Id)
             ?? throw new ReviewServiceException($"Session disappeared during sync: {session.Id}");
 
-        session.Threads = new ThreadsInfo
-        {
-            SyncedAt = Timestamp(),
-            Items = threads,
-        };
+        ApplyClassifiedSync(session, threads);
         _store.Save(session);
 
         return new SyncResult
         {
             ThreadCount = threads.Count,
             IterationCheck = iterationCheck,
+            Deltas = session.Threads.LastDeltas,
+        };
+    }
+
+    /// <summary>
+    /// Replace <c>session.Threads.Items</c> with the freshly-fetched threads,
+    /// stamp <c>synced_at</c>, and run reply-classification: snapshot the new
+    /// state, diff against the prior snapshot, and write
+    /// <c>session.Threads.LastDeltas</c>.
+    ///
+    /// Preserves the existing <c>thread_acks</c> map across the sync so explicit
+    /// acks are sticky.
+    /// </summary>
+    private static void ApplyClassifiedSync(ReviewSession session, List<CommentThread> freshThreads)
+    {
+        var prevSnapshot = session.Threads?.PreviousSyncSnapshot ?? [];
+        var existingAcks = session.Threads?.ThreadAcks ?? new Dictionary<string, ThreadAckEntry>();
+
+        var (deltas, nextSnapshot) = ReplyClassifier.Classify(
+            freshThreads,
+            prevSnapshot,
+            existingAcks,
+            session.LocalIdentity,
+            session.DraftOperations.Values);
+
+        session.Threads = new ThreadsInfo
+        {
+            SyncedAt = Timestamp(),
+            Items = freshThreads,
+            PreviousSyncSnapshot = nextSnapshot,
+            ThreadAcks = existingAcks,
+            LastDeltas = deltas,
         };
     }
 
@@ -603,9 +671,114 @@ public sealed class ReviewService
         return await RefreshExistingSessionAsync(session, provider, ct);
     }
 
+    /// <summary>
+    /// Re-resolve the local user identity from the provider and persist it.
+    /// Useful when the PAT has been rotated to a different user and the cached
+    /// identity is now wrong.
+    /// </summary>
+    public async Task<LocalIdentity> RefreshIdentityAsync(string prUrl, CancellationToken ct = default)
+    {
+        var (session, provider) = await ResolveSessionAndProviderAsync(prUrl, ct);
+        var identity = await provider.GetCurrentUserIdentityAsync(ct);
+        _sessionService.SetLocalIdentity(session.Id, identity);
+        return identity;
+    }
+
+    /// <summary>
+    /// Read the deltas from the most recent sync. Returns an empty (non-null)
+    /// <see cref="ReplyDeltas"/> if no sync has been performed yet.
+    /// </summary>
+    public ReplyDeltas GetLastDeltas(string prUrl)
+    {
+        var session = ResolveSession(prUrl);
+        return session.Threads?.LastDeltas ?? new ReplyDeltas
+        {
+            ComputedAt = "",
+        };
+    }
+
+    /// <summary>
+    /// Get unacked deltas filtered by scope.
+    /// </summary>
+    /// <param name="scope">"to_ai" (default for AI), "to_me" (AI + human),
+    /// "to_others", "all", or "self_echo" (debug).</param>
+    /// <param name="threadId">Optional: limit to a single thread.</param>
+    public NewRepliesResult GetNewReplies(string prUrl, string scope = "to_me", int? threadId = null)
+    {
+        var deltas = GetLastDeltas(prUrl);
+        var normalized = (scope ?? "to_me").Trim().ToLowerInvariant();
+
+        var picked = new List<DeltaComment>();
+        switch (normalized)
+        {
+            case "to_ai":
+                picked.AddRange(deltas.ReplyToAi);
+                break;
+            case "to_me":
+                picked.AddRange(deltas.ReplyToAi);
+                picked.AddRange(deltas.ReplyToHuman);
+                break;
+            case "to_others":
+                picked.AddRange(deltas.ReplyInOthersThread);
+                picked.AddRange(deltas.NewThreadOthers);
+                break;
+            case "all":
+                picked.AddRange(deltas.ReplyToAi);
+                picked.AddRange(deltas.ReplyToHuman);
+                picked.AddRange(deltas.ReplyInOthersThread);
+                picked.AddRange(deltas.NewThreadOthers);
+                break;
+            case "self_echo":
+                picked.AddRange(deltas.SelfEcho);
+                break;
+            default:
+                throw new ReviewServiceException(
+                    $"Unknown scope '{scope}'. Use one of: to_ai, to_me, to_others, all, self_echo.");
+        }
+
+        if (threadId.HasValue)
+        {
+            picked = picked.Where(d => d.ThreadId == threadId.Value).ToList();
+        }
+
+        // Group by thread for easier consumption.
+        var grouped = picked
+            .GroupBy(d => d.ThreadId)
+            .Select(g => new NewRepliesThreadGroup
+            {
+                ThreadId = g.Key,
+                FilePath = g.First().FilePath,
+                Comments = g.OrderBy(c => c.CommentId).ToList(),
+            })
+            .OrderBy(g => g.ThreadId)
+            .ToList();
+
+        return new NewRepliesResult
+        {
+            Scope = normalized,
+            ComputedAt = deltas.ComputedAt,
+            TotalComments = picked.Count,
+            Threads = grouped,
+        };
+    }
+
     private async Task<ReviewSession> RefreshExistingSessionAsync(ReviewSession session, IProvider provider, CancellationToken ct = default)
     {
         var now = Timestamp();
+
+        // Lazy-populate the local identity for legacy sessions or when it's
+        // missing for any other reason. Best-effort — failure leaves it null.
+        if (session.LocalIdentity == null)
+        {
+            try
+            {
+                session.LocalIdentity = await provider.GetCurrentUserIdentityAsync(ct);
+            }
+            catch
+            {
+                // Non-fatal; we'll try again next refresh.
+            }
+        }
 
         // Refresh PR metadata (non-critical)
         try
@@ -647,11 +820,7 @@ public sealed class ReviewService
         try
         {
             var threads = await provider.GetThreadsAsync(session.PullRequest.Id, ct);
-            session.Threads = new ThreadsInfo
-            {
-                SyncedAt = now,
-                Items = threads,
-            };
+            ApplyClassifiedSync(session, threads);
         }
         catch
         {
@@ -1280,4 +1449,29 @@ public sealed class SyncResult
 
     /// <summary>Iteration check result, if a new iteration was detected during sync.</summary>
     public IterationCheckResult? IterationCheck { get; set; }
+
+    /// <summary>
+    /// Reply-classification deltas computed during the sync. Null when this is
+    /// the first sync after upgrade ("silent priming") so the caller knows not
+    /// to flood the user with notifications.
+    /// </summary>
+    public ReplyDeltas? Deltas { get; set; }
+}
+
+/// <summary>
+/// Filtered result of <see cref="ReviewService.GetNewReplies"/>.
+/// </summary>
+public sealed class NewRepliesResult
+{
+    public string Scope { get; set; } = "";
+    public string ComputedAt { get; set; } = "";
+    public int TotalComments { get; set; }
+    public List<NewRepliesThreadGroup> Threads { get; set; } = [];
+}
+
+public sealed class NewRepliesThreadGroup
+{
+    public int ThreadId { get; set; }
+    public string? FilePath { get; set; }
+    public List<DeltaComment> Comments { get; set; } = [];
 }

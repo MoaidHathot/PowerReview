@@ -16,6 +16,7 @@ local HL = {
   CHANGE_ICON = "PowerReviewNeoTreeChangeIcon",
   DRAFT_COUNT = "PowerReviewNeoTreeDraftCount",
   THREAD_COUNT = "PowerReviewNeoTreeThreadCount",
+  NEW_REPLY_COUNT = "PowerReviewNeoTreeNewReplyCount",
   STATS_ADD = "PowerReviewNeoTreeStatsAdd",
   STATS_DEL = "PowerReviewNeoTreeStatsDel",
   MESSAGE = "PowerReviewNeoTreeMessage",
@@ -43,6 +44,7 @@ local function ensure_highlights()
     [HL.CHANGE_ICON] = "Comment",
     [HL.DRAFT_COUNT] = "DiagnosticWarn",
     [HL.THREAD_COUNT] = "DiagnosticInfo",
+    [HL.NEW_REPLY_COUNT] = "DiagnosticWarn",
     [HL.STATS_ADD] = "DiffAdd",
     [HL.STATS_DEL] = "DiffDelete",
     [HL.MESSAGE] = "Comment",
@@ -159,8 +161,9 @@ M.comment_count = function(config, node, state)
 
   local thread_n = node.extra and node.extra.thread_count or 0
   local draft_n = node.extra and node.extra.draft_count or 0
+  local new_n = node.extra and node.extra.new_reply_count or 0
 
-  if thread_n == 0 and draft_n == 0 then
+  if thread_n == 0 and draft_n == 0 and new_n == 0 then
     return {}
   end
 
@@ -169,6 +172,10 @@ M.comment_count = function(config, node, state)
   local parts = {}
   if thread_n > 0 then
     table.insert(parts, { text = string.format(" %d", thread_n), highlight = HL.THREAD_COUNT })
+  end
+  if new_n > 0 then
+    -- "" lightning-bolt icon to denote freshness; users can swap in their preferred glyph.
+    table.insert(parts, { text = string.format(" %d", new_n), highlight = HL.NEW_REPLY_COUNT })
   end
   if draft_n > 0 then
     table.insert(parts, { text = string.format(" %d", draft_n), highlight = HL.DRAFT_COUNT })
@@ -179,12 +186,20 @@ M.comment_count = function(config, node, state)
   end
 
   -- Neo-tree components expect a single {text, highlight} table, not a list.
-  -- Concatenate into a single string, using the most important highlight.
+  -- Concatenate into a single string, using the most important highlight
+  -- (NEW > draft > thread, since "needs attention" is the highest signal).
   local combined_text = ""
   for _, p in ipairs(parts) do
     combined_text = combined_text .. p.text
   end
-  local primary_hl = draft_n > 0 and HL.DRAFT_COUNT or HL.THREAD_COUNT
+  local primary_hl
+  if new_n > 0 then
+    primary_hl = HL.NEW_REPLY_COUNT
+  elseif draft_n > 0 then
+    primary_hl = HL.DRAFT_COUNT
+  else
+    primary_hl = HL.THREAD_COUNT
+  end
 
   return {
     text = combined_text,

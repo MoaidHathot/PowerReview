@@ -25,6 +25,8 @@ M.HL = {
   COUNT_BADGE = "PowerReviewCommentsCountBadge",
   HELP_TEXT = "PowerReviewCommentsHelp",
   PANEL_BAR = "PowerReviewPanelBar",
+  -- New-replies feature: badge for unacked replies/threads.
+  NEW_REPLY_BADGE = "PowerReviewCommentsNewReply",
 }
 
 local hl_created = false
@@ -59,6 +61,7 @@ function M.ensure()
     [M.HL.COUNT_BADGE] = "Special",
     [M.HL.HELP_TEXT] = "Comment",
     [M.HL.PANEL_BAR] = "StatusLine",
+    [M.HL.NEW_REPLY_BADGE] = "DiagnosticWarn",
   }
 
   for hl_name, link_to in pairs(links) do

@@ -42,6 +42,9 @@ internal static class CommandBuilder
         root.Subcommands.Add(BuildFixWorktree(services));
         root.Subcommands.Add(BuildProposal(services));
         root.Subcommands.Add(BuildAction(services));
+        root.Subcommands.Add(BuildIdentity(services));
+        root.Subcommands.Add(BuildReplies(services));
+        root.Subcommands.Add(BuildAck(services));
 
         return root;
     }
@@ -871,6 +874,14 @@ internal static class CommandBuilder
                     synced = true,
                     thread_count = result.ThreadCount,
                     iteration_check = result.IterationCheck,
+                    silent_priming = result.Deltas == null,
+                    deltas = result.Deltas == null ? null : new
+                    {
+                        reply_to_ai = result.Deltas.ReplyToAi.Count,
+                        reply_to_human = result.Deltas.ReplyToHuman.Count,
+                        reply_in_others_thread = result.Deltas.ReplyInOthersThread.Count,
+                        new_thread_others = result.Deltas.NewThreadOthers.Count,
+                    },
                 });
             }
             catch (ReviewServiceException ex)
@@ -2274,6 +2285,192 @@ internal static class CommandBuilder
                 CliOutput.WriteJson(new { deleted = true, id });
             }
             catch (ProposalServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // =========================================================================
+    // identity command — manage the persisted local-user identity used for
+    // reply classification.
+    // =========================================================================
+
+    private static Command BuildIdentity(ServiceFactory services)
+    {
+        var cmd = new Command("identity", "Manage the persisted local-user identity used to classify incoming replies.");
+        cmd.Subcommands.Add(BuildIdentityShow(services));
+        cmd.Subcommands.Add(BuildIdentityRefresh(services));
+        return cmd;
+    }
+
+    private static Command BuildIdentityShow(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("show", "Show the current locally-resolved user identity for this PR's session. No auth required.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var result = services.ReviewService.GetSession(url);
+                if (result == null)
+                    return CliOutput.WriteError("No session found for this PR.");
+                CliOutput.WriteJson(new
+                {
+                    local_identity = result.Session.LocalIdentity,
+                });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildIdentityRefresh(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var cmd = new Command("refresh", "Re-resolve the local-user identity from the provider and persist it. Auth required.")
+        {
+            prUrl
+        };
+
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            try
+            {
+                var identity = await services.ReviewService.RefreshIdentityAsync(url, ct);
+                CliOutput.WriteJson(new { refreshed = true, local_identity = identity });
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    // =========================================================================
+    // replies / ack — read & acknowledge new replies computed by the
+    // reply-classifier on the most recent sync.
+    // =========================================================================
+
+    private static Command BuildReplies(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var scope = new Option<string?>("--scope")
+        {
+            Description = "Filter scope: to_ai, to_me (default), to_others, all, self_echo",
+        };
+        var threadIdOpt = new Option<int?>("--thread-id")
+        {
+            Description = "Optional: limit to a single thread id",
+        };
+
+        var cmd = new Command("replies", "Show new/edited replies since the previous sync, classified by recipient. No auth required.")
+        {
+            prUrl, scope, threadIdOpt
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var scopeStr = parseResult.GetValue(scope);
+            var tid = parseResult.GetValue(threadIdOpt);
+
+            try
+            {
+                var result = services.ReviewService.GetNewReplies(url, scopeStr ?? "to_me", tid);
+                CliOutput.WriteJson(result);
+            }
+            catch (ReviewServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            return 0;
+        });
+
+        return cmd;
+    }
+
+    private static Command BuildAck(ServiceFactory services)
+    {
+        var prUrl = PrUrlOption();
+        var threadIdOpt = new Option<int>("--thread-id")
+        {
+            Description = "Thread id to advance the ack watermark on",
+            Required = true,
+        };
+        var through = new Option<int?>("--through")
+        {
+            Description = "Highest comment id to mark as acknowledged on this thread. " +
+                          "If omitted, defaults to the highest comment id currently visible on the thread.",
+        };
+        var ackedBy = new Option<string?>("--by")
+        {
+            Description = "Who is acknowledging: 'human' (default) or 'ai'",
+        };
+
+        var cmd = new Command("ack", "Acknowledge replies on a thread (advances the per-thread watermark). No auth required.")
+        {
+            prUrl, threadIdOpt, through, ackedBy
+        };
+
+        cmd.SetAction(parseResult =>
+        {
+            var url = parseResult.GetValue(prUrl)!;
+            var tid = parseResult.GetValue(threadIdOpt);
+            var throughId = parseResult.GetValue(through);
+            var by = parseResult.GetValue(ackedBy) ?? "human";
+
+            try
+            {
+                if (!throughId.HasValue)
+                {
+                    // Default to the highest currently-known comment id on the thread.
+                    var threads = services.ReviewService.GetThreads(url) ?? [];
+                    var thread = threads.FirstOrDefault(t => t.Id == tid);
+                    if (thread == null || thread.Comments.Count == 0)
+                        return CliOutput.WriteError($"Thread {tid} not found or has no comments. Pass --through explicitly.");
+                    throughId = thread.Comments.Max(c => c.Id);
+                }
+
+                var sessionId = ResolveSessionId(services, url);
+                var changed = services.SessionService.AcknowledgeReplies(
+                    sessionId,
+                    new[] { (tid, throughId.Value) },
+                    by);
+                CliOutput.WriteJson(new
+                {
+                    acknowledged = changed,
+                    thread_id = tid,
+                    through_comment_id = throughId.Value,
+                    acked_by = by,
+                });
+            }
+            catch (SessionServiceException ex)
+            {
+                return CliOutput.WriteError(ex.Message);
+            }
+            catch (ReviewServiceException ex)
             {
                 return CliOutput.WriteError(ex.Message);
             }

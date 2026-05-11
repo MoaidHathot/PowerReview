@@ -381,7 +381,7 @@ public sealed class SessionService
         return counts;
     }
 
-    internal void MarkSubmitted(string sessionId, string operationId)
+    internal void MarkSubmitted(string sessionId, string operationId, int? publishedThreadId = null, int? publishedCommentId = null)
     {
         using var _ = _store.AcquireLock(sessionId);
         var session = LoadOrThrow(sessionId);
@@ -389,6 +389,82 @@ public sealed class SessionService
 
         operation.Status = DraftStatus.Submitted;
         operation.UpdatedAt = Timestamp();
+        if (publishedThreadId.HasValue)
+            operation.PublishedThreadId = publishedThreadId;
+        if (publishedCommentId.HasValue)
+            operation.PublishedCommentId = publishedCommentId;
+        _store.Save(session);
+    }
+
+    /// <summary>
+    /// Advance the per-thread acknowledgement watermark, marking all comments
+    /// in the given thread with <c>id &lt;= throughCommentId</c> as
+    /// acknowledged. Subsequent calls to reply-classification will suppress
+    /// these from <see cref="ThreadsInfo.LastDeltas"/>.
+    ///
+    /// Also re-runs classification against the existing snapshot so callers see
+    /// the immediate effect (without waiting for the next sync).
+    /// </summary>
+    /// <param name="ackedBy">"ai" or "human" — recorded for audit.</param>
+    /// <returns>Number of acks recorded (0 if all already acked at or above this watermark).</returns>
+    public int AcknowledgeReplies(string sessionId, IReadOnlyList<(int ThreadId, int ThroughCommentId)> acks, string ackedBy = "human")
+    {
+        if (acks.Count == 0) return 0;
+
+        using var _ = _store.AcquireLock(sessionId);
+        var session = LoadOrThrow(sessionId);
+        var now = Timestamp();
+        var changed = 0;
+
+        session.Threads.ThreadAcks ??= new();
+
+        foreach (var (threadId, through) in acks)
+        {
+            var key = threadId.ToString();
+            var existing = session.Threads.ThreadAcks.GetValueOrDefault(key);
+            // Watermark is monotonic: don't allow it to go backwards.
+            if (existing != null && existing.ThroughCommentId >= through)
+                continue;
+
+            session.Threads.ThreadAcks[key] = new ThreadAckEntry
+            {
+                ThroughCommentId = through,
+                At = now,
+                AckedBy = string.IsNullOrEmpty(ackedBy) ? "human" : ackedBy,
+            };
+            changed++;
+        }
+
+        if (changed > 0)
+        {
+            // Re-run classification against the current threads so the just-recorded
+            // acks immediately remove those comments from LastDeltas. We diff
+            // against the SAME previous snapshot (don't re-snapshot) so this is
+            // purely an ack-side update, not a sync.
+            var (deltas, _) = ReplyClassifier.Classify(
+                session.Threads.Items,
+                session.Threads.PreviousSyncSnapshot,
+                session.Threads.ThreadAcks,
+                session.LocalIdentity,
+                session.DraftOperations.Values);
+            session.Threads.LastDeltas = deltas;
+
+            _store.Save(session);
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Replace the persisted local identity. Used by `pr identity --refresh` to
+    /// rotate the cached value (e.g. after the PAT was reissued for a different
+    /// user).
+    /// </summary>
+    public void SetLocalIdentity(string sessionId, LocalIdentity identity)
+    {
+        using var _ = _store.AcquireLock(sessionId);
+        var session = LoadOrThrow(sessionId);
+        session.LocalIdentity = identity;
         _store.Save(session);
     }
 

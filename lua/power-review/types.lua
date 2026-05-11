@@ -150,12 +150,48 @@
 ---@field body? string Markdown content
 ---@field thread_id? number Remote thread ID
 ---@field comment_id? number Remote comment ID for reactions
+---@field published_thread_id? number Server-assigned thread id captured on submit (Comment ops)
+---@field published_comment_id? number Server-assigned comment id captured on submit
 ---@field from_thread_status? PowerReview.ThreadStatus
 ---@field to_thread_status? PowerReview.ThreadStatus Target status for thread status changes
 ---@field reaction? "like"|"Like" Reaction for comment reaction actions
 ---@field note? string Rationale shown to the user
 ---@field created_at string ISO timestamp
 ---@field updated_at string ISO timestamp
+
+---@class PowerReview.LocalIdentity
+---@field id string Provider-assigned user id (e.g. AzDO GUID)
+---@field display_name? string Display name as reported by the provider
+---@field unique_name? string Unique account name (typically email/UPN)
+---@field resolved_at string ISO timestamp when this identity was resolved
+
+---@class PowerReview.DeltaComment
+---@field thread_id number
+---@field comment_id number
+---@field parent_comment_id? number
+---@field change "new"|"edited"
+---@field file_path? string
+---@field line_start? number
+---@field line_end? number
+---@field author { name?: string, id?: string, unique_name?: string }
+---@field created_at string
+---@field updated_at string
+---@field body_preview string First 200 chars, single-line
+---@field ai_participated boolean
+---@field human_participated boolean
+
+---@class PowerReview.ReplyDeltas
+---@field computed_at string ISO timestamp
+---@field reply_to_ai PowerReview.DeltaComment[]
+---@field reply_to_human PowerReview.DeltaComment[]
+---@field reply_in_others_thread PowerReview.DeltaComment[]
+---@field new_thread_others PowerReview.DeltaComment[]
+---@field self_echo PowerReview.DeltaComment[]
+
+---@class PowerReview.ThreadAck
+---@field through_comment_id number Highest acked comment id on this thread
+---@field at string ISO timestamp
+---@field acked_by "ai"|"human"
 
 ---@class PowerReview.ReviewSession
 ---@field version number Schema version (adapted to flat shape from CLI v3)
@@ -196,6 +232,9 @@
 ---@field threads PowerReview.CommentThread[]
 ---@field files PowerReview.ChangedFile[]
 ---@field metadata? PowerReview.ReviewMetadata Derived metadata summaries for UI and AI agents
+---@field local_identity? PowerReview.LocalIdentity Local user identity used to classify incoming replies
+---@field thread_acks? table<string, PowerReview.ThreadAck> Per-thread ack watermarks (key = thread id as string)
+---@field last_deltas? PowerReview.ReplyDeltas Reply-classification deltas from the most recent sync
 ---@field _open_action? "opened"|"refreshed" Result action from `powerreview open`
 ---@field _session_file_path? string Session file path returned by `powerreview open` or `refresh`
 

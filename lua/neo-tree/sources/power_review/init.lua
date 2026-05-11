@@ -65,6 +65,8 @@ local function build_items(session)
   local helpers = require("power-review.session_helpers")
   local counts = helpers.get_draft_counts(session)
   local review_progress = helpers.get_review_progress(session)
+  -- Precomputed once for O(1) per-file lookup.
+  local new_lookup = helpers.get_new_replies_lookup(session)
 
   -- Root node: PR info
   local root = {
@@ -115,6 +117,7 @@ local function build_items(session)
         deletions = file.deletions,
         draft_count = #file_drafts,
         thread_count = #file_threads,
+        new_reply_count = helpers.count_new_replies_for_file(session, file.path, new_lookup),
         review_status = review_status,
         review_icon = review_icon,
       },

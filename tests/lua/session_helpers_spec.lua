@@ -419,3 +419,89 @@ describe("metadata helpers", function()
     assert.equal(4, metadata.files.total)
   end)
 end)
+
+-- ============================================================================
+-- New-replies helpers (Phase 3 of new-replies feature)
+-- ============================================================================
+
+describe("get_new_replies_lookup", function()
+  it("returns empty table when last_deltas is missing", function()
+    assert.same({}, helpers.get_new_replies_lookup({}))
+    assert.same({}, helpers.get_new_replies_lookup({ last_deltas = nil }))
+  end)
+
+  it("indexes comments by id across all buckets", function()
+    local session = {
+      last_deltas = {
+        reply_to_ai = { { comment_id = 100 } },
+        reply_to_human = { { comment_id = 200 } },
+        reply_in_others_thread = { { comment_id = 300 }, { comment_id = 301 } },
+        new_thread_others = { { comment_id = 400 } },
+        self_echo = { { comment_id = 500 } },
+      },
+    }
+    local lookup = helpers.get_new_replies_lookup(session)
+    assert.equal("to_ai", lookup[100])
+    assert.equal("to_human", lookup[200])
+    assert.equal("in_others", lookup[300])
+    assert.equal("in_others", lookup[301])
+    assert.equal("new_thread", lookup[400])
+    assert.equal("self_echo", lookup[500])
+  end)
+end)
+
+describe("is_new_reply", function()
+  it("returns true for actionable buckets", function()
+    assert.is_true(helpers.is_new_reply({ [1] = "to_ai" }, 1))
+    assert.is_true(helpers.is_new_reply({ [1] = "to_human" }, 1))
+    assert.is_true(helpers.is_new_reply({ [1] = "in_others" }, 1))
+    assert.is_true(helpers.is_new_reply({ [1] = "new_thread" }, 1))
+  end)
+
+  it("returns false for self_echo (suppressed in UI)", function()
+    assert.is_false(helpers.is_new_reply({ [1] = "self_echo" }, 1))
+  end)
+
+  it("returns false for unknown comment ids", function()
+    assert.is_false(helpers.is_new_reply({}, 999))
+  end)
+end)
+
+describe("count_new_replies_on_thread", function()
+  it("counts only actionable comments in the thread", function()
+    local thread = {
+      comments = {
+        { id = 1 },  -- not in lookup
+        { id = 2 },  -- to_ai
+        { id = 3 },  -- self_echo (excluded)
+        { id = 4 },  -- to_human
+      },
+    }
+    local lookup = { [2] = "to_ai", [3] = "self_echo", [4] = "to_human" }
+    assert.equal(2, helpers.count_new_replies_on_thread(lookup, thread))
+  end)
+
+  it("handles empty thread", function()
+    assert.equal(0, helpers.count_new_replies_on_thread({}, { comments = {} }))
+    assert.equal(0, helpers.count_new_replies_on_thread({}, {}))
+  end)
+end)
+
+describe("count_new_replies_for_file", function()
+  it("sums new replies across all threads on a file", function()
+    local session = {
+      threads = {
+        { id = 1, file_path = "a.cs", comments = { { id = 100 }, { id = 101 } } },
+        { id = 2, file_path = "a.cs", comments = { { id = 200 } } },
+        { id = 3, file_path = "b.cs", comments = { { id = 300 } } },
+      },
+      last_deltas = {
+        reply_to_ai = { { comment_id = 100 }, { comment_id = 200 } },
+        reply_to_human = { { comment_id = 300 } },
+      },
+    }
+    assert.equal(2, helpers.count_new_replies_for_file(session, "a.cs"))
+    assert.equal(1, helpers.count_new_replies_for_file(session, "b.cs"))
+    assert.equal(0, helpers.count_new_replies_for_file(session, "missing.cs"))
+  end)
+end)
