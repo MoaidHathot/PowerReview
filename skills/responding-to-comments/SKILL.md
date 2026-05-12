@@ -16,6 +16,12 @@ powerreview open --pr-url <url> --repo-path <path>
 
 All tools require `prUrl` -- the full pull request URL (Azure DevOps or GitHub format).
 
+If `GetReviewSession` shows `local_identity: null` on the session, ask the user
+to run `powerreview identity refresh --pr-url <url>` once. Reply classification
+still works in this state (via `published_comment_id` on AI-submitted drafts),
+but identity-based matching helps recognize comments the user posted directly
+from the provider's web UI as "self" rather than as third-party replies.
+
 ## Tool invocation
 
 This skill assumes the AI agent is connected to the **PowerReview MCP server** (`powerreview mcp` via stdio). Tools are called by their MCP tool name (e.g., `SyncThreads`, `CreateProposal`).
@@ -71,7 +77,9 @@ Response Progress:
    The response now includes a `deltas` summary with counts of new/edited comments
    classified by recipient (`reply_to_ai`, `reply_to_human`, `reply_in_others_thread`,
    `new_thread_others`). If `silent_priming` is `true`, this was the first sync after
-   upgrade — you should still proceed but no actionable deltas exist yet.
+   upgrade — treat the session as "caught up" (no actionable deltas exist yet) and
+   proceed by summarizing the current open threads from `ListCommentThreads` rather
+   than waiting for deltas. The next sync onward will produce real deltas.
 2. If `deltas.reply_to_ai > 0` (or `deltas.reply_to_human > 0` and the user wants
    AI to handle their replies too), call `GetNewReplies(prUrl, scope="to_me")` to
    get the actual list of new replies that need attention. This avoids re-scanning

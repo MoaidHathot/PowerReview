@@ -108,6 +108,8 @@ When reviewing a diff, look for:
 
 First, call `SyncThreads` to fetch the latest comment threads from the remote provider and check for new iterations. This ensures you have up-to-date data before reading threads.
 
+The response includes both an `iteration_check` (new commits by the author) **and** a `deltas` summary (counts of new/edited reviewer comments classified by recipient: `reply_to_ai`, `reply_to_human`, `reply_in_others_thread`, `new_thread_others`). When doing an **incremental re-review** on a new iteration, read reviewer deltas before adding new comments — this avoids duplicating feedback that just arrived from another reviewer. If `deltas.reply_in_others_thread > 0` or `deltas.new_thread_others > 0`, call `GetNewReplies(prUrl, scope="to_others")` to inspect them; this is a pure cache read with no remote call. If `silent_priming` is `true`, the deltas were intentionally suppressed (first sync after upgrade) — fall back to scanning `ListCommentThreads`.
+
 If the sync result indicates a new iteration (`iteration_check.has_new_iteration` is `true`), the PR author has pushed new commits since the last review. The changed files are listed in `iteration_check.changed_files` -- you may want to focus on those files.
 
 Then call `ListCommentThreads` to see existing remote comments and local drafts. Use the optional `filePath` parameter to filter by file.
