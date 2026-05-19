@@ -375,10 +375,7 @@ function M.build_sections(session, panel_width, collapsed)
           -- approximate by highlighting from the start of count_badge to the
           -- end of the line so the user can see the unread state at a glance.
           local badge_start = #header - #count_badge
-          table.insert(
-            hls,
-            { line = #lines, col_start = badge_start, col_end = -1, hl_group = HL.NEW_REPLY_BADGE }
-          )
+          table.insert(hls, { line = #lines, col_start = badge_start, col_end = -1, hl_group = HL.NEW_REPLY_BADGE })
         end
 
         if not is_thread_collapsed then
@@ -493,9 +490,7 @@ function M.build_sections(session, panel_width, collapsed)
             -- New-replies feature: max comment id on the thread (for ack
             -- watermark) and count of unacked replies (for "is this thread
             -- ack-worthy?" decisions in the keymap).
-            max_comment_id = thread.comments and #thread.comments > 0
-                and thread.comments[#thread.comments].id
-              or nil,
+            max_comment_id = thread.comments and #thread.comments > 0 and thread.comments[#thread.comments].id or nil,
             new_reply_count = new_count,
             collapsible = true,
             collapse_key = "thread:" .. thread.id,

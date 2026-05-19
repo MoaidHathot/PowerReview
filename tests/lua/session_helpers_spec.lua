@@ -471,10 +471,10 @@ describe("count_new_replies_on_thread", function()
   it("counts only actionable comments in the thread", function()
     local thread = {
       comments = {
-        { id = 1 },  -- not in lookup
-        { id = 2 },  -- to_ai
-        { id = 3 },  -- self_echo (excluded)
-        { id = 4 },  -- to_human
+        { id = 1 }, -- not in lookup
+        { id = 2 }, -- to_ai
+        { id = 3 }, -- self_echo (excluded)
+        { id = 4 }, -- to_human
       },
     }
     local lookup = { [2] = "to_ai", [3] = "self_echo", [4] = "to_human" }

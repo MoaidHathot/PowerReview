@@ -289,7 +289,7 @@ describe("replies_to_me", function()
   end)
 
   it("is on by default per design (replies_to_me defaults to true)", function()
-    config.setup({})  -- defaults
+    config.setup({}) -- defaults
     notifications.replies_to_me(1, 0)
     assert.equal(1, #mock._notifications)
   end)
@@ -305,7 +305,7 @@ describe("replies_to_others", function()
   before_each(reset)
 
   it("is OFF by default (replies_to_others defaults to false)", function()
-    config.setup({})  -- defaults
+    config.setup({}) -- defaults
     notifications.replies_to_others(3, 1)
     assert.equal(0, #mock._notifications)
   end)

@@ -102,13 +102,7 @@ function M.build(item, session)
             add("")
           end
           add(
-            string.format(
-              "  %s  %s%s%s",
-              role == "Reply" and "" or "",
-              comment.author,
-              time_label,
-              new_marker
-            ),
+            string.format("  %s  %s%s%s", role == "Reply" and "" or "", comment.author, time_label, new_marker),
             new_marker ~= "" and "DiagnosticWarn" or "Title"
           )
           if ci > 1 then

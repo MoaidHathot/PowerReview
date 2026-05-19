@@ -336,12 +336,8 @@ function M.setup(split, session, panel_module)
       end
 
       local cli = require("power-review.cli")
-      local result, err = cli.ack_thread(
-        cur_session.pr_url,
-        section.data.thread_id,
-        section.data.max_comment_id,
-        "human"
-      )
+      local result, err =
+        cli.ack_thread(cur_session.pr_url, section.data.thread_id, section.data.max_comment_id, "human")
       if err then
         log.error("Failed to ack thread #%d: %s", section.data.thread_id, err)
         return
