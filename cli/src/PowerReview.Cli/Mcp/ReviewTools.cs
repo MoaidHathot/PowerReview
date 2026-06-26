@@ -307,10 +307,9 @@ public sealed class ReviewTools
         [Description("The pull request URL")] string prUrl,
         CancellationToken ct)
     {
-        try
-        {
-            var result = await reviewService.SyncAsync(prUrl, ct);
-            return ToolHelpers.ToJson(new
+        return await McpError.GuardAsync(
+            () => reviewService.SyncAsync(prUrl, ct),
+            result => ToolHelpers.ToJson(new
             {
                 synced = true,
                 thread_count = result.ThreadCount,
@@ -327,12 +326,7 @@ public sealed class ReviewTools
                     new_thread_others = result.Deltas.NewThreadOthers.Count,
                 },
                 silent_priming = result.Deltas == null,
-            });
-        }
-        catch (ReviewServiceException ex)
-        {
-            return ToolHelpers.ToJson(new { error = ex.Message });
-        }
+            }));
     }
 
     [McpServerTool, Description(
@@ -434,15 +428,9 @@ public sealed class ReviewTools
         [Description("The pull request URL")] string prUrl,
         CancellationToken ct)
     {
-        try
-        {
-            var result = await reviewService.CheckIterationAsync(prUrl, ct);
-            return ToolHelpers.ToJson(result);
-        }
-        catch (ReviewServiceException ex)
-        {
-            return ToolHelpers.ToJson(new { error = ex.Message });
-        }
+        return await McpError.GuardAsync(
+            () => reviewService.CheckIterationAsync(prUrl, ct),
+            result => ToolHelpers.ToJson(result));
     }
 
     [McpServerTool, Description(
@@ -455,14 +443,8 @@ public sealed class ReviewTools
         [Description("Relative file path to get the iteration diff for")] string filePath,
         CancellationToken ct)
     {
-        try
-        {
-            var diff = await reviewService.GetIterationDiffAsync(prUrl, filePath, ct);
-            return ToolHelpers.ToJson(new { file = filePath, diff });
-        }
-        catch (ReviewServiceException ex)
-        {
-            return ToolHelpers.ToJson(new { error = ex.Message });
-        }
+        return await McpError.GuardAsync(
+            () => reviewService.GetIterationDiffAsync(prUrl, filePath, ct),
+            diff => ToolHelpers.ToJson(new { file = filePath, diff }));
     }
 }

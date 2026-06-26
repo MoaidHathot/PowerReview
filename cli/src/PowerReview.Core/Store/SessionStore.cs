@@ -19,6 +19,14 @@ public sealed class SessionStore
 
     private readonly string _sessionsDir;
 
+    /// <summary>
+    /// Number of times a transient file-system error (a read racing a concurrent
+    /// atomic replace, or a temp/rename collision) is retried before giving up.
+    /// </summary>
+    private const int TransientIoRetries = 5;
+
+    private const int TransientIoDelayMs = 25;
+
     public SessionStore(PowerReviewConfig config)
     {
         _sessionsDir = ConfigLoader.GetSessionsDir(config);
@@ -40,6 +48,14 @@ public sealed class SessionStore
     /// <summary>
     /// Save a session to disk with an atomic write.
     /// Updates the session's updated_at timestamp.
+    ///
+    /// Writers to the same session are serialized with a dedicated write-lock
+    /// file (distinct from the public <see cref="AcquireLock"/>, so callers that
+    /// already hold that lock don't deadlock). Serializing is required because on
+    /// Windows two concurrent <c>File.Move(overwrite:true)</c> calls targeting the
+    /// same destination throw <see cref="UnauthorizedAccessException"/>. The temp
+    /// file name is also unique per write, and the rename is retried on transient
+    /// sharing errors (a concurrent reader momentarily holding the destination).
     /// </summary>
     public void Save(ReviewSession session)
     {
@@ -50,16 +66,19 @@ public sealed class SessionStore
         Directory.CreateDirectory(_sessionsDir);
 
         var path = GetSessionPath(session.Id);
-        var tmpPath = path + ".tmp";
+        // Unique temp name: avoids collisions between concurrent writers that
+        // would otherwise share "{path}.tmp".
+        var tmpPath = $"{path}.{Guid.NewGuid():N}.tmp";
 
         var json = JsonSerializer.Serialize(session, JsonOptions);
 
-        // Atomic write: write to temp file, then rename
         File.WriteAllText(tmpPath, json);
 
         try
         {
-            File.Move(tmpPath, path, overwrite: true);
+            // Serialize the replace against other writers of the same session.
+            using var writeLock = SessionFileLock.Acquire(GetWriteLockPath(session.Id), TimeSpan.FromSeconds(10));
+            MoveWithRetry(tmpPath, path);
         }
         catch
         {
@@ -69,22 +88,25 @@ public sealed class SessionStore
         }
     }
 
+    private string GetWriteLockPath(string sessionId)
+        => Path.Combine(_sessionsDir, $"{sessionId}.wlock");
+
     /// <summary>
     /// Load a session from disk by ID.
+    ///
+    /// Reads are resilient to a concurrent <see cref="Save"/> replacing the file:
+    /// a transient sharing error or a partial/!valid JSON read (possible only in
+    /// a narrow window on some platforms) is retried briefly before failing. A
+    /// file that disappears between existence check and read is treated as
+    /// "not found".
     /// </summary>
     /// <returns>The session, or null if not found.</returns>
     public ReviewSession? Load(string sessionId)
     {
         var path = GetSessionPath(sessionId);
-        if (!File.Exists(path))
-            return null;
 
-        var json = File.ReadAllText(path);
-        if (string.IsNullOrWhiteSpace(json))
-            return null;
-
-        var session = JsonSerializer.Deserialize<ReviewSession>(json, JsonOptions);
-        if (session == null)
+        var (found, session) = ReadWithRetry(path);
+        if (!found || session == null)
             return null;
 
         // Run migration if needed
@@ -99,6 +121,139 @@ public sealed class SessionStore
         }
 
         return session;
+    }
+
+    /// <summary>
+    /// Read and deserialize a session file, retrying transient I/O and parse
+    /// failures that can occur when the file is concurrently replaced.
+    /// </summary>
+    /// <returns>
+    /// (found, session). <c>found=false</c> means the file does not exist.
+    /// <c>found=true, session=null</c> means the file existed but was empty.
+    /// </returns>
+    private static (bool Found, ReviewSession? Session) ReadWithRetry(string path)
+    {
+        Exception? lastTransient = null;
+
+        for (var attempt = 0; attempt <= TransientIoRetries; attempt++)
+        {
+            try
+            {
+                var json = ReadAllTextShared(path);
+                if (json == null)
+                    return (false, null);
+                if (string.IsNullOrWhiteSpace(json))
+                    return (true, null);
+
+                var session = JsonSerializer.Deserialize<ReviewSession>(json, JsonOptions);
+                return (true, session);
+            }
+            catch (FileNotFoundException)
+            {
+                // Deleted between open attempts (TOCTOU) — treat as not found.
+                return (false, null);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return (false, null);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                // Likely racing a concurrent atomic replace; back off and retry.
+                lastTransient = ex;
+                if (attempt < TransientIoRetries)
+                    Thread.Sleep(TransientIoDelayMs);
+            }
+        }
+
+        // Exhausted retries — surface the last transient error.
+        throw lastTransient ?? new IOException($"Failed to read session file: {path}");
+    }
+
+    /// <summary>
+    /// Read a file using sharing flags that tolerate a concurrent writer
+    /// replacing or deleting it (<see cref="FileShare.ReadWrite"/> +
+    /// <see cref="FileShare.Delete"/>). Returns null if the file does not exist.
+    /// This avoids the Windows sharing conflict between <c>File.ReadAllText</c>
+    /// and a concurrent <c>File.Move(overwrite:true)</c>.
+    /// </summary>
+    private static string? ReadAllTextShared(string path)
+    {
+        FileStream stream;
+        try
+        {
+            stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+
+        using (stream)
+        using (var reader = new StreamReader(stream))
+        {
+            return reader.ReadToEnd();
+        }
+    }
+
+    private static void MoveWithRetry(string sourcePath, string destPath)
+    {
+        Exception? last = null;
+        for (var attempt = 0; attempt <= TransientIoRetries; attempt++)
+        {
+            try
+            {
+                ReplaceOrMove(sourcePath, destPath);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Destination momentarily held open by a concurrent reader, or a
+                // transient sharing conflict. Wait briefly and try again.
+                last = ex;
+                if (attempt < TransientIoRetries)
+                    Thread.Sleep(TransientIoDelayMs);
+            }
+        }
+
+        throw last ?? new IOException($"Failed to move session file into place: {destPath}");
+    }
+
+    /// <summary>
+    /// Atomically put <paramref name="sourcePath"/> in place at
+    /// <paramref name="destPath"/>. When the destination already exists, use
+    /// <see cref="File.Replace(string, string, string?)"/> which (via the Win32
+    /// <c>ReplaceFile</c> API) can replace a file even while readers have it open
+    /// — unlike <see cref="File.Move(string, string, bool)"/>, which fails with
+    /// ACCESS_DENIED on Windows if the target is open. Falls back to a move when
+    /// the destination doesn't exist yet.
+    /// </summary>
+    private static void ReplaceOrMove(string sourcePath, string destPath)
+    {
+        if (!File.Exists(destPath))
+        {
+            try
+            {
+                File.Move(sourcePath, destPath, overwrite: false);
+                return;
+            }
+            catch (IOException) when (File.Exists(destPath))
+            {
+                // Another writer created it first; fall through to Replace.
+            }
+        }
+
+        // ReplaceFile requires the destination to exist and replaces it in place,
+        // tolerating readers that opened it with FILE_SHARE_DELETE.
+        File.Replace(sourcePath, destPath, destinationBackupFileName: null, ignoreMetadataErrors: true);
     }
 
     /// <summary>
@@ -242,8 +397,11 @@ public sealed class SessionFileLock : IDisposable
 
                 return new SessionFileLock(lockPath, stream);
             }
-            catch (IOException) when (DateTime.UtcNow < deadline)
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && DateTime.UtcNow < deadline)
             {
+                // Held by another process, or momentarily mid-delete (DeleteOnClose
+                // can briefly surface as UnauthorizedAccess on Windows). Retry until
+                // the deadline.
                 Thread.Sleep(50);
             }
         }

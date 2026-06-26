@@ -10,10 +10,22 @@ namespace PowerReview.Core.Auth;
 public sealed class AuthResolver
 {
     private readonly AuthConfig _authConfig;
+    private readonly Func<int, TimeSpan, CancellationToken, Task>? _azCliDelayOverride;
 
     public AuthResolver(AuthConfig authConfig)
+        : this(authConfig, azCliDelayOverride: null)
+    {
+    }
+
+    /// <summary>
+    /// Test/advanced constructor allowing a custom Azure CLI retry-delay seam.
+    /// </summary>
+    internal AuthResolver(
+        AuthConfig authConfig,
+        Func<int, TimeSpan, CancellationToken, Task>? azCliDelayOverride)
     {
         _authConfig = authConfig;
+        _azCliDelayOverride = azCliDelayOverride;
     }
 
     /// <summary>
@@ -37,7 +49,7 @@ public sealed class AuthResolver
         var method = config.Method.ToLowerInvariant();
 
         if (method == "az_cli")
-            return await new AzCliAuth().GetAuthHeaderAsync(cancellationToken);
+            return await CreateAzCliAuth().GetAuthHeaderAsync(cancellationToken);
 
         if (method == "pat")
             return await new PatAuth(config.PatEnvVar, ProviderType.AzDo).GetAuthHeaderAsync(cancellationToken);
@@ -47,7 +59,7 @@ public sealed class AuthResolver
         {
             try
             {
-                return await new AzCliAuth().GetAuthHeaderAsync(cancellationToken);
+                return await CreateAzCliAuth().GetAuthHeaderAsync(cancellationToken);
             }
             catch (AuthenticationException azCliError)
             {
@@ -66,6 +78,16 @@ public sealed class AuthResolver
         }
 
         throw new AuthenticationException($"Unknown auth method: {method}. Use 'auto', 'az_cli', or 'pat'.");
+    }
+
+    private AzCliAuth CreateAzCliAuth()
+    {
+        var token = _authConfig.AzDo.Token;
+        return new AzCliAuth(
+            timeout: TimeSpan.FromSeconds(Math.Max(1, token.AzCliTimeoutSeconds)),
+            maxRetries: token.AzCliMaxRetries,
+            retryBaseDelay: TimeSpan.FromMilliseconds(Math.Max(0, token.AzCliRetryBaseDelayMs)),
+            delayOverride: _azCliDelayOverride);
     }
 
     private async Task<string> GetGitHubAuthHeaderAsync(CancellationToken cancellationToken)

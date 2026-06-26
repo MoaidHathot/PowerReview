@@ -87,6 +87,45 @@ public sealed class AzDoAuthConfig
     /// </summary>
     [JsonPropertyName("pat_env_var")]
     public string PatEnvVar { get; set; } = "AZDO_PAT";
+
+    /// <summary>
+    /// Token acquisition tuning (Azure CLI timeout/retry and the encrypted
+    /// token cache). Shared by all Azure DevOps auth strategies.
+    /// </summary>
+    [JsonPropertyName("token")]
+    public TokenAuthConfig Token { get; set; } = new();
+}
+
+/// <summary>
+/// Tuning for Azure CLI access-token acquisition: how long to wait on the CLI
+/// and how many times to retry a transient failure. These exist because the
+/// historical hard-coded 15s budget was too low under a cold token cache or
+/// heavy concurrency.
+/// </summary>
+public sealed class TokenAuthConfig
+{
+    /// <summary>
+    /// Maximum time (seconds) to wait for a single Azure CLI token call before
+    /// treating it as a timeout. Default: 45.
+    /// </summary>
+    [JsonPropertyName("az_cli_timeout_seconds")]
+    public int AzCliTimeoutSeconds { get; set; } = 45;
+
+    /// <summary>
+    /// Number of additional attempts after the first failure when the Azure CLI
+    /// token call fails transiently (timeout / non-login error). Total attempts
+    /// = AzCliMaxRetries + 1. Set to 0 to disable retries. Default: 2.
+    /// </summary>
+    [JsonPropertyName("az_cli_max_retries")]
+    public int AzCliMaxRetries { get; set; } = 2;
+
+    /// <summary>
+    /// Base delay (milliseconds) for exponential backoff between Azure CLI
+    /// retries. Attempt N waits roughly BaseDelay * 2^(N-1) plus jitter.
+    /// Default: 500.
+    /// </summary>
+    [JsonPropertyName("az_cli_retry_base_delay_ms")]
+    public int AzCliRetryBaseDelayMs { get; set; } = 500;
 }
 
 public sealed class GitHubAuthConfig
