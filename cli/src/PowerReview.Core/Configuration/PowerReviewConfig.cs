@@ -89,8 +89,8 @@ public sealed class AzDoAuthConfig
     public string PatEnvVar { get; set; } = "AZDO_PAT";
 
     /// <summary>
-    /// Token acquisition tuning (Azure CLI timeout/retry and the encrypted
-    /// token cache). Shared by all Azure DevOps auth strategies.
+    /// Azure CLI access-token acquisition tuning (timeout and retry).
+    /// Shared by all Azure DevOps auth strategies.
     /// </summary>
     [JsonPropertyName("token")]
     public TokenAuthConfig Token { get; set; } = new();
@@ -99,8 +99,8 @@ public sealed class AzDoAuthConfig
 /// <summary>
 /// Tuning for Azure CLI access-token acquisition: how long to wait on the CLI
 /// and how many times to retry a transient failure. These exist because the
-/// historical hard-coded 15s budget was too low under a cold token cache or
-/// heavy concurrency.
+/// historical hard-coded 15s budget was too low under a cold Azure CLI token
+/// cache or heavy concurrency.
 /// </summary>
 public sealed class TokenAuthConfig
 {

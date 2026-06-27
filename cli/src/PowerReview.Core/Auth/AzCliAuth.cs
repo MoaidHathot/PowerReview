@@ -9,8 +9,8 @@ namespace PowerReview.Core.Auth;
 ///
 /// The CLI call is bounded by a configurable timeout and retried a configurable
 /// number of times on transient failures (timeouts and non-login CLI errors),
-/// because under a cold token cache or heavy concurrency a single call can take
-/// much longer than the historical hard-coded 15 second budget.
+/// because under a cold Azure CLI token cache or heavy concurrency a single call
+/// can take much longer than the historical hard-coded 15 second budget.
 /// </summary>
 public sealed class AzCliAuth : IAuthStrategy
 {
